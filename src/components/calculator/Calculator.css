@@ -1,0 +1,149 @@
+/* src/components/calculator/Calculator.css */
+.calc-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.calc-input-panel {
+  position: sticky;
+  top: 24px;
+}
+
+.calc-results-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.calc-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 8px;
+}
+
+.calc-ticker-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  margin-bottom: 12px;
+}
+
+.instrument-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: var(--bg-surface-2);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+}
+
+/* Key metric cards */
+.calc-key-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.calc-metric-card {
+  background: var(--bg-surface);
+  border-radius: 16px;
+  padding: 16px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  transition: transform var(--transition);
+}
+
+.calc-metric-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  padding: 1px;
+  background: var(--kpi-border, var(--accent-gradient));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0.5;
+}
+
+.calc-metric-card.green { --kpi-border: linear-gradient(135deg, #10b981, #34d399); }
+.calc-metric-card.red { --kpi-border: linear-gradient(135deg, #ef4444, #f87171); }
+.calc-metric-card.gold { --kpi-border: linear-gradient(135deg, #f59e0b, #fbbf24); }
+.calc-metric-card.blue { --kpi-border: linear-gradient(135deg, #3b82f6, #60a5fa); }
+
+.calc-metric-card:hover { transform: translateY(-2px); }
+
+.calc-metric-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: 6px;
+}
+
+.calc-metric-value {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -1px;
+  line-height: 1;
+}
+
+.calc-metric-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+/* Results */
+.result-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 13px;
+}
+.result-row:last-child { border-bottom: none; }
+.result-label { color: var(--text-secondary); }
+.result-value { font-weight: 600; }
+.result-value-lg { font-size: 15px; font-weight: 700; }
+
+/* Risk gauge */
+.risk-gauge-bar {
+  height: 8px;
+  background: var(--bg-surface-3);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.risk-gauge-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+.risk-gauge-labels {
+  display: flex;
+  justify-content: space-between;
+}
+
+@media (max-width: 1024px) {
+  .calc-layout { grid-template-columns: 1fr; }
+  .calc-input-panel { position: static; }
+  .calc-key-metrics { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (max-width: 480px) {
+  .calc-key-metrics { grid-template-columns: 1fr; }
+}
