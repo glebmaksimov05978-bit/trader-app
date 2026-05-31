@@ -45,13 +45,17 @@ export default function LoginPage() {
       </div>
 
       {particles.map((i) => (
-        <div key={i} className={`particle particle-${(i % 12) + 1}`} style={{
+        <div key={i} className="particle" style={{
           left: `${5 + (i * 4.7) % 90}%`,
           top: `${10 + (i * 7.3) % 80}%`,
           animationDuration: `${9 + (i * 1.3) % 8}s`,
           animationDelay: `-${(i * 0.7) % 10}s`,
           width: `${3 + (i % 3)}px`,
           height: `${3 + (i % 3)}px`,
+          background: i % 4 === 0 ? 'rgba(79,70,229,0.8)' :
+                      i % 4 === 1 ? 'rgba(124,58,237,0.7)' :
+                      i % 4 === 2 ? 'rgba(16,185,129,0.6)' :
+                                    'rgba(245,158,11,0.6)',
         }} />
       ))}
 
@@ -91,7 +95,10 @@ export default function LoginPage() {
             </div>
             <div className="brand-stat-divider" />
             <div className="brand-stat">
-              <span className="brand-stat-value">∞</span>
+              <svg className="brand-infinity" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M24 12C24 12 19 4 12 4C5 4 2 8 2 12C2 16 5 20 12 20C19 20 24 12 24 12Z" stroke="white" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
+                <path d="M24 12C24 12 29 4 36 4C43 4 46 8 46 12C46 16 43 20 36 20C29 20 24 12 24 12Z" stroke="white" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
+              </svg>
               <span className="brand-stat-label">Сделок</span>
             </div>
           </div>
