@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 import TradeModal from './TradeModal';
 import './Journal.css';
 
-const COLS = ['Тикер', 'Дата', 'Направление', 'Вход', 'Выход', 'Объём', 'P&L', 'Статус', ''];
+const COLS = ["Тикер", "Дата", "Направление", "Вход", "Выход", "Объём", "P&L", "% деп", "Статус", ""];
 
 export default function Journal() {
   const { user, userProfile } = useAuth();
@@ -186,7 +186,7 @@ export default function Journal() {
       </div>
 
       {modalOpen && (
-        <TradeModal
+        <TradeModal defaultDeposit={userProfile?.depositSize || 100000}
           trade={editTrade}
           onSave={handleSave}
           onClose={() => { setModalOpen(false); setEditTrade(null); }}

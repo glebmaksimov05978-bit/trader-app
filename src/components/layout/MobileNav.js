@@ -9,6 +9,7 @@ const ITEMS = [
   { path: '/journal', icon: '📓', label: 'Журнал' },
   { path: '/capital', icon: '💰', label: 'Капитал' },
   { path: '/advisor', icon: '🤖', label: 'AI' },
+  { path: '/settings', icon: '⚙️', label: 'Настройки' },
 ];
 
 export default function MobileNav() {

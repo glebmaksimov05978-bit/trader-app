@@ -44,7 +44,7 @@ export default function LoginPage() {
         <div className="bg-grid" />
       </div>
 
-      {[...Array(6)].map((_, i) => (
+      {[...Array(12)].map((_, i) => (
         <div key={i} className={`particle particle-${i + 1}`} />
       ))}
 

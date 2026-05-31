@@ -11,7 +11,6 @@
   position: relative;
 }
 
-/* Animated background */
 .login-bg {
   position: fixed;
   inset: 0;
@@ -62,38 +61,42 @@
   background-size: 50px 50px;
 }
 
-/* Particles */
+/* PARTICLES — increased count via CSS */
 .particle {
   position: absolute;
-  width: 4px; height: 4px;
   border-radius: 50%;
   background: rgba(79,70,229,0.6);
   animation: particleFloat linear infinite;
   z-index: 1;
 }
 
-.particle-1 { left: 10%; top: 20%; animation-duration: 12s; animation-delay: 0s; width: 3px; height: 3px; }
-.particle-2 { left: 80%; top: 10%; animation-duration: 15s; animation-delay: -3s; background: rgba(124,58,237,0.5); }
-.particle-3 { left: 60%; top: 70%; animation-duration: 10s; animation-delay: -6s; width: 5px; height: 5px; }
-.particle-4 { left: 30%; top: 80%; animation-duration: 13s; animation-delay: -2s; background: rgba(16,185,129,0.4); }
-.particle-5 { left: 90%; top: 50%; animation-duration: 11s; animation-delay: -8s; width: 3px; height: 3px; }
-.particle-6 { left: 5%; top: 60%; animation-duration: 14s; animation-delay: -4s; background: rgba(245,158,11,0.4); }
+.particle-1  { width:4px;height:4px; left:10%;top:20%; animation-duration:12s;animation-delay:0s; }
+.particle-2  { width:4px;height:4px; left:80%;top:10%; animation-duration:15s;animation-delay:-3s; background:rgba(124,58,237,0.5); }
+.particle-3  { width:5px;height:5px; left:60%;top:70%; animation-duration:10s;animation-delay:-6s; }
+.particle-4  { width:4px;height:4px; left:30%;top:80%; animation-duration:13s;animation-delay:-2s; background:rgba(16,185,129,0.4); }
+.particle-5  { width:3px;height:3px; left:90%;top:50%; animation-duration:11s;animation-delay:-8s; }
+.particle-6  { width:4px;height:4px; left:5%;top:60%;  animation-duration:14s;animation-delay:-4s; background:rgba(245,158,11,0.4); }
+.particle-7  { width:3px;height:3px; left:45%;top:15%; animation-duration:9s; animation-delay:-1s; background:rgba(79,70,229,0.7); }
+.particle-8  { width:4px;height:4px; left:70%;top:40%; animation-duration:16s;animation-delay:-5s; background:rgba(124,58,237,0.4); }
+.particle-9  { width:5px;height:5px; left:20%;top:45%; animation-duration:11s;animation-delay:-7s; background:rgba(79,70,229,0.5); }
+.particle-10 { width:3px;height:3px; left:55%;top:85%; animation-duration:13s;animation-delay:-9s; background:rgba(16,185,129,0.5); }
+.particle-11 { width:4px;height:4px; left:85%;top:75%; animation-duration:10s;animation-delay:-3s; background:rgba(245,158,11,0.3); }
+.particle-12 { width:3px;height:3px; left:35%;top:30%; animation-duration:14s;animation-delay:-6s; background:rgba(124,58,237,0.6); }
 
 @keyframes particleFloat {
-  0% { transform: translateY(0px) rotate(0deg); opacity: 0; }
-  10% { opacity: 1; }
-  90% { opacity: 1; }
-  100% { transform: translateY(-100px) rotate(360deg); opacity: 0; }
+  0%   { transform: translateY(0px) rotate(0deg); opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { transform: translateY(-120px) rotate(360deg); opacity: 0; }
 }
 
-/* Main layout */
+/* Layout */
 .login-wrapper {
   display: grid;
   grid-template-columns: 1fr 1fr;
   max-width: 1000px;
   width: 100%;
   margin: 24px;
-  gap: 0;
   position: relative;
   z-index: 2;
   border-radius: 28px;
@@ -101,7 +104,7 @@
   box-shadow: 0 40px 120px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.06);
 }
 
-/* Left brand side */
+/* Left brand */
 .login-brand {
   background: linear-gradient(145deg, #0f1829 0%, #131d35 50%, #0d1525 100%);
   padding: 48px 44px;
@@ -145,14 +148,17 @@
   align-items: center;
   justify-content: center;
   box-shadow: 0 8px 24px rgba(79,70,229,0.4);
+  flex-shrink: 0;
 }
 
+/* FIXED: TraderPro font — bigger, not stretched */
 .brand-name {
   font-family: 'Syne', sans-serif;
-  font-size: 22px;
+  font-size: 26px;
   font-weight: 800;
   color: #fff;
   letter-spacing: -0.5px;
+  line-height: 1;
 }
 
 .brand-content { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 40px 0; }
@@ -188,18 +194,29 @@
   border-top: 1px solid rgba(255,255,255,0.08);
 }
 
-.brand-stat { display: flex; flex-direction: column; gap: 2px; }
+.brand-stat { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
+
+/* FIXED: equal size for all stat values */
 .brand-stat-value {
   font-family: 'Syne', sans-serif;
-  font-size: 20px;
+  font-size: 22px;
   font-weight: 800;
   color: #fff;
   letter-spacing: -0.5px;
+  line-height: 1;
+  min-width: 48px;
 }
-.brand-stat-label { font-size: 11px; color: rgba(255,255,255,0.35); text-transform: uppercase; letter-spacing: 0.8px; }
+
+.brand-stat-label {
+  font-size: 11px;
+  color: rgba(255,255,255,0.35);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+}
+
 .brand-stat-divider { width: 1px; height: 32px; background: rgba(255,255,255,0.1); }
 
-/* Right form side */
+/* Right form */
 .login-form-side {
   background: #0d1525;
   display: flex;
@@ -236,21 +253,18 @@
   margin-bottom: 16px;
 }
 
+/* FIXED: same font size as "Вход в систему" heading */
 .login-card-title {
   font-family: 'Syne', sans-serif;
-  font-size: 26px;
+  font-size: 28px;
   font-weight: 800;
   color: #f0f4ff;
   letter-spacing: -0.8px;
   margin-bottom: 6px;
 }
 
-.login-card-sub {
-  font-size: 13px;
-  color: rgba(255,255,255,0.35);
-}
+.login-card-sub { font-size: 13px; color: rgba(255,255,255,0.35); }
 
-/* Form fields */
 .login-form { display: flex; flex-direction: column; gap: 16px; }
 
 .login-field { display: flex; flex-direction: column; gap: 6px; }
@@ -273,7 +287,6 @@
   border-radius: 14px;
   overflow: hidden;
   transition: all 0.2s;
-  position: relative;
 }
 
 .login-field.focused .login-field-wrap {
@@ -290,7 +303,6 @@
   flex-shrink: 0;
   transition: color 0.2s;
 }
-
 .login-field.focused .login-field-icon { color: #818cf8; }
 
 .login-input {
@@ -304,7 +316,6 @@
   color: #f0f4ff;
   width: 100%;
 }
-
 .login-input::placeholder { color: rgba(255,255,255,0.2); }
 
 .login-eye {
@@ -320,7 +331,6 @@
 }
 .login-eye:hover { color: rgba(255,255,255,0.6); }
 
-/* Submit button */
 .login-btn {
   margin-top: 8px;
   width: 100%;
@@ -334,7 +344,7 @@
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
-  box-shadow: 0 8px 24px rgba(79,70,229,0.35);
+  box-shadow: 0 0 20px rgba(79,70,229,0.4), 0 8px 24px rgba(79,70,229,0.35);
   position: relative;
   overflow: hidden;
 }
@@ -348,8 +358,25 @@
   transition: opacity 0.2s;
 }
 
+/* Glowing pulse on button */
+.login-btn::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
+  z-index: -1;
+  opacity: 0;
+  animation: btnGlow 2s ease-in-out infinite;
+}
+
+@keyframes btnGlow {
+  0%, 100% { opacity: 0; }
+  50% { opacity: 0.4; }
+}
+
 .login-btn:hover:not(:disabled)::before { opacity: 1; }
-.login-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 32px rgba(79,70,229,0.45); }
+.login-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 0 32px rgba(79,70,229,0.6), 0 12px 32px rgba(79,70,229,0.45); }
 .login-btn:active:not(:disabled) { transform: translateY(0); }
 .login-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
@@ -358,6 +385,8 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
+  position: relative;
+  z-index: 1;
 }
 
 .login-spinner {
@@ -370,7 +399,6 @@
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Footer */
 .login-footer {
   display: flex;
   align-items: center;
@@ -381,7 +409,6 @@
 .login-footer-line { flex: 1; height: 1px; background: rgba(255,255,255,0.07); }
 .login-footer-text { font-size: 11px; color: rgba(255,255,255,0.2); white-space: nowrap; }
 
-/* Mobile */
 @media (max-width: 700px) {
   .login-wrapper { grid-template-columns: 1fr; margin: 0; border-radius: 0; min-height: 100vh; }
   .login-brand { display: none; }

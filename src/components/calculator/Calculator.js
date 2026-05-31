@@ -1,8 +1,10 @@
 // src/components/calculator/Calculator.js
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import { TinkoffAPI, parseFutureInfo } from '../../services/tinkoff';
 import { calcTrade, formatCurrency, formatNumber } from '../../utils/calculator';
+import { addTrade } from '../../services/trades';
 import toast from 'react-hot-toast';
 import './Calculator.css';
 
@@ -20,7 +22,8 @@ function ResultRow({ label, value, color, large }) {
 }
 
 export default function Calculator() {
-  const { userProfile } = useAuth();
+  const { user, userProfile } = useAuth();
+  const navigate = useNavigate();
 
   const [form, setForm] = useState({
     ticker: '',
@@ -41,6 +44,9 @@ export default function Calculator() {
   const [instrumentInfo, setInstrumentInfo] = useState(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
   const [tapi, setTapi] = useState(null);
+  const [showOpenModal, setShowOpenModal] = useState(false);
+  const [openingTrade, setOpeningTrade] = useState(false);
+  const refreshTimer = useRef(null);
 
   useEffect(() => {
     if (userProfile?.tinkoffToken) {
@@ -60,7 +66,6 @@ export default function Calculator() {
 
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
 
-  // Auto-calculate on any change
   useEffect(() => {
     const r = calcTrade({
       entryPrice: form.entryPrice,
@@ -77,7 +82,6 @@ export default function Calculator() {
     setResult(r);
   }, [form]);
 
-  // Load instrument from Tinkoff
   const loadInstrument = useCallback(async () => {
     if (!tapi || !form.ticker) {
       toast.error('Введите тикер и API-токен в настройках');
@@ -93,25 +97,87 @@ export default function Calculator() {
       const info = parseFutureInfo(future);
       setInstrumentInfo(info);
 
-      // Get last price
       const price = await tapi.getLastPrice(info.figi);
+
+      // Fix: format numbers properly with dot not comma
+      const fmtNum = (n) => n ? String(n).replace(',', '.') : '';
 
       setForm(f => ({
         ...f,
         entryPrice: price ? String(price) : f.entryPrice,
         lot: String(info.lot || 1),
-        minStep: String(info.minPriceIncrement || 1),
-        minStepAmount: String(info.minPriceIncrementAmount || ''),
-        initialMargin: String(info.initialMarginOnBuy || info.initialMarginOnSell || ''),
+        minStep: fmtNum(info.minPriceIncrement) || '1',
+        minStepAmount: fmtNum(info.minPriceIncrementAmount) || '',
+        initialMargin: fmtNum(info.initialMargin) || '',
       }));
 
       toast.success(`${info.name} загружен. Цена: ${price}`);
+
+      // Auto-refresh price every 30 seconds
+      if (refreshTimer.current) clearInterval(refreshTimer.current);
+      refreshTimer.current = setInterval(async () => {
+        try {
+          const newPrice = await tapi.getLastPrice(info.figi);
+          if (newPrice) {
+            setForm(f => ({ ...f, entryPrice: String(newPrice) }));
+          }
+        } catch {}
+      }, 30000);
+
     } catch (err) {
       toast.error(`Ошибка: ${err.message}`);
     } finally {
       setLoadingPrice(false);
     }
   }, [tapi, form.ticker]);
+
+  useEffect(() => {
+    return () => { if (refreshTimer.current) clearInterval(refreshTimer.current); };
+  }, []);
+
+  // Open trade modal
+  const handleOpenTrade = () => {
+    if (!form.ticker || !form.entryPrice) {
+      toast.error('Заполните тикер и цену входа');
+      return;
+    }
+    setShowOpenModal(true);
+  };
+
+  const handleConfirmOpen = async () => {
+    if (!user) return;
+    setOpeningTrade(true);
+    try {
+      await addTrade(user.uid, {
+        ticker: form.ticker.toUpperCase(),
+        direction: form.direction === 'Лонг' ? 'long' : 'short',
+        date: new Date().toISOString().split('T')[0],
+        entryPrice: parseFloat(form.entryPrice),
+        exitPrice: null,
+        volume: result?.contracts || 1,
+        pnl: null,
+        commission: null,
+        status: 'open',
+        // Save all params for auto-calc on close
+        minStep: parseFloat(form.minStep) || 1,
+        minStepAmount: parseFloat(form.minStepAmount) || 0,
+        lot: parseFloat(form.lot) || 1,
+        commissionRate: parseFloat(form.commissionRate) || 0.0006,
+        initialMargin: parseFloat(form.initialMargin) || 0,
+        stopLoss: parseFloat(form.stopLoss) || null,
+        takeProfit: parseFloat(form.takeProfit) || null,
+        depositSize: parseFloat(form.depositSize) || 100000,
+        notes: '',
+      });
+      toast.success('Сделка открыта и добавлена в журнал!');
+      setShowOpenModal(false);
+      navigate('/journal');
+    } catch (err) {
+      toast.error('Ошибка сохранения');
+    } finally {
+      setOpeningTrade(false);
+    }
+  };
 
   const rrColor = !result ? '' : result.rr >= 2 ? 'var(--green)' : result.rr >= 1 ? 'var(--gold)' : 'var(--red)';
 
@@ -125,7 +191,6 @@ export default function Calculator() {
       <div className="calc-layout">
         {/* Input panel */}
         <div className="card calc-input-panel">
-          {/* Ticker row */}
           <div className="calc-section-title">Инструмент</div>
           <div className="calc-ticker-row">
             <div className="input-group" style={{flex:1}}>
@@ -134,11 +199,11 @@ export default function Calculator() {
                 className="input"
                 value={form.ticker}
                 onChange={e => set('ticker', e.target.value.toUpperCase())}
-                placeholder="SRZ4, MXZ4..."
+                placeholder="SRZ6, IMOEXF..."
                 style={{textTransform:'uppercase'}}
               />
             </div>
-            <div className="input-group" style={{width:110}}>
+            <div className="input-group" style={{width:120}}>
               <label className="input-label">&nbsp;</label>
               <button
                 className="btn btn-secondary w-full"
@@ -150,7 +215,6 @@ export default function Calculator() {
             </div>
           </div>
 
-          {/* Instrument info badge */}
           {instrumentInfo && (
             <div className="instrument-info">
               <span className="badge badge-purple">{instrumentInfo.ticker}</span>
@@ -160,10 +224,10 @@ export default function Calculator() {
                   Экспирация: {new Date(instrumentInfo.expirationDate).toLocaleDateString('ru-RU')}
                 </span>
               )}
+              <span className="text-xs text-muted" style={{color:'var(--green)'}}>🔄 авто-обновление 30с</span>
             </div>
           )}
 
-          {/* Direction */}
           <div className="calc-section-title" style={{marginTop:16}}>Направление</div>
           <div className="tabs" style={{marginBottom:16}}>
             {DIRECTIONS.map(d => (
@@ -177,7 +241,6 @@ export default function Calculator() {
             ))}
           </div>
 
-          {/* Price inputs */}
           <div className="calc-section-title">Цены</div>
           <div className="grid-3" style={{marginBottom:12}}>
             <div className="input-group">
@@ -188,26 +251,15 @@ export default function Calculator() {
             <div className="input-group">
               <label className="input-label">Стоп-лосс</label>
               <input className="input" type="number" value={form.stopLoss}
-                onChange={e => set('stopLoss', e.target.value)} placeholder="0"
-                style={{borderColor: form.stopLoss && form.entryPrice
-                  ? (form.direction === 'Лонг' ? parseFloat(form.stopLoss) < parseFloat(form.entryPrice) : parseFloat(form.stopLoss) > parseFloat(form.entryPrice))
-                    ? 'var(--red)' : 'var(--border-subtle)'
-                  : undefined}}
-              />
+                onChange={e => set('stopLoss', e.target.value)} placeholder="0" />
             </div>
             <div className="input-group">
               <label className="input-label">Тейк-профит</label>
               <input className="input" type="number" value={form.takeProfit}
-                onChange={e => set('takeProfit', e.target.value)} placeholder="0 (опц.)"
-                style={{borderColor: form.takeProfit && form.entryPrice
-                  ? (form.direction === 'Лонг' ? parseFloat(form.takeProfit) > parseFloat(form.entryPrice) : parseFloat(form.takeProfit) < parseFloat(form.entryPrice))
-                    ? 'var(--green)' : 'var(--border-subtle)'
-                  : undefined}}
-              />
+                onChange={e => set('takeProfit', e.target.value)} placeholder="0 (опц.)" />
             </div>
           </div>
 
-          {/* Risk */}
           <div className="calc-section-title">Управление риском</div>
           <div className="grid-2" style={{marginBottom:12}}>
             <div className="input-group">
@@ -225,11 +277,10 @@ export default function Calculator() {
             </div>
           </div>
 
-          {/* Contract params */}
           <div className="calc-section-title">Параметры контракта</div>
           <div className="grid-2" style={{marginBottom:4}}>
             <div className="input-group">
-              <label className="input-label">Лот (множитель)</label>
+              <label className="input-label">Лот (лотность)</label>
               <input className="input" type="number" value={form.lot}
                 onChange={e => set('lot', e.target.value)} placeholder="1" />
             </div>
@@ -250,17 +301,27 @@ export default function Calculator() {
             </div>
           </div>
           <div className="input-group" style={{marginTop:8}}>
-            <label className="input-label">Комиссия (доля, напр. 0.0006 = 0.06%)</label>
+            <label className="input-label">Комиссия (0.0006 = 0.06%)</label>
             <input className="input" type="number" step="0.0001" value={form.commissionRate}
               onChange={e => set('commissionRate', e.target.value)} />
           </div>
+
+          {/* Open trade button */}
+          {result && result.contracts > 0 && (
+            <button
+              className="btn btn-primary w-full"
+              style={{marginTop:16}}
+              onClick={handleOpenTrade}
+            >
+              📂 Открыть сделку в журнале
+            </button>
+          )}
         </div>
 
         {/* Results panel */}
         <div className="calc-results-panel">
           {result ? (
             <>
-              {/* Key metrics */}
               <div className="calc-key-metrics">
                 <div className={`calc-metric-card ${result.direction === 'long' ? 'green' : 'red'}`}>
                   <div className="calc-metric-label">Контракты</div>
@@ -274,12 +335,11 @@ export default function Calculator() {
                 </div>
                 <div className="calc-metric-card blue">
                   <div className="calc-metric-label">ГО требуется</div>
-                  <div className="calc-metric-value" style={{fontSize:20}}>{formatCurrency(result.totalMargin)}</div>
+                  <div className="calc-metric-value" style={{fontSize:18}}>{formatCurrency(result.totalMargin)}</div>
                   <div className="calc-metric-sub">{result.marginUsagePercent}% депозита</div>
                 </div>
               </div>
 
-              {/* Results list */}
               <div className="card">
                 <div className="section-title">
                   <div className="section-title-icon">📋</div>
@@ -291,25 +351,14 @@ export default function Calculator() {
                 <ResultRow label="Убыток на контракт" value={formatCurrency(result.lossPerContract)} color="var(--red)" />
                 <ResultRow label="Прибыль на контракт" value={result.profitPerContract > 0 ? formatCurrency(result.profitPerContract) : '—'} color="var(--green)" />
                 <ResultRow label="Комиссия" value={formatCurrency(result.commission)} />
-                <ResultRow label="Точка безубытка" value={formatNumber(result.breakeven, 1)} />
+                <ResultRow label="Точка безубытка" value={formatNumber(result.breakeven, 2)} />
                 <div className="divider" />
-                <ResultRow
-                  label="Макс. убыток (с комис.)"
-                  value={formatCurrency(result.totalLoss)}
-                  color="var(--red)"
-                  large
-                />
+                <ResultRow label="Макс. убыток (с комис.)" value={formatCurrency(result.totalLoss)} color="var(--red)" large />
                 {result.totalProfit > 0 && (
-                  <ResultRow
-                    label="Потенц. прибыль (с комис.)"
-                    value={formatCurrency(result.totalProfit)}
-                    color="var(--green)"
-                    large
-                  />
+                  <ResultRow label="Потенц. прибыль (с комис.)" value={formatCurrency(result.totalProfit)} color="var(--green)" large />
                 )}
               </div>
 
-              {/* Visual risk gauge */}
               <div className="card">
                 <div className="section-title">
                   <div className="section-title-icon">⚡</div>
@@ -317,15 +366,12 @@ export default function Calculator() {
                 </div>
                 <div className="risk-gauge-wrap">
                   <div className="risk-gauge-bar">
-                    <div
-                      className="risk-gauge-fill"
-                      style={{
-                        width: `${Math.min(result.marginUsagePercent, 100)}%`,
-                        background: result.marginUsagePercent > 50 ? 'linear-gradient(90deg,#f59e0b,#ef4444)' :
-                          result.marginUsagePercent > 25 ? 'linear-gradient(90deg,#4f46e5,#f59e0b)' :
-                          'var(--accent-gradient)'
-                      }}
-                    />
+                    <div className="risk-gauge-fill" style={{
+                      width: `${Math.min(result.marginUsagePercent, 100)}%`,
+                      background: result.marginUsagePercent > 50 ? 'linear-gradient(90deg,#f59e0b,#ef4444)' :
+                        result.marginUsagePercent > 25 ? 'linear-gradient(90deg,#4f46e5,#f59e0b)' :
+                        'var(--accent-gradient)'
+                    }} />
                   </div>
                   <div className="risk-gauge-labels">
                     <span className="text-sm text-secondary">ГО: {formatCurrency(result.totalMargin)}</span>
@@ -354,6 +400,42 @@ export default function Calculator() {
           )}
         </div>
       </div>
+
+      {/* Open Trade Modal */}
+      {showOpenModal && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowOpenModal(false)}>
+          <div className="modal" style={{maxWidth:460}}>
+            <div className="modal-header">
+              <h2 className="modal-title">📂 Открыть сделку</h2>
+              <button className="modal-close" onClick={() => setShowOpenModal(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <p className="text-secondary text-sm" style={{marginBottom:16}}>
+                Сделка будет добавлена в журнал со статусом «Открыта». Закроете её когда выйдете из позиции.
+              </p>
+
+              <div className="card" style={{padding:'16px', background:'var(--bg-surface-2)'}}>
+                <div className="stat-row"><span className="stat-row-label">Тикер</span><span className="stat-row-value">{form.ticker}</span></div>
+                <div className="stat-row"><span className="stat-row-label">Направление</span>
+                  <span className={`badge ${form.direction === 'Лонг' ? 'badge-green' : 'badge-red'}`}>{form.direction}</span>
+                </div>
+                <div className="stat-row"><span className="stat-row-label">Цена входа</span><span className="stat-row-value">{form.entryPrice}</span></div>
+                <div className="stat-row"><span className="stat-row-label">Стоп-лосс</span><span className="stat-row-value text-red">{form.stopLoss || '—'}</span></div>
+                <div className="stat-row"><span className="stat-row-label">Тейк-профит</span><span className="stat-row-value text-green">{form.takeProfit || '—'}</span></div>
+                <div className="stat-row"><span className="stat-row-label">Контрактов</span><span className="stat-row-value">{result?.contracts || 1}</span></div>
+                <div className="stat-row"><span className="stat-row-label">ГО</span><span className="stat-row-value">{formatCurrency(result?.totalMargin)}</span></div>
+                <div className="stat-row"><span className="stat-row-label">Макс. риск</span><span className="stat-row-value text-red">{formatCurrency(result?.totalLoss)}</span></div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setShowOpenModal(false)}>Отмена</button>
+              <button className="btn btn-primary" onClick={handleConfirmOpen} disabled={openingTrade}>
+                {openingTrade ? <><div className="spinner" style={{width:14,height:14}}/> Сохранение...</> : '✅ Открыть сделку'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
