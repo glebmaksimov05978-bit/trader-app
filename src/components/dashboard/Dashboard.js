@@ -120,21 +120,40 @@ export default function Dashboard() {
             <div className="section-title-icon">📈</div>
             Кривая капитала
           </div>
-          {equity.length > 1 ? (
+          {equity.length > 1 ? (() => {
+            const balances = equity.map(e => e.balance).filter(Boolean);
+            const minB = Math.min(...balances);
+            const maxB = Math.max(...balances);
+            const padding = Math.max((maxB - minB) * 0.3, maxB * 0.005);
+            const yMin = Math.floor((minB - padding) / 100) * 100;
+            const yMax = Math.ceil((maxB + padding) / 100) * 100;
+            return (
             <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={equity} margin={{top:5, right:10, bottom:5, left:0}}>
+              <LineChart data={equity} margin={{top:8, right:10, bottom:5, left:0}}>
+                <defs>
+                  <linearGradient id="equityGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#4f46e5" stopOpacity={0.3}/>
+                    <stop offset="100%" stopColor="#4f46e5" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
                 <XAxis dataKey="date" tick={{fill:'var(--text-muted)', fontSize:11}} tickLine={false} />
-                <YAxis tick={{fill:'var(--text-muted)', fontSize:11}} tickLine={false} axisLine={false}
-                  tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
+                <YAxis
+                  tick={{fill:'var(--text-muted)', fontSize:11}} tickLine={false} axisLine={false}
+                  domain={[yMin, yMax]}
+                  tickFormatter={(v) => `${(v/1000).toFixed(1)}k`}
+                  width={40}
+                />
                 <Tooltip
                   contentStyle={{background:'var(--bg-surface-3)', border:'1px solid var(--border-medium)', borderRadius:12, fontSize:12}}
                   formatter={(v) => [formatCurrency(v), 'Баланс']}
                 />
-                <Line type="monotone" dataKey="balance" stroke="var(--accent-primary)" strokeWidth={2}
-                  dot={false} activeDot={{r:4, fill:'var(--accent-primary)'}} />
+                <Line type="monotone" dataKey="balance" stroke="#818cf8" strokeWidth={2.5}
+                  dot={false} activeDot={{r:5, fill:'#818cf8', strokeWidth:2, stroke:'#fff'}} />
               </LineChart>
             </ResponsiveContainer>
+            );
+          })()
           ) : (
             <div className="empty-state" style={{padding:'40px 20px'}}>
               <div className="empty-state-icon">📊</div>

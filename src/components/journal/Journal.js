@@ -19,7 +19,9 @@ export default function Journal() {
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   // Быстрое закрытие сделки
-  const [closeModal, setCloseModal] = useState(null); // trade object
+  const [closeModal, setCloseModal] = useState(null);
+  // Кастомный confirm вместо window.confirm
+  const [confirmDelete, setConfirmDelete] = useState(null); // trade.id // trade object
   const [closePrice, setClosePrice] = useState('');
   const [closing, setClosing] = useState(false);
 
@@ -53,9 +55,14 @@ export default function Journal() {
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm('Удалить сделку?')) return;
-    await deleteTrade(id);
-    toast.success('Удалено');
+    setConfirmDelete(id);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!confirmDelete) return;
+    await deleteTrade(confirmDelete);
+    toast.success('Сделка удалена');
+    setConfirmDelete(null);
     await load();
   };
 
@@ -132,12 +139,17 @@ export default function Journal() {
     })
     .filter(t => !search || t.ticker?.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
-      // Сортировка: открытые сверху, закрытые по дате закрытия (новые первыми)
+      // Открытые всегда сверху
       if (a.status === 'open' && b.status !== 'open') return -1;
       if (b.status === 'open' && a.status !== 'open') return 1;
-      const dateA = a.closeDate ? new Date(a.closeDate) : (a.date?.seconds ? new Date(a.date.seconds*1000) : new Date(a.date || 0));
-      const dateB = b.closeDate ? new Date(b.closeDate) : (b.date?.seconds ? new Date(b.date.seconds*1000) : new Date(b.date || 0));
-      return dateB - dateA;
+      // Для закрытых — по точному времени закрытия (новые первыми)
+      const getTs = (t) => {
+        if (t.closeDate) return new Date(t.closeDate).getTime();
+        if (t.date?.seconds) return t.date.seconds * 1000;
+        if (t.date) return new Date(t.date).getTime();
+        return 0;
+      };
+      return getTs(b) - getTs(a);
     });
 
   const fmtDate = (d) => {
@@ -395,6 +407,44 @@ export default function Journal() {
                 style={{background:'linear-gradient(135deg,#10b981,#059669)'}}
               >
                 {closing ? 'Закрываем...' : '✅ Закрыть сделку'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Кастомный модал подтверждения удаления */}
+      {confirmDelete && (
+        <div className="modal-overlay" onClick={() => setConfirmDelete(null)}>
+          <div className="modal" style={{maxWidth:360}} onClick={e => e.stopPropagation()}>
+            <div className="modal-header" style={{borderBottom:'1px solid rgba(239,68,68,0.2)'}}>
+              <h3 className="modal-title" style={{display:'flex',alignItems:'center',gap:8}}>
+                <span style={{
+                  width:32,height:32,borderRadius:'50%',
+                  background:'rgba(239,68,68,0.15)',
+                  display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,
+                }}>🗑</span>
+                Удалить сделку?
+              </h3>
+              <button className="modal-close" onClick={() => setConfirmDelete(null)}>✕</button>
+            </div>
+            <div style={{padding:'16px 0', color:'var(--text-muted)', fontSize:14, lineHeight:1.6}}>
+              Это действие нельзя отменить. Сделка будет удалена из журнала навсегда.
+            </div>
+            <div className="modal-footer" style={{marginTop:8}}>
+              <button className="btn btn-ghost" onClick={() => setConfirmDelete(null)}>
+                Отмена
+              </button>
+              <button
+                className="btn"
+                onClick={handleConfirmDelete}
+                style={{
+                  background:'linear-gradient(135deg,#ef4444,#dc2626)',
+                  color:'#fff', border:'none',
+                  boxShadow:'0 4px 12px rgba(239,68,68,0.3)',
+                }}
+              >
+                🗑 Удалить
               </button>
             </div>
           </div>

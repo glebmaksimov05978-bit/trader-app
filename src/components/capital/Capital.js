@@ -93,10 +93,15 @@ export default function Capital() {
   // Current day PnL from journal
   const today = new Date().toDateString();
   const todayTrades = trades.filter(t => {
-    const d = t.date?.seconds ? new Date(t.date.seconds * 1000) : new Date(t.date);
-    return d.toDateString() === today && t.status === 'closed';
+    if (t.status !== 'closed') return false;
+    // Используем closeDate если есть (точное время закрытия), иначе дату сделки
+    const closeTs = t.closeDate
+      ? new Date(t.closeDate)
+      : (t.date?.seconds ? new Date(t.date.seconds * 1000) : new Date(t.date || 0));
+    return closeTs.toDateString() === today;
   });
   const todayPnl = todayTrades.reduce((s, t) => s + (t.pnl || 0), 0);
+  // Лимит убытка = суммарный P&L дня ушёл в минус
   const todayLossUsed = Math.abs(Math.min(todayPnl, 0));
   const todayLimitUsedPct = Math.min((todayLossUsed / dailyLossRub) * 100, 100);
 
