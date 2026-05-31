@@ -46,6 +46,7 @@ export default function Calculator() {
   const [tapi, setTapi] = useState(null);
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [openingTrade, setOpeningTrade] = useState(false);
+  const [manualContracts, setManualContracts] = useState();
   const refreshTimer = useRef(null);
 
   useEffect(() => {
@@ -154,7 +155,7 @@ export default function Calculator() {
         date: new Date().toISOString().split('T')[0],
         entryPrice: parseFloat(form.entryPrice),
         exitPrice: null,
-        volume: result?.contracts || 1,
+        volume: effectiveContracts,
         pnl: null,
         commission: null,
         status: 'open',
@@ -179,6 +180,7 @@ export default function Calculator() {
     }
   };
 
+  const effectiveContracts = manualContracts ? parseInt(manualContracts) : (result?.contracts || 1);
   const rrColor = !result ? '' : result.rr >= 2 ? 'var(--green)' : result.rr >= 1 ? 'var(--gold)' : 'var(--red)';
 
   return (
@@ -306,26 +308,15 @@ export default function Calculator() {
               onChange={e => set('commissionRate', e.target.value)} />
           </div>
 
-          {/* Action buttons */}
+          {/* Open trade button */}
           {result && result.contracts > 0 && (
-            <div style={{display:'flex', flexDirection:'column', gap:8, marginTop:16}}>
-              <button
-                className="btn btn-primary w-full"
-                onClick={handleOpenTrade}
-              >
-                📂 Открыть сделку в журнале
-              </button>
-              <button
-                className="btn btn-secondary w-full"
-                onClick={() => {
-                  const msg = `Оцени эту сделку:\nТикер: ${form.ticker}\nНаправление: ${form.direction}\nВход: ${form.entryPrice}\nСтоп-лосс: ${form.stopLoss}\nТейк-профит: ${form.takeProfit || 'не указан'}\nКонтрактов: ${result.contracts}\nРиск: ${formatCurrency(result.riskAmount)}\nR/R: 1:${formatNumber(result.rr,1)}\nГО: ${formatCurrency(result.totalMargin)}\nКомиссия: ${formatCurrency(result.commission)}\n\nСтоит ли входить? Какие риски?`;
-                  sessionStorage.setItem('advisorQuestion', msg);
-                  navigate('/advisor');
-                }}
-              >
-                🤖 Отправить в AI советник
-              </button>
-            </div>
+            <button
+              className="btn btn-primary w-full"
+              style={{marginTop:16}}
+              onClick={handleOpenTrade}
+            >
+              📂 Открыть сделку в журнале
+            </button>
           )}
         </div>
 
@@ -334,10 +325,31 @@ export default function Calculator() {
           {result ? (
             <>
               <div className="calc-key-metrics">
-                <div className={`calc-metric-card ${result.direction === 'long' ? 'green' : 'red'}`}>
+                <div className={`calc-metric-card ${result.direction === 'long' ? 'green' : 'red'}`} style={{position:'relative'}}>
                   <div className="calc-metric-label">Контракты</div>
-                  <div className="calc-metric-value">{result.contracts}</div>
-                  <div className="calc-metric-sub">шт.</div>
+                  <div style={{display:'flex', alignItems:'center', gap:6}}>
+                    <div className="calc-metric-value" style={{color: manualContracts ? 'var(--gold)' : ''}}>{effectiveContracts}</div>
+                    <div className="calc-metric-sub">шт.</div>
+                  </div>
+                  <div style={{marginTop:6}}>
+                    <input
+                      type="number"
+                      min="1"
+                      placeholder={`авто: ${result.contracts}`}
+                      value={manualContracts}
+                      onChange={e => setManualContracts(e.target.value)}
+                      style={{
+                        width:'100%', background:'rgba(255,255,255,0.08)',
+                        border:'1px solid rgba(255,255,255,0.15)', borderRadius:8,
+                        padding:'4px 8px', fontSize:12, color:'var(--text-primary)',
+                        outline:'none', fontFamily:'inherit',
+                      }}
+                      title="Оставьте пустым для авторасчёта"
+                    />
+                    {manualContracts && (
+                      <div style={{fontSize:10, color:'var(--gold)', marginTop:3}}>✏️ Ручной режим</div>
+                    )}
+                  </div>
                 </div>
                 <div className={`calc-metric-card ${result.rr >= 2 ? 'green' : result.rr >= 1 ? 'gold' : 'red'}`}>
                   <div className="calc-metric-label">Risk/Reward</div>
@@ -433,7 +445,7 @@ export default function Calculator() {
                 <div className="stat-row"><span className="stat-row-label">Цена входа</span><span className="stat-row-value">{form.entryPrice}</span></div>
                 <div className="stat-row"><span className="stat-row-label">Стоп-лосс</span><span className="stat-row-value text-red">{form.stopLoss || '—'}</span></div>
                 <div className="stat-row"><span className="stat-row-label">Тейк-профит</span><span className="stat-row-value text-green">{form.takeProfit || '—'}</span></div>
-                <div className="stat-row"><span className="stat-row-label">Контрактов</span><span className="stat-row-value">{result?.contracts || 1}</span></div>
+                <div className="stat-row"><span className="stat-row-label">Контрактов</span><span className="stat-row-value" style={{color: manualContracts ? 'var(--gold)' : ''}}>{effectiveContracts} {manualContracts ? '(ручной)' : '(авто)'}</span></div>
                 <div className="stat-row"><span className="stat-row-label">ГО</span><span className="stat-row-value">{formatCurrency(result?.totalMargin)}</span></div>
                 <div className="stat-row"><span className="stat-row-label">Макс. риск</span><span className="stat-row-value text-red">{formatCurrency(result?.totalLoss)}</span></div>
               </div>

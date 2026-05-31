@@ -11,10 +11,11 @@ const NAV_ITEMS = [
   { path: '/journal', icon: '📓', label: 'Журнал' },
   { path: '/capital', icon: '💰', label: 'Капитал' },
   { path: '/advisor', icon: '🤖', label: 'AI Советник' },
+  { path: '/settings', icon: '⚙️', label: 'Настройки' },
 ];
 
 const ADMIN_ITEMS = [
-  { path: '/admin', icon: '⚙️', label: 'Админ-панель' },
+  { path: '/admin', icon: '🛡️', label: 'Админ-панель' },
 ];
 
 export default function Sidebar() {
@@ -78,9 +79,6 @@ export default function Sidebar() {
 
           {profileOpen && (
             <div className="profile-dropdown">
-              <NavLink to="/settings" className="dropdown-item" onClick={() => setProfileOpen(false)}>
-                ⚙️ Настройки
-              </NavLink>
               <div className="dropdown-divider" />
               <button className="dropdown-item danger" onClick={logout}>
                 🚪 Выйти

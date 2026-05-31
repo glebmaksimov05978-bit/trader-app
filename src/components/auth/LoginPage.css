@@ -54,6 +54,8 @@
   border-radius: 28px;
   overflow: hidden;
   box-shadow: 0 40px 120px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.06);
+  /* Фиксированная высота для выравнивания */
+  min-height: 520px;
 }
 
 .login-brand {
@@ -109,7 +111,6 @@
 
 .brand-stat { display:flex; flex-direction:column; gap:6px; align-items:flex-start; }
 
-/* AI and 24/7 — одинаковый размер */
 .brand-stat-value {
   font-family: 'DM Sans', sans-serif;
   font-size: 24px; font-weight: 700; color: #fff;
@@ -117,7 +118,6 @@
   display: block; min-width: 48px;
 }
 
-/* Знак бесконечности через SVG — всегда правильный размер */
 .brand-infinity {
   width: 48px;
   height: 24px;
@@ -131,22 +131,23 @@
 }
 .brand-stat-divider { width:1px; height:36px; background:rgba(255,255,255,0.12); flex-shrink:0; }
 
-/* Правая часть — форма по центру */
+/* =====================================================
+   ПРАВАЯ ЧАСТЬ — ФОРМА СТРОГО ПО ЦЕНТРУ
+   ===================================================== */
 .login-form-side {
   background: #0d1525;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 48px 44px;
+  align-items: center;       /* вертикальный центр */
+  justify-content: center;   /* горизонтальный центр */
+  padding: 40px 44px;
 }
 
 .login-card {
   width: 100%;
   max-width: 340px;
-  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;      /* поля на всю ширину */
   animation: cardEntrance 0.6s cubic-bezier(0.16,1,0.3,1) forwards;
 }
 
@@ -155,7 +156,7 @@
   to   { opacity:1; transform:translateY(0); }
 }
 
-.login-card-header { margin-bottom:32px; text-align:center; }
+.login-card-header { margin-bottom:28px; text-align:center; }
 
 .login-card-badge {
   display:inline-flex; align-items:center; padding:4px 12px;
@@ -170,7 +171,6 @@
 }
 .login-card-sub { font-size:13px; color:rgba(255,255,255,0.35); }
 
-/* Форма — поля по центру на всю ширину */
 .login-form { display:flex; flex-direction:column; gap:16px; width:100%; }
 
 .login-field { display:flex; flex-direction:column; gap:6px; width:100%; }
@@ -181,7 +181,6 @@
 }
 .login-field.focused .login-field-label { color:#818cf8; }
 
-/* Поле ввода — на всю ширину карточки */
 .login-field-wrap {
   display:flex; align-items:center;
   background:rgba(255,255,255,0.05);
@@ -216,7 +215,6 @@
 }
 .login-eye:hover { color:rgba(255,255,255,0.7); }
 
-/* Кнопка с пульсирующим свечением */
 .login-btn {
   margin-top:8px; width:100%; padding:15px; border:none; border-radius:14px;
   background:linear-gradient(135deg,#4f46e5 0%,#7c3aed 100%);
@@ -254,5 +252,5 @@
 @media (max-width:700px) {
   .login-wrapper { grid-template-columns:1fr; margin:0; border-radius:0; min-height:100vh; }
   .login-brand { display:none; }
-  .login-form-side { padding:40px 28px; padding-top:80px; }
+  .login-form-side { padding:40px 28px; }
 }
