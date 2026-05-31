@@ -96,8 +96,8 @@ export default function LoginPage() {
             <div className="brand-stat-divider" />
             <div className="brand-stat">
               <svg className="brand-infinity" viewBox="0 0 48 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M24 12C24 12 19 4 12 4C5 4 2 8 2 12C2 16 5 20 12 20C19 20 24 12 24 12Z" stroke="white" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
-                <path d="M24 12C24 12 29 4 36 4C43 4 46 8 46 12C46 16 43 20 36 20C29 20 24 12 24 12Z" stroke="white" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
+                <path d="M24 12C24 12 19 4 12 4C5 4 2 8 2 12C2 16 5 20 12 20C19 20 24 12 24 12Z" stroke="white" strokeWidth="3.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M24 12C24 12 29 4 36 4C43 4 46 8 46 12C46 16 43 20 36 20C29 20 24 12 24 12Z" stroke="white" strokeWidth="3.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
               </svg>
               <span className="brand-stat-label">Сделок</span>
             </div>
