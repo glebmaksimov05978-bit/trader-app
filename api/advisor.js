@@ -1,4 +1,4 @@
-// api/advisor.js — Vercel Serverless Function
+// api/advisor.js — Vercel Serverless Function with image support
 export const config = { runtime: 'edge' };
 
 export default async function handler(req) {
@@ -8,6 +8,16 @@ export default async function handler(req) {
 
   try {
     const { messages, systemPrompt } = await req.json();
+
+    // Convert messages — support both text and image content
+    const formattedMessages = messages.map(m => {
+      // If content is array (has image), pass as-is
+      if (Array.isArray(m.content)) {
+        return { role: m.role, content: m.content };
+      }
+      // Otherwise plain text
+      return { role: m.role, content: m.content };
+    });
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
@@ -20,10 +30,7 @@ export default async function handler(req) {
         model: 'claude-opus-4-6',
         max_tokens: 2048,
         system: systemPrompt,
-        messages: messages.map(m => ({
-          role: m.role,
-          content: m.content,
-        })),
+        messages: formattedMessages,
       }),
     });
 
