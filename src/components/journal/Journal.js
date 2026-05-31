@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 import TradeModal from './TradeModal';
 import './Journal.css';
 
-const COLS = ['Тикер', 'Дата', 'Направление', 'Вход', 'Выход', 'Объём', 'P&L', 'Статус', ''];
+const COLS = ['Тикер', 'Дата', 'Направление', 'Вход', 'Выход', 'Объём', 'P&L', '% депоз.', 'Статус', ''];
 
 export default function Journal() {
   const { user, userProfile } = useAuth();
@@ -22,6 +22,8 @@ export default function Journal() {
   const [closeModal, setCloseModal] = useState(null); // trade object
   const [closePrice, setClosePrice] = useState('');
   const [closing, setClosing] = useState(false);
+
+  const deposit = userProfile?.depositSize || 100000;
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -128,7 +130,15 @@ export default function Journal() {
       if (filter === 'closed') return t.status === 'closed';
       return true;
     })
-    .filter(t => !search || t.ticker?.toLowerCase().includes(search.toLowerCase()));
+    .filter(t => !search || t.ticker?.toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => {
+      // Сортировка: открытые сверху, закрытые по дате закрытия (новые первыми)
+      if (a.status === 'open' && b.status !== 'open') return -1;
+      if (b.status === 'open' && a.status !== 'open') return 1;
+      const dateA = a.closeDate ? new Date(a.closeDate) : (a.date?.seconds ? new Date(a.date.seconds*1000) : new Date(a.date || 0));
+      const dateB = b.closeDate ? new Date(b.closeDate) : (b.date?.seconds ? new Date(b.date.seconds*1000) : new Date(b.date || 0));
+      return dateB - dateA;
+    });
 
   const fmtDate = (d) => {
     if (!d) return '—';
@@ -229,6 +239,16 @@ export default function Journal() {
                       ) : <span className="text-muted">—</span>}
                     </td>
                     <td>
+                      {trade.pnl !== undefined && trade.pnl !== null && deposit ? (
+                        <span style={{
+                          color: trade.pnl >= 0 ? 'var(--green)' : 'var(--red)',
+                          fontWeight: 600, fontSize: 13,
+                        }}>
+                          {trade.pnl >= 0 ? '+' : ''}{((trade.pnl / deposit) * 100).toFixed(2)}%
+                        </span>
+                      ) : <span className="text-muted">—</span>}
+                    </td>
+                    <td>
                       <span className={`badge ${trade.status==='open' ? 'badge-blue' : trade.pnl >= 0 ? 'badge-green' : 'badge-red'}`}>
                         {trade.status==='open' ? 'Открыта' : 'Закрыта'}
                       </span>
@@ -308,18 +328,35 @@ export default function Journal() {
               </div>
 
               {/* Поле цены выхода */}
-              <div className="form-group">
-                <label className="form-label">Цена выхода *</label>
-                <input
-                  className="input"
-                  type="number"
-                  step="any"
-                  placeholder="Введите цену закрытия"
-                  value={closePrice}
-                  onChange={e => setClosePrice(e.target.value)}
-                  autoFocus
-                  style={{fontSize:16, fontWeight:600}}
-                />
+              <div style={{marginBottom:4}}>
+                <label style={{
+                  display:'block', fontSize:12, fontWeight:500,
+                  color:'rgba(255,255,255,0.4)', letterSpacing:'0.3px', marginBottom:6,
+                }}>
+                  Цена выхода *
+                </label>
+                <div style={{
+                  display:'flex', alignItems:'center',
+                  background:'rgba(255,255,255,0.05)',
+                  border:'1px solid rgba(79,70,229,0.4)',
+                  borderRadius:14, overflow:'hidden',
+                  boxShadow:'0 0 0 3px rgba(79,70,229,0.12)',
+                }}>
+                  <input
+                    type="number"
+                    step="any"
+                    placeholder="Введите цену закрытия"
+                    value={closePrice}
+                    onChange={e => setClosePrice(e.target.value)}
+                    autoFocus
+                    style={{
+                      flex:1, background:'none', border:'none', outline:'none',
+                      padding:'14px 14px 14px 0',
+                      fontSize:15, fontFamily:'inherit',
+                      color:'#f0f4ff', fontWeight:600,
+                    }}
+                  />
+                </div>
               </div>
 
               {/* Предпросмотр P&L */}
