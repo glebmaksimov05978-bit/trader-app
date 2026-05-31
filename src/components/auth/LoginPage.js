@@ -24,16 +24,16 @@ export default function LoginPage() {
       navigate('/');
     } catch (err) {
       const msg =
-        err.code === 'auth/invalid-credential'
-          ? 'Неверный логин или пароль'
-          : err.code === 'auth/too-many-requests'
-          ? 'Слишком много попыток. Подождите немного.'
-          : 'Ошибка входа. Проверьте данные.';
+        err.code === 'auth/invalid-credential' ? 'Неверный логин или пароль' :
+        err.code === 'auth/too-many-requests' ? 'Слишком много попыток. Подождите.' :
+        'Ошибка входа. Проверьте данные.';
       toast.error(msg);
     } finally {
       setLoading(false);
     }
   };
+
+  const particles = Array.from({length: 20}, (_, i) => i);
 
   return (
     <div className="login-page">
@@ -44,11 +44,19 @@ export default function LoginPage() {
         <div className="bg-grid" />
       </div>
 
-      {[...Array(12)].map((_, i) => (
-        <div key={i} className={`particle particle-${i + 1}`} />
+      {particles.map((i) => (
+        <div key={i} className={`particle particle-${(i % 12) + 1}`} style={{
+          left: `${5 + (i * 4.7) % 90}%`,
+          top: `${10 + (i * 7.3) % 80}%`,
+          animationDuration: `${9 + (i * 1.3) % 8}s`,
+          animationDelay: `-${(i * 0.7) % 10}s`,
+          width: `${3 + (i % 3)}px`,
+          height: `${3 + (i % 3)}px`,
+        }} />
       ))}
 
       <div className="login-wrapper">
+        {/* Left brand */}
         <div className="login-brand">
           <div className="brand-logo">
             <div className="brand-logo-icon">
@@ -89,6 +97,7 @@ export default function LoginPage() {
           </div>
         </div>
 
+        {/* Right form */}
         <div className="login-form-side">
           <div className="login-card">
             <div className="login-card-header">
@@ -98,7 +107,7 @@ export default function LoginPage() {
             </div>
 
             <form onSubmit={handleSubmit} className="login-form">
-              <div className={`login-field ${focused === 'user' ? 'focused' : ''} ${username ? 'has-value' : ''}`}>
+              <div className={`login-field ${focused === 'user' ? 'focused' : ''}`}>
                 <label className="login-field-label">Логин</label>
                 <div className="login-field-wrap">
                   <div className="login-field-icon">
@@ -121,7 +130,7 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              <div className={`login-field ${focused === 'pass' ? 'focused' : ''} ${password ? 'has-value' : ''}`}>
+              <div className={`login-field ${focused === 'pass' ? 'focused' : ''}`}>
                 <label className="login-field-label">Пароль</label>
                 <div className="login-field-wrap">
                   <div className="login-field-icon">
@@ -159,11 +168,11 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              <button type="submit" className={`login-btn ${loading ? 'loading' : ''}`} disabled={loading || !username || !password}>
+              <button type="submit" className={`login-btn ${loading ? 'loading' : ''}`}
+                disabled={loading || !username || !password}>
                 {loading ? (
                   <span className="login-btn-content">
-                    <span className="login-spinner" />
-                    Вход...
+                    <span className="login-spinner" /> Вход...
                   </span>
                 ) : (
                   <span className="login-btn-content">

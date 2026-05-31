@@ -306,15 +306,26 @@ export default function Calculator() {
               onChange={e => set('commissionRate', e.target.value)} />
           </div>
 
-          {/* Open trade button */}
+          {/* Action buttons */}
           {result && result.contracts > 0 && (
-            <button
-              className="btn btn-primary w-full"
-              style={{marginTop:16}}
-              onClick={handleOpenTrade}
-            >
-              📂 Открыть сделку в журнале
-            </button>
+            <div style={{display:'flex', flexDirection:'column', gap:8, marginTop:16}}>
+              <button
+                className="btn btn-primary w-full"
+                onClick={handleOpenTrade}
+              >
+                📂 Открыть сделку в журнале
+              </button>
+              <button
+                className="btn btn-secondary w-full"
+                onClick={() => {
+                  const msg = `Оцени эту сделку:\nТикер: ${form.ticker}\nНаправление: ${form.direction}\nВход: ${form.entryPrice}\nСтоп-лосс: ${form.stopLoss}\nТейк-профит: ${form.takeProfit || 'не указан'}\nКонтрактов: ${result.contracts}\nРиск: ${formatCurrency(result.riskAmount)}\nR/R: 1:${formatNumber(result.rr,1)}\nГО: ${formatCurrency(result.totalMargin)}\nКомиссия: ${formatCurrency(result.commission)}\n\nСтоит ли входить? Какие риски?`;
+                  sessionStorage.setItem('advisorQuestion', msg);
+                  navigate('/advisor');
+                }}
+              >
+                🤖 Отправить в AI советник
+              </button>
+            </div>
           )}
         </div>
 

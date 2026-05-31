@@ -18,6 +18,17 @@ export default function Advisor() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Receive question from calculator
+  useEffect(() => {
+    const q = sessionStorage.getItem('advisorQuestion');
+    if (q) {
+      sessionStorage.removeItem('advisorQuestion');
+      setMode('chat');
+      setTimeout(() => sendMessage(q), 300);
+    }
+  // eslint-disable-next-line
+  }, []);
   const [trades, setTrades] = useState([]);
   const [stats, setStats] = useState(null);
   const [selectedTrade, setSelectedTrade] = useState('');

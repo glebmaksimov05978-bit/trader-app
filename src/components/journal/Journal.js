@@ -7,8 +7,6 @@ import toast from 'react-hot-toast';
 import TradeModal from './TradeModal';
 import './Journal.css';
 
-const COLS = ["Тикер", "Дата", "Направление", "Вход", "Выход", "Объём", "P&L", "% деп", "Статус", ""];
-
 export default function Journal() {
   const { user, userProfile } = useAuth();
   const [trades, setTrades] = useState([]);
@@ -16,7 +14,7 @@ export default function Journal() {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editTrade, setEditTrade] = useState(null);
-  const [filter, setFilter] = useState('all'); // all | long | short | open | closed
+  const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
 
   const load = useCallback(async () => {
@@ -86,7 +84,7 @@ export default function Journal() {
         </button>
       </div>
 
-      {/* Stats strip */}
+      {/* Stats */}
       {stats && (
         <div className="grid-4" style={{marginBottom:24}}>
           <div className="kpi-card green">
@@ -116,7 +114,7 @@ export default function Journal() {
 
       {/* Filters */}
       <div className="journal-toolbar" style={{marginBottom:16}}>
-        <div className="tabs" style={{maxWidth:400}}>
+        <div className="tabs" style={{maxWidth:420}}>
           {[['all','Все'],['open','Открытые'],['closed','Закрытые'],['long','Лонг'],['short','Шорт']].map(([v,l]) => (
             <button key={v} className={`tab ${filter===v?'active':''}`} onClick={() => setFilter(v)}>{l}</button>
           ))}
@@ -138,13 +136,24 @@ export default function Journal() {
           <div className="empty-state">
             <div className="empty-state-icon">📓</div>
             <div className="empty-state-title">Нет сделок</div>
-            <div className="empty-state-text">Нажмите «Добавить сделку», чтобы начать вести журнал</div>
+            <div className="empty-state-text">Нажмите «Добавить сделку» или откройте сделку из калькулятора</div>
           </div>
         ) : (
           <div className="table-wrapper">
             <table className="table">
               <thead>
-                <tr>{COLS.map(c => <th key={c}>{c}</th>)}</tr>
+                <tr>
+                  <th>Тикер</th>
+                  <th>Дата</th>
+                  <th>Направление</th>
+                  <th>Вход</th>
+                  <th>Выход</th>
+                  <th>Объём</th>
+                  <th>P&amp;L</th>
+                  <th>% деп.</th>
+                  <th>Статус</th>
+                  <th></th>
+                </tr>
               </thead>
               <tbody>
                 {filtered.map(trade => (
@@ -156,13 +165,20 @@ export default function Journal() {
                         {trade.direction === 'long' ? '📈 Лонг' : '📉 Шорт'}
                       </span>
                     </td>
-                    <td>{formatNumber(trade.entryPrice, 1)}</td>
+                    <td>{trade.entryPrice ? formatNumber(trade.entryPrice, 1) : '—'}</td>
                     <td>{trade.exitPrice ? formatNumber(trade.exitPrice, 1) : <span className="text-muted">—</span>}</td>
                     <td>{trade.volume || '—'}</td>
                     <td>
                       {trade.pnl !== undefined && trade.pnl !== null ? (
-                        <span style={{color: trade.pnl >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 600}}>
+                        <span style={{color: trade.pnl >= 0 ? 'var(--green)' : 'var(--red)', fontWeight:600}}>
                           {trade.pnl >= 0 ? '+' : ''}{formatCurrency(Math.round(trade.pnl))}
+                        </span>
+                      ) : <span className="text-muted">—</span>}
+                    </td>
+                    <td>
+                      {trade.pnlPercent !== undefined && trade.pnlPercent !== null ? (
+                        <span style={{color: trade.pnlPercent >= 0 ? 'var(--green)' : 'var(--red)', fontWeight:600, fontSize:12}}>
+                          {trade.pnlPercent >= 0 ? '+' : ''}{Number(trade.pnlPercent).toFixed(2)}%
                         </span>
                       ) : <span className="text-muted">—</span>}
                     </td>
@@ -186,10 +202,11 @@ export default function Journal() {
       </div>
 
       {modalOpen && (
-        <TradeModal defaultDeposit={userProfile?.depositSize || 100000}
+        <TradeModal
           trade={editTrade}
           onSave={handleSave}
           onClose={() => { setModalOpen(false); setEditTrade(null); }}
+          defaultDeposit={userProfile?.depositSize || 100000}
         />
       )}
     </div>
