@@ -184,6 +184,9 @@
   line-height: 1;
   letter-spacing: 0;
   font-style: normal;
+  display: flex;
+  align-items: center;
+  min-height: 28px;
 }
 
 .brand-stat-label {
@@ -310,6 +313,13 @@
   font-family: 'DM Sans', sans-serif;
   color: #f0f4ff;
   width: 100%;
+  text-align: left;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 340px;
+  margin: 0 auto;
 }
 
 .login-input::placeholder { color: rgba(255,255,255,0.22); }
