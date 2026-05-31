@@ -177,12 +177,13 @@
 }
 
 .brand-stat-value {
-  font-family: 'Syne', sans-serif;
-  font-size: 26px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 22px;
   font-weight: 800;
   color: #fff;
   line-height: 1;
-  letter-spacing: -0.5px;
+  letter-spacing: 0;
+  font-style: normal;
 }
 
 .brand-stat-label {
@@ -204,6 +205,11 @@
   align-items: center;
   justify-content: center;
   padding: 48px 44px;
+  text-align: center;
+}
+
+.login-field-label {
+  text-align: left;
 }
 
 .login-card {
