@@ -84,7 +84,7 @@ export default function Calculator() {
       instrumentType,
     });
     setResult(r);
-  }, [form]);
+  }, [form, instrumentType]);
 
   const loadInstrument = useCallback(async () => {
     if (!tapi || !form.ticker) {
@@ -188,7 +188,32 @@ export default function Calculator() {
     }
   };
 
-  const effectiveContracts = manualContracts ? parseInt(manualContracts) : (result?.contracts || 1);
+  const effectiveContracts = manualContracts ? Math.max(1, parseInt(manualContracts) || 1) : (result?.contracts || 1);
+
+  // Пересчитываем детализацию с учётом ручного числа контрактов
+  const displayResult = React.useMemo(() => {
+    if (!result) return null;
+    if (!manualContracts) return result;
+    const n = effectiveContracts;
+    const commission = Math.round(parseFloat(form.entryPrice || 0) * n * parseFloat(form.lot || 1) * parseFloat(form.commissionRate || 0.0006) * 2);
+    const totalLoss   = Math.round(result.lossPerContract   * n + commission);
+    const totalProfit = Math.round(result.profitPerContract * n - commission);
+    const totalMargin    = Math.round(result.initialMargin_per ? result.initialMargin_per * n : (n * (parseFloat(form.initialMargin) || 0)));
+    const positionValue  = Math.round(parseFloat(form.entryPrice || 0) * n * parseFloat(form.lot || 1));
+    const marginUsed     = instrumentType === 'future' ? totalMargin : positionValue;
+    const deposit        = parseFloat(form.depositSize) || 100000;
+    return {
+      ...result,
+      contracts: n,
+      commission,
+      totalLoss,
+      totalProfit,
+      totalMargin,
+      positionValue,
+      marginUsagePercent: deposit > 0 ? Math.round((marginUsed / deposit) * 100) : 0,
+    };
+  }, [result, manualContracts, effectiveContracts, form, instrumentType]);
+
   const rrColor = !result ? '' : result.rr >= 2 ? 'var(--green)' : result.rr >= 1 ? 'var(--gold)' : 'var(--red)';
 
   return (
@@ -378,7 +403,7 @@ export default function Calculator() {
           </div>
 
           {/* Кнопки */}
-          {result && result.contracts > 0 && (
+          {result && displayResult && result.contracts > 0 && (
             <div style={{display:'flex', gap:10, marginTop:16}}>
               <button
                 className="btn btn-primary"
@@ -405,11 +430,11 @@ export default function Calculator() {
                     tp: form.takeProfit || '',
                     contracts: String(effectiveContracts),
                     rr: String(result.rr),
-                    riskAmount: String(result.riskAmount),
-                    totalLoss: String(result.totalLoss),
-                    totalProfit: String(result.totalProfit),
-                    commission: String(result.commission),
-                    breakeven: String(result.breakeven),
+                    riskAmount: String(displayResult?.riskAmount || ''),
+                    totalLoss: String(displayResult?.totalLoss || ''),
+                    totalProfit: String(displayResult?.totalProfit || ''),
+                    commission: String(displayResult?.commission || ''),
+                    breakeven: String(displayResult?.breakeven || ''),
                     deposit: form.depositSize || '',
                     type: instrumentType,
                   });
@@ -446,7 +471,7 @@ export default function Calculator() {
                       placeholder="Введите..."
                       style={{
                         flex:1, background:'none', border:'none', outline:'none',
-                        fontFamily:'inherit', fontSize:22, fontWeight:700,
+                        fontFamily:'inherit', fontSize:16, fontWeight:700,
                         color: manualContracts ? 'var(--gold)' : 'var(--text-primary)',
                         padding:0, width:'60px',
                         MozAppearance:'textfield',
@@ -473,13 +498,13 @@ export default function Calculator() {
                     <span style={{
                       fontSize:20, fontWeight:800,
                       color: manualContracts ? 'var(--text-muted)' : 'var(--text-primary)',
-                    }}>{result.contracts}</span>
+                    }}>{displayResult?.contracts}</span>
                     <span style={{fontSize:11, color:'var(--text-muted)'}}>шт.</span>
                   </div>
                 </div>
-                <div className={`calc-metric-card ${!result.rrValid && result.rr !== 0 ? 'red' : result.rr >= 2 ? 'green' : result.rr >= 1 ? 'gold' : 'red'}`}>
+                <div className={`calc-metric-card ${!displayResult?.rrValid && displayResult?.rr !== 0 ? 'red' : displayResult?.rr >= 2 ? 'green' : displayResult?.rr >= 1 ? 'gold' : 'red'}`}>
                   <div className="calc-metric-label">Risk/Reward</div>
-                  {(!result.rrValid && result.rr !== 0) ? (
+                  {(!displayResult?.rrValid && displayResult?.rr !== 0) ? (
                     <>
                       <div className="calc-metric-value" style={{color:'var(--red)',fontSize:13}}>⚠️ TP не там!</div>
                       <div className="calc-metric-sub" style={{color:'var(--red)',fontSize:10}}>
@@ -489,7 +514,7 @@ export default function Calculator() {
                   ) : (
                     <>
                       <div className="calc-metric-value" style={{color: rrColor}}>1:{formatNumber(result.rr, 1)}</div>
-                      <div className="calc-metric-sub">{result.rr >= 2 ? '✅ Отличный' : result.rr >= 1 ? '⚠️ Норм' : '❌ Плохой'}</div>
+                      <div className="calc-metric-sub">{displayResult?.rr >= 2 ? '✅ Отличный' : displayResult?.rr >= 1 ? '⚠️ Норм' : '❌ Плохой'}</div>
                     </>
                   )}
                 </div>
@@ -504,8 +529,8 @@ export default function Calculator() {
                     color: result.marginUsagePercent > (result.maxMarginPercent || 30) ? 'var(--red)' : ''
                   }}>
                     {instrumentType === 'future'
-                      ? `${result.marginUsagePercent}% / лимит ${result.maxMarginPercent || 30}%`
-                      : `${result.marginUsagePercent}% депозита`}
+                      ? `${displayResult?.marginUsagePercent}% / лимит ${displayResult?.maxMarginPercent || 30}%`
+                      : `${displayResult?.marginUsagePercent}% депозита`}
                   </div>
                   {instrumentType === 'future' && (
                     <div style={{
@@ -559,7 +584,7 @@ export default function Calculator() {
                     <span className="text-sm text-secondary">ГО: {formatCurrency(result.totalMargin)}</span>
                     <span className="text-sm font-semibold" style={{
                       color: result.marginUsagePercent > 50 ? 'var(--red)' : 'var(--text-primary)'
-                    }}>{result.marginUsagePercent}%</span>
+                    }}>{displayResult?.marginUsagePercent}%</span>
                   </div>
                 </div>
                 <div style={{marginTop:8, fontSize:12, color:'var(--text-muted)'}}>
