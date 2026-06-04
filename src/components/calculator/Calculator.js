@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { TinkoffAPI, parseFutureInfo } from '../../services/tinkoff';
+import { TinkoffAPI, parseFutureInfo, parseShareInfo } from '../../services/tinkoff';
 import { calcTrade, formatCurrency, formatNumber } from '../../utils/calculator';
 import { addTrade } from '../../services/trades';
 import toast from 'react-hot-toast';
@@ -93,12 +93,17 @@ export default function Calculator() {
     }
     setLoadingPrice(true);
     try {
-      const future = await tapi.getFutureByTicker(form.ticker.toUpperCase());
-      if (!future) {
-        toast.error(`Инструмент ${form.ticker} не найден`);
+      // Ищем инструмент по типу (фьючерс или акция)
+      const raw = instrumentType === 'stock'
+        ? await tapi.getShareByTicker(form.ticker.toUpperCase())
+        : await tapi.getFutureByTicker(form.ticker.toUpperCase());
+
+      if (!raw) {
+        toast.error(`Инструмент ${form.ticker.toUpperCase()} не найден на MOEX`);
         return;
       }
-      const info = parseFutureInfo(future);
+
+      const info = instrumentType === 'stock' ? parseShareInfo(raw) : parseFutureInfo(raw);
       setInstrumentInfo(info);
 
       const price = await tapi.getLastPrice(info.figi);
@@ -188,6 +193,13 @@ export default function Calculator() {
 
   return (
     <div className="page">
+      <style>{`
+        input[type=number]::-webkit-outer-spin-button,
+        input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type=number] { -moz-appearance: textfield; }
+        .btn-ai-hover { transition: transform 0.2s, box-shadow 0.2s; }
+        .btn-ai-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(124,58,237,0.4); }
+      `}</style>
       <div className="page-header">
         <h1 className="page-title">🧮 Калькулятор сделки</h1>
         <p className="page-subtitle">Автоматический расчёт параметров позиции</p>
@@ -268,10 +280,14 @@ export default function Calculator() {
             <div className="instrument-info">
               <span className="badge badge-purple">{instrumentInfo.ticker}</span>
               <span className="text-sm text-secondary">{instrumentInfo.name}</span>
-              {instrumentInfo.expirationDate && (
-                <span className="text-xs text-muted">
-                  Экспирация: {new Date(instrumentInfo.expirationDate).toLocaleDateString('ru-RU')}
-                </span>
+              {instrumentInfo.isShare ? (
+                <span className="text-xs text-muted">📈 Акция MOEX</span>
+              ) : (
+                instrumentInfo.expirationDate && (
+                  <span className="text-xs text-muted">
+                    Экспирация: {new Date(instrumentInfo.expirationDate).toLocaleDateString('ru-RU')}
+                  </span>
+                )
               )}
               <span className="text-xs text-muted" style={{color:'var(--green)'}}>🔄 авто-обновление 30с</span>
             </div>
@@ -372,12 +388,11 @@ export default function Calculator() {
                 📂 В журнал
               </button>
               <button
-                className="btn"
+                className="btn btn-primary btn-ai-hover"
                 style={{
                   background:'linear-gradient(135deg,#7c3aed,#4f46e5)',
-                  color:'#fff', border:'none', borderRadius:14,
-                  padding:'0 18px', cursor:'pointer',
-                  fontWeight:600, fontSize:14, fontFamily:'inherit',
+                  color:'#fff', border:'none',
+                  fontWeight:600, fontSize:14,
                 }}
                 onClick={() => {
                   const p = new URLSearchParams({
@@ -420,12 +435,14 @@ export default function Calculator() {
                     background:'rgba(255,255,255,0.07)',
                     border: manualContracts ? '1px solid var(--gold)' : '1px solid rgba(255,255,255,0.12)',
                     borderRadius:10, padding:'6px 10px', marginBottom:8,
+                    position:'relative', zIndex:10,
                   }}>
                     <input
                       type="number"
                       min="1"
                       value={manualContracts}
                       onChange={e => setManualContracts(e.target.value)}
+                      onClick={e => e.stopPropagation()}
                       placeholder="Введите..."
                       style={{
                         flex:1, background:'none', border:'none', outline:'none',
@@ -433,6 +450,9 @@ export default function Calculator() {
                         color: manualContracts ? 'var(--gold)' : 'var(--text-primary)',
                         padding:0, width:'60px',
                         MozAppearance:'textfield',
+                        WebkitAppearance:'none',
+                        pointerEvents:'all', cursor:'text',
+                        zIndex:10, position:'relative',
                       }}
                     />
                     <span style={{fontSize:12, color:'var(--text-muted)'}}>шт.</span>

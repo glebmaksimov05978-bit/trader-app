@@ -22,6 +22,7 @@ export class TinkoffAPI {
     return response.json();
   }
 
+  // Фьючерс по тикеру
   async getFutureByTicker(ticker) {
     const data = await this.request('/tinkoff.public.invest.api.contract.v1.InstrumentsService/FutureBy', {
       idType: 'INSTRUMENT_ID_TYPE_TICKER',
@@ -29,6 +30,56 @@ export class TinkoffAPI {
       id: ticker,
     });
     return data.instrument || null;
+  }
+
+  // Акция по тикеру — ищем через FindInstrument
+  async getShareByTicker(ticker) {
+    try {
+      // Сначала пробуем прямой метод ShareBy
+      const data = await this.request('/tinkoff.public.invest.api.contract.v1.InstrumentsService/ShareBy', {
+        idType: 'INSTRUMENT_ID_TYPE_TICKER',
+        classCode: 'TQBR', // основная секция MOEX акций
+        id: ticker.toUpperCase(),
+      });
+      if (data.instrument) return data.instrument;
+    } catch {
+      // Если не нашли — ищем через общий поиск
+    }
+
+    try {
+      const data = await this.request('/tinkoff.public.invest.api.contract.v1.InstrumentsService/FindInstrument', {
+        query: ticker.toUpperCase(),
+        instrumentKind: 'INSTRUMENT_TYPE_SHARE',
+        apiTradeAvailableFlag: true,
+      });
+      const instruments = data.instruments || [];
+      // Ищем точное совпадение по тикеру на MOEX
+      const exact = instruments.find(i =>
+        i.ticker?.toUpperCase() === ticker.toUpperCase() &&
+        (i.classCode === 'TQBR' || i.exchange === 'MOEX' || i.exchange === 'MOEX_PLUS')
+      );
+      if (exact) {
+        // Получаем полную информацию
+        const full = await this.request('/tinkoff.public.invest.api.contract.v1.InstrumentsService/ShareBy', {
+          idType: 'INSTRUMENT_ID_TYPE_FIGI',
+          classCode: exact.classCode || 'TQBR',
+          id: exact.figi,
+        });
+        return full.instrument || exact;
+      }
+      return instruments[0] || null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Универсальный поиск — пробует фьючерс, потом акцию
+  async getInstrumentByTicker(ticker, type = 'future') {
+    if (type === 'future') {
+      return this.getFutureByTicker(ticker);
+    } else {
+      return this.getShareByTicker(ticker);
+    }
   }
 
   async getLastPrice(figi) {
@@ -54,23 +105,15 @@ export function moneyToFloat(mv) {
   return units + nano / 1e9;
 }
 
-// Parse futures contract info — FIXED
+// Parse futures contract info
 export function parseFutureInfo(instrument) {
   if (!instrument) return null;
-
-  // minPriceIncrement — шаг цены (например 0.01, 0.5, 10)
-  const minStep = moneyToFloat(instrument.minPriceIncrement);
-
-  // minPriceIncrementAmount — стоимость одного шага в рублях
+  const minStep   = moneyToFloat(instrument.minPriceIncrement);
   const stepAmount = moneyToFloat(instrument.minPriceIncrementAmount);
-
-  // lot — лотность (количество единиц базового актива в 1 контракте)
-  const lot = instrument.lot || 1;
-
-  // ГО — берём меньшее из buy/sell (реальное ГО)
-  const marginBuy = moneyToFloat(instrument.initialMarginOnBuy);
+  const lot       = instrument.lot || 1;
+  const marginBuy  = moneyToFloat(instrument.initialMarginOnBuy);
   const marginSell = moneyToFloat(instrument.initialMarginOnSell);
-  const margin = Math.min(marginBuy || marginSell, marginSell || marginBuy) || marginBuy || marginSell;
+  const margin    = Math.min(marginBuy || marginSell, marginSell || marginBuy) || marginBuy || marginSell;
 
   return {
     ticker: instrument.ticker,
@@ -85,5 +128,27 @@ export function parseFutureInfo(instrument) {
     currency: instrument.currency,
     expirationDate: instrument.expirationDate,
     basicAsset: instrument.basicAsset,
+  };
+}
+
+// Parse share (акция) info
+export function parseShareInfo(instrument) {
+  if (!instrument) return null;
+  const lot = instrument.lot || 1;
+  // Для акций минимальный шаг цены
+  const minStep = moneyToFloat(instrument.minPriceIncrement) || 0.01;
+
+  return {
+    ticker: instrument.ticker,
+    name: instrument.name,
+    figi: instrument.figi,
+    lot,
+    minPriceIncrement: minStep,
+    minPriceIncrementAmount: 0, // для акций не нужно
+    initialMargin: 0,           // ГО нет
+    currency: instrument.currency,
+    isin: instrument.isin,
+    sector: instrument.sector,
+    isShare: true,
   };
 }
