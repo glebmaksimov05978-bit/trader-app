@@ -211,10 +211,11 @@ export default function Calculator() {
       totalMargin,
       positionValue,
       marginUsagePercent: deposit > 0 ? Math.round((marginUsed / deposit) * 100) : 0,
+      maxMarginPercent: parseFloat(result.maxMarginPercent) || 30,
     };
   }, [result, manualContracts, effectiveContracts, form, instrumentType]);
 
-  const rrColor = !result ? '' : result.rr >= 2 ? 'var(--green)' : result.rr >= 1 ? 'var(--gold)' : 'var(--red)';
+  const rrColor = !displayResult ? '' : displayResult.rr >= 2 ? 'var(--green)' : displayResult.rr >= 1 ? 'var(--gold)' : 'var(--red)';
 
   return (
     <div className="page">
@@ -424,12 +425,12 @@ export default function Calculator() {
                     from: 'calculator',
                     ticker: form.ticker || '',
                     name: instrumentInfo?.name || '',
-                    direction: result.direction,
+                    direction: displayResult?.direction || '',
                     entry: form.entryPrice || '',
                     sl: form.stopLoss || '',
                     tp: form.takeProfit || '',
                     contracts: String(effectiveContracts),
-                    rr: String(result.rr),
+                    rr: String(displayResult?.rr || ''),
                     riskAmount: String(displayResult?.riskAmount || ''),
                     totalLoss: String(displayResult?.totalLoss || ''),
                     totalProfit: String(displayResult?.totalProfit || ''),
@@ -452,7 +453,7 @@ export default function Calculator() {
           {result ? (
             <>
               <div className="calc-key-metrics">
-                <div className={`calc-metric-card ${result.direction === 'long' ? 'green' : 'red'}`} style={{position:'relative'}}>
+                <div className={`calc-metric-card ${displayResult?.direction === 'long' ? 'green' : 'red'}`} style={{position:'relative'}}>
                   <div className="calc-metric-label">{instrumentType === 'stock' ? 'Лотов' : 'Контрактов'}</div>
                   {/* Инпут сверху — вводишь сколько хочешь */}
                   <div style={{
@@ -508,25 +509,25 @@ export default function Calculator() {
                     <>
                       <div className="calc-metric-value" style={{color:'var(--red)',fontSize:13}}>⚠️ TP не там!</div>
                       <div className="calc-metric-sub" style={{color:'var(--red)',fontSize:10}}>
-                        {result.direction === 'long' ? 'TP должен быть выше входа' : 'TP должен быть ниже входа'}
+                        {displayResult?.direction === 'long' ? 'TP должен быть выше входа' : 'TP должен быть ниже входа'}
                       </div>
                     </>
                   ) : (
                     <>
-                      <div className="calc-metric-value" style={{color: rrColor}}>1:{formatNumber(result.rr, 1)}</div>
+                      <div className="calc-metric-value" style={{color: rrColor}}>1:{formatNumber(displayResult?.rr, 1)}</div>
                       <div className="calc-metric-sub">{displayResult?.rr >= 2 ? '✅ Отличный' : displayResult?.rr >= 1 ? '⚠️ Норм' : '❌ Плохой'}</div>
                     </>
                   )}
                 </div>
-                <div className={`calc-metric-card ${result.marginUsagePercent > (result.maxMarginPercent || 30) ? 'red' : 'blue'}`}>
+                <div className={`calc-metric-card ${(displayResult?.marginUsagePercent || 0) > (displayResult?.maxMarginPercent || 30) ? 'red' : 'blue'}`}>
                   <div className="calc-metric-label">{instrumentType === 'stock' ? 'Стоимость позиции' : 'ГО (заморозка)'}</div>
                   <div className="calc-metric-value" style={{fontSize:16}}>
                     {instrumentType === 'stock'
-                      ? formatCurrency(result.positionValue)
-                      : formatCurrency(result.totalMargin)}
+                      ? formatCurrency(displayResult?.positionValue)
+                      : formatCurrency(displayResult?.totalMargin)}
                   </div>
                   <div className="calc-metric-sub" style={{
-                    color: result.marginUsagePercent > (result.maxMarginPercent || 30) ? 'var(--red)' : ''
+                    color: (displayResult?.marginUsagePercent || 0) > (displayResult?.maxMarginPercent || 30) ? 'var(--red)' : ''
                   }}>
                     {instrumentType === 'future'
                       ? `${displayResult?.marginUsagePercent}% / лимит ${displayResult?.maxMarginPercent || 30}%`
@@ -540,7 +541,7 @@ export default function Calculator() {
                     }}>
                       <div>Стоимость позиции:</div>
                       <div style={{color:'var(--text-primary)', fontWeight:600}}>
-                        {formatCurrency(result.positionValue)}
+                        {formatCurrency(displayResult?.positionValue)}
                       </div>
                     </div>
                   )}
@@ -552,17 +553,17 @@ export default function Calculator() {
                   <div className="section-title-icon">📋</div>
                   Детализация
                 </div>
-                <ResultRow label="Риск на сделку" value={formatCurrency(result.riskAmount)} color="var(--red)" />
-                <ResultRow label="Тиков до SL" value={formatNumber(result.ticksToSL)} />
-                <ResultRow label="Тиков до TP" value={result.ticksToTP > 0 ? formatNumber(result.ticksToTP) : '—'} />
-                <ResultRow label="Убыток на контракт" value={formatCurrency(result.lossPerContract)} color="var(--red)" />
-                <ResultRow label="Прибыль на контракт" value={result.profitPerContract > 0 ? formatCurrency(result.profitPerContract) : '—'} color="var(--green)" />
-                <ResultRow label="Комиссия" value={formatCurrency(result.commission)} />
-                <ResultRow label="Точка безубытка" value={formatNumber(result.breakeven, 2)} />
+                <ResultRow label="Риск на сделку" value={formatCurrency(displayResult?.riskAmount)} color="var(--red)" />
+                <ResultRow label="Тиков до SL" value={formatNumber(displayResult?.ticksToSL)} />
+                <ResultRow label="Тиков до TP" value={displayResult?.ticksToTP > 0 ? formatNumber(displayResult?.ticksToTP) : '—'} />
+                <ResultRow label="Убыток на контракт" value={formatCurrency(displayResult?.lossPerContract)} color="var(--red)" />
+                <ResultRow label="Прибыль на контракт" value={displayResult?.profitPerContract > 0 ? formatCurrency(displayResult?.profitPerContract) : '—'} color="var(--green)" />
+                <ResultRow label="Комиссия" value={formatCurrency(displayResult?.commission)} />
+                <ResultRow label="Точка безубытка" value={formatNumber(displayResult?.breakeven, 2)} />
                 <div className="divider" />
-                <ResultRow label="Макс. убыток (с комис.)" value={formatCurrency(result.totalLoss)} color="var(--red)" large />
-                {result.totalProfit > 0 && (
-                  <ResultRow label="Потенц. прибыль (с комис.)" value={formatCurrency(result.totalProfit)} color="var(--green)" large />
+                <ResultRow label="Макс. убыток (с комис.)" value={formatCurrency(displayResult?.totalLoss)} color="var(--red)" large />
+                {(displayResult?.totalProfit || 0) > 0 && (
+                  <ResultRow label="Потенц. прибыль (с комис.)" value={formatCurrency(displayResult?.totalProfit)} color="var(--green)" large />
                 )}
               </div>
 
@@ -574,22 +575,22 @@ export default function Calculator() {
                 <div className="risk-gauge-wrap">
                   <div className="risk-gauge-bar">
                     <div className="risk-gauge-fill" style={{
-                      width: `${Math.min(result.marginUsagePercent, 100)}%`,
-                      background: result.marginUsagePercent > 50 ? 'linear-gradient(90deg,#f59e0b,#ef4444)' :
-                        result.marginUsagePercent > 25 ? 'linear-gradient(90deg,#4f46e5,#f59e0b)' :
+                      width: `${Math.min(displayResult?.marginUsagePercent || 0, 100)}%`,
+                      background: (displayResult?.marginUsagePercent || 0) > 50 ? 'linear-gradient(90deg,#f59e0b,#ef4444)' :
+                        (displayResult?.marginUsagePercent || 0) > 25 ? 'linear-gradient(90deg,#4f46e5,#f59e0b)' :
                         'var(--accent-gradient)'
                     }} />
                   </div>
                   <div className="risk-gauge-labels">
-                    <span className="text-sm text-secondary">ГО: {formatCurrency(result.totalMargin)}</span>
+                    <span className="text-sm text-secondary">{instrumentType === 'stock' ? 'Позиция' : 'ГО'}: {formatCurrency(instrumentType === 'stock' ? displayResult?.positionValue : displayResult?.totalMargin)}</span>
                     <span className="text-sm font-semibold" style={{
-                      color: result.marginUsagePercent > 50 ? 'var(--red)' : 'var(--text-primary)'
+                      color: (displayResult?.marginUsagePercent || 0) > 50 ? 'var(--red)' : 'var(--text-primary)'
                     }}>{displayResult?.marginUsagePercent}%</span>
                   </div>
                 </div>
                 <div style={{marginTop:8, fontSize:12, color:'var(--text-muted)'}}>
-                  {result.marginUsagePercent > 70 ? '⚠️ Высокая загрузка депозита — рискованно' :
-                    result.marginUsagePercent > 40 ? '🟡 Умеренная загрузка депозита' :
+                  {(displayResult?.marginUsagePercent || 0) > 70 ? '⚠️ Высокая загрузка депозита — рискованно' :
+                    (displayResult?.marginUsagePercent || 0) > 40 ? '🟡 Умеренная загрузка депозита' :
                     '✅ Нормальная загрузка депозита'}
                 </div>
               </div>
