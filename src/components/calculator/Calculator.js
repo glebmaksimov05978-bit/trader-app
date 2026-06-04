@@ -219,6 +219,7 @@ export default function Calculator() {
                 minStepAmount: '0',
                 lot: '1',
               }));
+              setInstrumentInfo(null);
             }}
             style={{
               padding:'8px 20px', borderRadius:12, border:'none', cursor:'pointer',
@@ -340,13 +341,8 @@ export default function Calculator() {
                   onChange={e => set('initialMargin', e.target.value)} placeholder="авто" />
               </>
             )}
-            {instrumentType === 'stock' && (
-              <>
-                <label className="input-label">ГО не нужно</label>
-                <input className="input" disabled value="—" style={{opacity:0.4}} />
-              </>
-            )}
             </div>
+            {instrumentType === 'future' && (<>
             <div className="input-group">
               <label className="input-label">Шаг цены</label>
               <input className="input" type="number" value={form.minStep}
@@ -357,6 +353,7 @@ export default function Calculator() {
               <input className="input" type="number" value={form.minStepAmount}
                 onChange={e => set('minStepAmount', e.target.value)} placeholder="авто" />
             </div>
+            </>)}
           </div>
           <div className="input-group" style={{marginTop:8}}>
             <label className="input-label">Комиссия (0.0006 = 0.06%)</label>
@@ -384,14 +381,22 @@ export default function Calculator() {
                 }}
                 onClick={() => {
                   const p = new URLSearchParams({
-                    from:'calculator',
+                    from: 'calculator',
                     ticker: form.ticker || '',
+                    name: instrumentInfo?.name || '',
+                    direction: result.direction,
                     entry: form.entryPrice || '',
                     sl: form.stopLoss || '',
                     tp: form.takeProfit || '',
                     contracts: String(effectiveContracts),
                     rr: String(result.rr),
-                    direction: result.direction,
+                    riskAmount: String(result.riskAmount),
+                    totalLoss: String(result.totalLoss),
+                    totalProfit: String(result.totalProfit),
+                    commission: String(result.commission),
+                    breakeven: String(result.breakeven),
+                    deposit: form.depositSize || '',
+                    type: instrumentType,
                   });
                   window.location.href = '/advisor?' + p.toString();
                 }}
@@ -409,34 +414,47 @@ export default function Calculator() {
               <div className="calc-key-metrics">
                 <div className={`calc-metric-card ${result.direction === 'long' ? 'green' : 'red'}`} style={{position:'relative'}}>
                   <div className="calc-metric-label">{instrumentType === 'stock' ? 'Лотов' : 'Контрактов'}</div>
-                  {/* Большое поле ввода вместо цифры */}
-                  <div style={{display:'flex', alignItems:'baseline', gap:6, marginBottom:4}}>
+                  {/* Инпут сверху — вводишь сколько хочешь */}
+                  <div style={{
+                    display:'flex', alignItems:'center', gap:6,
+                    background:'rgba(255,255,255,0.07)',
+                    border: manualContracts ? '1px solid var(--gold)' : '1px solid rgba(255,255,255,0.12)',
+                    borderRadius:10, padding:'6px 10px', marginBottom:8,
+                  }}>
                     <input
                       type="number"
                       min="1"
                       value={manualContracts}
                       onChange={e => setManualContracts(e.target.value)}
-                      placeholder={String(result.contracts)}
+                      placeholder="Введите..."
                       style={{
-                        width: '70px',
-                        background: 'none',
-                        border: 'none',
-                        outline: 'none',
-                        fontFamily: 'inherit',
-                        fontSize: 36,
-                        fontWeight: 800,
+                        flex:1, background:'none', border:'none', outline:'none',
+                        fontFamily:'inherit', fontSize:22, fontWeight:700,
                         color: manualContracts ? 'var(--gold)' : 'var(--text-primary)',
-                        padding: 0,
-                        MozAppearance: 'textfield',
+                        padding:0, width:'60px',
+                        MozAppearance:'textfield',
                       }}
                     />
-                    <span style={{fontSize:14, color:'var(--text-muted)', fontWeight:500}}>шт.</span>
+                    <span style={{fontSize:12, color:'var(--text-muted)'}}>шт.</span>
+                    {manualContracts && (
+                      <button onClick={() => setManualContracts('')} style={{
+                        background:'none', border:'none', cursor:'pointer',
+                        color:'var(--text-muted)', fontSize:14, padding:0, lineHeight:1,
+                      }}>✕</button>
+                    )}
                   </div>
-                  <div style={{fontSize:11, color:'var(--text-muted)'}}>
-                    {manualContracts
-                      ? <span style={{color:'var(--gold)'}}>✏️ ручной · авто: {result.contracts}</span>
-                      : <span>авто по риску</span>
-                    }
+                  {/* Авто снизу */}
+                  <div style={{
+                    display:'flex', alignItems:'center', justifyContent:'space-between',
+                    background:'rgba(255,255,255,0.04)', borderRadius:8,
+                    padding:'4px 10px',
+                  }}>
+                    <span style={{fontSize:11, color:'var(--text-muted)'}}>авто:</span>
+                    <span style={{
+                      fontSize:20, fontWeight:800,
+                      color: manualContracts ? 'var(--text-muted)' : 'var(--text-primary)',
+                    }}>{result.contracts}</span>
+                    <span style={{fontSize:11, color:'var(--text-muted)'}}>шт.</span>
                   </div>
                 </div>
                 <div className={`calc-metric-card ${!result.rrValid && result.rr !== 0 ? 'red' : result.rr >= 2 ? 'green' : result.rr >= 1 ? 'gold' : 'red'}`}>
