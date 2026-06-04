@@ -11,7 +11,6 @@ export default function Settings() {
     depositSize: '',
     maxRiskPerTrade: '',
     dailyLossLimit: '',
-    maxMarginPercent: '',
   });
   const [saving, setSaving] = useState(false);
   const [showToken, setShowToken] = useState(false);
@@ -21,10 +20,9 @@ export default function Settings() {
       setForm({
         displayName: userProfile.displayName || '',
         tinkoffToken: userProfile.tinkoffToken || '',
-        depositSize: String(userProfile.depositSize || 100000),
+        depositSize: String(userProfile.depositSize ?? 0),
         maxRiskPerTrade: String(userProfile.maxRiskPerTrade || 1),
         dailyLossLimit: String(userProfile.dailyLossLimit || 3),
-        maxMarginPercent: String(userProfile.maxMarginPercent || ''),
       });
     }
   }, [userProfile]);
@@ -40,7 +38,6 @@ export default function Settings() {
         depositSize: parseFloat(form.depositSize),
         maxRiskPerTrade: parseFloat(form.maxRiskPerTrade),
         dailyLossLimit: parseFloat(form.dailyLossLimit),
-        maxMarginPercent: form.maxMarginPercent ? parseFloat(form.maxMarginPercent) : null,
       });
       toast.success('Настройки сохранены');
     } catch {
@@ -128,19 +125,6 @@ export default function Settings() {
                 <span className="input-prefix-text">%</span>
                 <input className="input" type="number" step="0.5" value={form.dailyLossLimit}
                   onChange={e => set('dailyLossLimit', e.target.value)}/>
-              </div>
-            </div>
-            <div className="input-group">
-              <label className="input-label">Макс. использование депозита на ГО (%)</label>
-              <div className="input-prefix">
-                <span className="input-prefix-text">%</span>
-                <input className="input" type="number" step="5" min="10" max="90"
-                  placeholder="30 (по умолчанию)"
-                  value={form.maxMarginPercent}
-                  onChange={e => set('maxMarginPercent', e.target.value)}/>
-              </div>
-              <div className="input-hint">
-                Сколько % депозита может быть заморожено в ГО одной сделки. По умолчанию 30%.
               </div>
             </div>
           </div>

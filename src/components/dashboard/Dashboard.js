@@ -4,63 +4,9 @@ import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, calcStats, buildEquityCurve } from '../../services/trades';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, Cell
+  BarChart, Bar
 } from 'recharts';
 import { formatCurrency, formatNumber } from '../../utils/calculator';
-
-// Кастомный тултип для гистограммы
-const CustomBarTooltip = ({ active, payload, label }) => {
-  if (active && payload && payload.length) {
-    const val = payload[0].value;
-    return (
-      <div style={{
-        background: 'var(--bg-surface-3)',
-        border: `1px solid ${val >= 0 ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'}`,
-        borderRadius: 10,
-        padding: '8px 14px',
-        fontSize: 12,
-        boxShadow: `0 4px 20px ${val >= 0 ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)'}`,
-      }}>
-        <div style={{ color: 'var(--text-muted)', marginBottom: 4, fontWeight: 600 }}>{label}</div>
-        <div style={{ color: val >= 0 ? '#10b981' : '#ef4444', fontWeight: 700, fontSize: 14 }}>
-          {val >= 0 ? '+' : ''}{formatCurrency(val)}
-        </div>
-      </div>
-    );
-  }
-  return null;
-};
-
-// Отдельный компонент чтобы можно было вычислить домен до рендера
-function EquityChart({ equity }) {
-  const balances = equity.map(e => e.balance).filter(Boolean);
-  const minB = Math.min(...balances);
-  const maxB = Math.max(...balances);
-  const padding = Math.max((maxB - minB) * 0.3, maxB * 0.005);
-  const yMin = Math.floor((minB - padding) / 100) * 100;
-  const yMax = Math.ceil((maxB + padding) / 100) * 100;
-
-  return (
-    <ResponsiveContainer width="100%" height={220}>
-      <LineChart data={equity} margin={{top:8, right:10, bottom:5, left:0}}>
-        <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
-        <XAxis dataKey="date" tick={{fill:'var(--text-muted)', fontSize:11}} tickLine={false} />
-        <YAxis
-          tick={{fill:'var(--text-muted)', fontSize:11}} tickLine={false} axisLine={false}
-          domain={[yMin, yMax]}
-          tickFormatter={(v) => `${(v/1000).toFixed(1)}k`}
-          width={40}
-        />
-        <Tooltip
-          contentStyle={{background:'var(--bg-surface-3)', border:'1px solid var(--border-medium)', borderRadius:12, fontSize:12}}
-          formatter={(v) => [formatCurrency(v), 'Баланс']}
-        />
-        <Line type="monotone" dataKey="balance" stroke="#818cf8" strokeWidth={2.5}
-          dot={false} activeDot={{r:5, fill:'#818cf8', strokeWidth:2, stroke:'#fff'}} />
-      </LineChart>
-    </ResponsiveContainer>
-  );
-}
 
 export default function Dashboard() {
   const { user, userProfile } = useAuth();
@@ -75,21 +21,22 @@ export default function Dashboard() {
       setTrades(t);
       const s = calcStats(t);
       setStats(s);
-      setEquity(buildEquityCurve(t, userProfile?.depositSize || 100000));
+      setEquity(buildEquityCurve(t, userProfile?.depositSize ?? 0));
       setLoading(false);
     });
   }, [user, userProfile]);
 
-  const deposit = userProfile?.depositSize || 100000;
+  const deposit = userProfile?.depositSize ?? 0;
   const lastEquity = equity[equity.length - 1]?.balance || deposit;
   const pnlTotal = lastEquity - deposit;
   const pnlPercent = ((pnlTotal / deposit) * 100).toFixed(1);
 
   // Last 10 trades for chart
   const recentTrades = trades.filter(t => t.status === 'closed' && t.pnl !== undefined).slice(0, 10);
-  const barData = [...recentTrades].reverse().map((t, i) => ({
+  const barData = recentTrades.reverse().map((t, i) => ({
     name: t.ticker || `#${i+1}`,
     pnl: t.pnl,
+    fill: t.pnl >= 0 ? '#10b981' : '#ef4444',
   }));
 
   if (loading) return (
@@ -152,7 +99,20 @@ export default function Dashboard() {
             Кривая капитала
           </div>
           {equity.length > 1 ? (
-            <EquityChart equity={equity} />
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={equity} margin={{top:5, right:10, bottom:5, left:0}}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
+                <XAxis dataKey="date" tick={{fill:'var(--text-muted)', fontSize:11}} tickLine={false} />
+                <YAxis tick={{fill:'var(--text-muted)', fontSize:11}} tickLine={false} axisLine={false}
+                  tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
+                <Tooltip
+                  contentStyle={{background:'var(--bg-surface-3)', border:'1px solid var(--border-medium)', borderRadius:12, fontSize:12}}
+                  formatter={(v) => [formatCurrency(v), 'Баланс']}
+                />
+                <Line type="monotone" dataKey="balance" stroke="var(--accent-primary)" strokeWidth={2}
+                  dot={false} activeDot={{r:4, fill:'var(--accent-primary)'}} />
+              </LineChart>
+            </ResponsiveContainer>
           ) : (
             <div className="empty-state" style={{padding:'40px 20px'}}>
               <div className="empty-state-icon">📊</div>
@@ -162,7 +122,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Recent PnL bars — premium slim */}
+        {/* Recent PnL bars */}
         <div className="card">
           <div className="section-title">
             <div className="section-title-icon">💹</div>
@@ -170,48 +130,18 @@ export default function Dashboard() {
           </div>
           {barData.length > 0 ? (
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart
-                data={barData}
-                margin={{top:8, right:16, bottom:5, left:0}}
-                barCategoryGap="40%"
-                barSize={18}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" vertical={false} />
-                <XAxis
-                  dataKey="name"
-                  tick={{fill:'var(--text-muted)', fontSize:10, fontWeight:500}}
-                  tickLine={false}
-                  axisLine={false}
+              <BarChart data={barData} margin={{top:5, right:10, bottom:5, left:0}}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
+                <XAxis dataKey="name" tick={{fill:'var(--text-muted)', fontSize:10}} tickLine={false} />
+                <YAxis tick={{fill:'var(--text-muted)', fontSize:11}} tickLine={false} axisLine={false}
+                  tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
+                <Tooltip
+                  contentStyle={{background:'var(--bg-surface-3)', border:'1px solid var(--border-medium)', borderRadius:12, fontSize:12}}
+                  formatter={(v) => [formatCurrency(v), 'P&L']}
                 />
-                <YAxis
-                  tick={{fill:'var(--text-muted)', fontSize:11}}
-                  tickLine={false}
-                  axisLine={false}
-                  tickFormatter={(v) => v === 0 ? '0' : `${(v/1000).toFixed(0)}k`}
-                  width={32}
+                <Bar dataKey="pnl" fill="#4f46e5" radius={[4,4,0,0]}
+                  cell={(entry) => <rect fill={entry.pnl >= 0 ? '#10b981' : '#ef4444'} />}
                 />
-                <Tooltip content={<CustomBarTooltip />} cursor={{fill:'rgba(255,255,255,0.04)', radius:6}} />
-                <Bar dataKey="pnl" radius={[5,5,2,2]} maxBarSize={22}>
-                  {barData.map((entry, index) => (
-                    <Cell
-                      key={`cell-${index}`}
-                      fill={entry.pnl >= 0
-                        ? 'url(#greenGrad)'
-                        : 'url(#redGrad)'}
-                    />
-                  ))}
-                </Bar>
-                {/* SVG градиенты */}
-                <defs>
-                  <linearGradient id="greenGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#10b981" stopOpacity={0.9}/>
-                    <stop offset="100%" stopColor="#059669" stopOpacity={0.6}/>
-                  </linearGradient>
-                  <linearGradient id="redGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#f87171" stopOpacity={0.9}/>
-                    <stop offset="100%" stopColor="#ef4444" stopOpacity={0.6}/>
-                  </linearGradient>
-                </defs>
               </BarChart>
             </ResponsiveContainer>
           ) : (

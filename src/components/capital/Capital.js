@@ -13,7 +13,7 @@ export default function Capital() {
   const [saving, setSaving] = useState(false);
 
   const [settings, setSettings] = useState({
-    depositSize: userProfile?.depositSize || 100000,
+    depositSize: userProfile?.depositSize ?? 0,
     dailyLossLimit: userProfile?.dailyLossLimit || 3,
     maxRiskPerTrade: userProfile?.maxRiskPerTrade || 1,
     maxDailyTrades: userProfile?.maxDailyTrades || 10,
@@ -67,7 +67,7 @@ export default function Capital() {
     setSaving(false);
   };
 
-  const deposit = parseFloat(settings.depositSize) || 100000;
+  const deposit = parseFloat(settings.depositSize) || 0;
   const riskPct = parseFloat(settings.maxRiskPerTrade) || 1;
   const dailyLossPct = parseFloat(settings.dailyLossLimit) || 3;
   const ddStopPct = parseFloat(settings.maxDrawdownStop) || 10;
@@ -93,15 +93,10 @@ export default function Capital() {
   // Current day PnL from journal
   const today = new Date().toDateString();
   const todayTrades = trades.filter(t => {
-    if (t.status !== 'closed') return false;
-    // Используем closeDate если есть (точное время закрытия), иначе дату сделки
-    const closeTs = t.closeDate
-      ? new Date(t.closeDate)
-      : (t.date?.seconds ? new Date(t.date.seconds * 1000) : new Date(t.date || 0));
-    return closeTs.toDateString() === today;
+    const d = t.date?.seconds ? new Date(t.date.seconds * 1000) : new Date(t.date);
+    return d.toDateString() === today && t.status === 'closed';
   });
   const todayPnl = todayTrades.reduce((s, t) => s + (t.pnl || 0), 0);
-  // Лимит убытка = суммарный P&L дня ушёл в минус
   const todayLossUsed = Math.abs(Math.min(todayPnl, 0));
   const todayLimitUsedPct = Math.min((todayLossUsed / dailyLossRub) * 100, 100);
 
