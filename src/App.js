@@ -1,5 +1,5 @@
 // src/App.js
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -13,23 +13,8 @@ import Capital from './components/capital/Capital';
 import Advisor from './components/advisor/Advisor';
 import Settings from './components/settings/Settings';
 import AdminPanel from './components/admin/AdminPanel';
+import LoadingScreen from './components/LoadingScreen';
 import './styles/globals.css';
-
-function LoadingScreen() {
-  return (
-    <div className="loading-screen">
-      <div className="loading-logo">TraderPro</div>
-      <div className="loading-bar">
-        <div className="loading-bar-fill" />
-      </div>
-      <div className="loading-dots">
-        <div className="loading-dot" />
-        <div className="loading-dot" />
-        <div className="loading-dot" />
-      </div>
-    </div>
-  );
-}
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -47,7 +32,6 @@ function AdminRoute({ children }) {
 
 function AppRoutes() {
   const { user, loading } = useAuth();
-
   if (loading) return <LoadingScreen />;
 
   return (
@@ -93,7 +77,7 @@ export default function App() {
                 fontFamily: 'Inter, sans-serif',
               },
               success: { iconTheme: { primary: '#10b981', secondary: '#fff' } },
-              error: { iconTheme: { primary: '#ef4444', secondary: '#fff' } },
+              error:   { iconTheme: { primary: '#ef4444', secondary: '#fff' } },
             }}
           />
         </BrowserRouter>
