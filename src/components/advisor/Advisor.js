@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, calcStats } from '../../services/trades';
 import toast from 'react-hot-toast';
 import './Advisor.css';
+import ProModal from '../common/ProModal';
 
 const MODES = [
   { id: 'journal',    icon: '📊', label: 'Анализ журнала',     desc: 'Паттерны ошибок и слабые места' },
@@ -15,7 +16,7 @@ const MODES = [
 ];
 
 export default function Advisor() {
-  const { user, userProfile } = useAuth();
+  const { user, userProfile, isPro } = useAuth();
   const [searchParams] = useSearchParams();
   const [mode, setMode] = useState('journal');
   const [messages, setMessages] = useState([]);
@@ -25,6 +26,7 @@ export default function Advisor() {
   const [stats, setStats] = useState(null);
   const [selectedTrade, setSelectedTrade] = useState('');
   const [calcData, setCalcData] = useState(null);
+  const [showPro, setShowPro] = useState(false);
   const chatEndRef = useRef(null);
 
   useEffect(() => {
@@ -231,7 +233,7 @@ ${recentTrades || 'Нет данных'}${calcContext}
               <button
                 className="btn btn-primary w-full"
                 style={{marginTop:16}}
-                onClick={startAnalysis}
+                onClick={() => { if (!isPro) { setShowPro(true); return; } startAnalysis(); }}
                 disabled={loading || (mode === 'trade' && !selectedTrade)}
               >
                 {loading ? <><div className="spinner" style={{width:14,height:14}}/> Анализирую...</> : '▶ Запустить анализ'}
@@ -344,7 +346,7 @@ ${recentTrades || 'Нет данных'}${calcContext}
               />
               <button
                 className="btn btn-primary"
-                onClick={() => sendMessage()}
+                onClick={() => { if (!isPro) { setShowPro(true); return; } sendMessage(); }}
                 disabled={loading || !input.trim()}
                 style={{borderRadius:12, padding:'10px 16px'}}
               >
@@ -354,6 +356,7 @@ ${recentTrades || 'Нет данных'}${calcContext}
           </div>
         </div>
       </div>
+      {showPro && <ProModal onClose={() => setShowPro(false)} />}
     </div>
   );
 }

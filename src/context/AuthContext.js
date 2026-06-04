@@ -5,6 +5,8 @@ import {
   signOut,
   onAuthStateChanged,
   updateProfile,
+  createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../services/firebase';
@@ -20,17 +22,15 @@ export function AuthProvider({ children }) {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
-        // Load user profile from Firestore
         const profileDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
         if (profileDoc.exists()) {
           setUserProfile(profileDoc.data());
         } else {
-          // Create default profile
           const defaultProfile = {
             uid: firebaseUser.uid,
             email: firebaseUser.email,
             displayName: firebaseUser.displayName || firebaseUser.email.split('@')[0],
-            role: 'user',
+            role: 'free',
             tinkoffToken: '',
             depositSize: 100000,
             dailyLossLimit: 3,
@@ -53,6 +53,30 @@ export function AuthProvider({ children }) {
     return signInWithEmailAndPassword(auth, email, password);
   };
 
+  // Публичная регистрация
+  const register = async (email, password, displayName) => {
+    const cred = await createUserWithEmailAndPassword(auth, email, password);
+    await updateProfile(cred.user, { displayName });
+    const profile = {
+      uid: cred.user.uid,
+      email,
+      displayName,
+      role: 'free',
+      tinkoffToken: '',
+      depositSize: 100000,
+      dailyLossLimit: 3,
+      maxRiskPerTrade: 1,
+      createdAt: serverTimestamp(),
+    };
+    await setDoc(doc(db, 'users', cred.user.uid), profile);
+    return cred;
+  };
+
+  // Сброс пароля
+  const resetPassword = async (email) => {
+    return sendPasswordResetEmail(auth, email);
+  };
+
   const logout = async () => {
     await signOut(auth);
   };
@@ -65,9 +89,14 @@ export function AuthProvider({ children }) {
   };
 
   const isAdmin = userProfile?.role === 'admin';
+  const isPro   = userProfile?.role === 'pro' || userProfile?.role === 'admin';
 
   return (
-    <AuthContext.Provider value={{ user, userProfile, loading, login, logout, updateUserProfile, isAdmin }}>
+    <AuthContext.Provider value={{
+      user, userProfile, loading,
+      login, register, logout, resetPassword,
+      updateUserProfile, isAdmin, isPro,
+    }}>
       {children}
     </AuthContext.Provider>
   );

@@ -94,6 +94,7 @@ export default function AdminPanel() {
           <div className="input-group">
             <label className="input-label">Роль</label>
             <select className="input" value={form.role} onChange={e => setForm(f => ({...f, role: e.target.value}))}>
+              <option value="free">Free</option>
               <option value="user">Трейдер</option>
               <option value="admin">Администратор</option>
             </select>
@@ -133,8 +134,8 @@ export default function AdminPanel() {
                     <td><span className="font-semibold">{u.displayName || '—'}</span></td>
                     <td className="text-secondary">{u.email}</td>
                     <td>
-                      <span className={`badge ${u.role === 'admin' ? 'badge-purple' : 'badge-blue'}`}>
-                        {u.role === 'admin' ? '👑 Admin' : '👤 User'}
+                      <span className={`badge ${u.role === 'admin' ? 'badge-purple' : u.role === 'pro' ? 'badge-gold' : u.role === 'free' ? 'badge-blue' : 'badge-blue'}`}>
+                        {u.role === 'admin' ? '👑 Admin' : u.role === 'pro' ? '⚡ Pro' : u.role === 'free' ? '🆓 Free' : '👤 User'}
                       </span>
                     </td>
                     <td>{u.depositSize ? u.depositSize.toLocaleString('ru-RU') + ' ₽' : '—'}</td>
@@ -144,16 +145,31 @@ export default function AdminPanel() {
                         : '—'}
                     </td>
                     <td>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2" style={{flexWrap:'wrap'}}>
+                        {/* Pro кнопка */}
+                        {u.role !== 'pro' && u.role !== 'admin' && (
+                          <button
+                            style={{background:'linear-gradient(135deg,#f59e0b,#d97706)',color:'#000',fontSize:11,padding:'4px 10px',borderRadius:8,border:'none',cursor:'pointer',fontWeight:700}}
+                            onClick={() => setRole(u.id, 'pro')}>
+                            ⚡ Дать Pro
+                          </button>
+                        )}
+                        {u.role === 'pro' && (
+                          <button className="btn btn-ghost btn-sm" style={{fontSize:11}}
+                            onClick={() => setRole(u.id, 'free')}>
+                            Снять Pro
+                          </button>
+                        )}
+                        {/* Админ кнопка */}
                         {u.role !== 'admin' && (
                           <button className="btn btn-ghost btn-sm"
                             onClick={() => setRole(u.id, 'admin')}>
-                            👑 Сделать админом
+                            👑 Админ
                           </button>
                         )}
                         {u.role === 'admin' && (
                           <button className="btn btn-ghost btn-sm"
-                            onClick={() => setRole(u.id, 'user')}>
+                            onClick={() => setRole(u.id, 'free')}>
                             Снять права
                           </button>
                         )}
