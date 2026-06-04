@@ -184,7 +184,7 @@ export default function LoginPage() {
     }
   };
 
-  const particles = Array.from({length: 20}, (_, i) => i);
+  const particles = Array.from({length: 40}, (_, i) => i);
 
   return (
     <div className="login-page">
@@ -197,16 +197,17 @@ export default function LoginPage() {
 
       {particles.map((i) => (
         <div key={i} className="particle" style={{
-          left: `${5 + (i * 4.7) % 90}%`,
-          top: `${10 + (i * 7.3) % 80}%`,
-          animationDuration: `${9 + (i * 1.3) % 8}s`,
-          animationDelay: `-${(i * 0.7) % 10}s`,
-          width: `${3 + (i % 3)}px`,
-          height: `${3 + (i % 3)}px`,
-          background: i % 4 === 0 ? 'rgba(79,70,229,0.8)' :
-                      i % 4 === 1 ? 'rgba(124,58,237,0.7)' :
-                      i % 4 === 2 ? 'rgba(16,185,129,0.6)' :
-                                    'rgba(245,158,11,0.6)',
+          left: `${(i * 2.47 + 3) % 96}%`,
+          top: `${(i * 3.71 + 5) % 90}%`,
+          animationDuration: `${7 + (i * 1.1) % 10}s`,
+          animationDelay: `-${(i * 0.53) % 12}s`,
+          width: `${2 + (i % 4)}px`,
+          height: `${2 + (i % 4)}px`,
+          background: i % 5 === 0 ? 'rgba(79,70,229,0.9)' :
+                      i % 5 === 1 ? 'rgba(124,58,237,0.8)' :
+                      i % 5 === 2 ? 'rgba(16,185,129,0.7)' :
+                      i % 5 === 3 ? 'rgba(245,158,11,0.7)' :
+                                    'rgba(129,140,248,0.6)',
         }} />
       ))}
 
@@ -334,7 +335,7 @@ export default function LoginPage() {
                     <input className="login-input" type={showPass ? 'text' : 'password'}
                       value={regPass} onChange={e => setRegPass(e.target.value)}
                       onFocus={() => setFocused('rpass')} onBlur={() => setFocused('')}
-                      placeholder="Минимум 6 символов" required />
+                      placeholder="Минимум 6 символов" autoComplete="new-password" required />
                     <button type="button" className="login-eye" onClick={() => setShowPass(!showPass)}>
                       <EyeIcon open={showPass} />
                     </button>
@@ -344,7 +345,7 @@ export default function LoginPage() {
                     <input className="login-input" type={showPass ? 'text' : 'password'}
                       value={regPass2} onChange={e => setRegPass2(e.target.value)}
                       onFocus={() => setFocused('rpass2')} onBlur={() => setFocused('')}
-                      placeholder="Повторите пароль" required />
+                      placeholder="Повторите пароль" autoComplete="new-password" required />
                   </Field>
 
                   <button type="submit" className="login-btn"

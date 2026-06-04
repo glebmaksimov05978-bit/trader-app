@@ -13,7 +13,7 @@
 
 .login-bg { position: fixed; inset: 0; z-index: 0; }
 .bg-orb { position: absolute; border-radius: 50%; filter: blur(80px); animation: orbFloat 8s ease-in-out infinite; }
-.bg-orb-1 { width:600px;height:600px;background:radial-gradient(circle,rgba(79,70,229,0.22) 0%,transparent 70%);top:-200px;left:-100px; }
+.bg-orb-1 { width:700px;height:700px;background:radial-gradient(circle,rgba(79,70,229,0.25) 0%,transparent 70%);top:-200px;left:-100px; }
 .bg-orb-2 { width:450px;height:450px;background:radial-gradient(circle,rgba(124,58,237,0.18) 0%,transparent 70%);bottom:-100px;right:-50px;animation-delay:-3s; }
 .bg-orb-3 { width:300px;height:300px;background:radial-gradient(circle,rgba(16,185,129,0.12) 0%,transparent 70%);top:50%;left:50%;transform:translate(-50%,-50%);animation-delay:-6s; }
 
@@ -39,9 +39,9 @@
 
 .login-wrapper {
   display: grid; grid-template-columns: 1fr 1fr;
-  max-width: 1000px; width: 100%; margin: 24px;
+  max-width: 1000px; width: 100%; margin: 16px;
   position: relative; z-index: 2; border-radius: 28px;
-  overflow: hidden; min-height: 520px;
+  overflow: hidden; min-height: 480px;
   box-shadow: 0 40px 120px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.06);
 }
 
@@ -68,17 +68,17 @@
 .brand-stat-label { font-size:10px; color:rgba(255,255,255,0.35); text-transform:uppercase; letter-spacing:0.8px; }
 .brand-stat-divider { width:1px; height:36px; background:rgba(255,255,255,0.12); flex-shrink:0; }
 
-.login-form-side { background:#0d1525; display:flex; align-items:center; justify-content:center; padding:40px 44px; }
+.login-form-side { background:#0d1525; display:flex; align-items:center; justify-content:center; padding:28px 36px; overflow-y:auto; }
 
 .login-card { width:100%; max-width:340px; display:flex; flex-direction:column; align-items:stretch; animation:cardEntrance 0.6s cubic-bezier(0.16,1,0.3,1) forwards; }
 @keyframes cardEntrance { from{opacity:0;transform:translateY(24px)} to{opacity:1;transform:translateY(0)} }
 
-.login-card-header { margin-bottom:24px; text-align:center; }
+.login-card-header { margin-bottom:16px; text-align:center; }
 .login-card-badge { display:inline-flex; align-items:center; padding:4px 12px; background:rgba(79,70,229,0.15); border:1px solid rgba(79,70,229,0.3); border-radius:20px; font-size:11px; font-weight:500; color:#818cf8; letter-spacing:0.5px; text-transform:uppercase; margin-bottom:12px; }
 .login-card-title { font-family:'Syne',sans-serif; font-size:26px; font-weight:800; color:#f0f4ff; letter-spacing:-0.8px; margin-bottom:4px; }
 .login-card-sub { font-size:13px; color:rgba(255,255,255,0.35); }
 
-.login-form { display:flex; flex-direction:column; gap:14px; width:100%; }
+.login-form { display:flex; flex-direction:column; gap:10px; width:100%; }
 .login-field { display:flex; flex-direction:column; gap:6px; width:100%; }
 .login-field-label { font-size:12px; font-weight:500; color:rgba(255,255,255,0.4); letter-spacing:0.3px; transition:color 0.2s; text-align:left; }
 .login-field.focused .login-field-label { color:#818cf8; }
@@ -86,12 +86,12 @@
 .login-field.focused .login-field-wrap { border-color:rgba(79,70,229,0.6); background:rgba(79,70,229,0.07); box-shadow:0 0 0 3px rgba(79,70,229,0.15); }
 .login-field-icon { padding:0 14px; color:rgba(255,255,255,0.3); display:flex; align-items:center; flex-shrink:0; transition:color 0.2s; }
 .login-field.focused .login-field-icon { color:#818cf8; }
-.login-input { flex:1; background:none; border:none; outline:none; padding:13px 14px 13px 0; font-size:15px; font-family:'DM Sans',sans-serif; color:#f0f4ff; width:100%; min-width:0; }
+.login-input { flex:1; background:none; border:none; outline:none; padding:11px 14px 11px 0; font-size:15px; font-family:'DM Sans',sans-serif; color:#f0f4ff; width:100%; min-width:0; }
 .login-input::placeholder { color:rgba(255,255,255,0.22); }
 .login-eye { padding:0 14px; background:none; border:none; cursor:pointer; color:rgba(255,255,255,0.3); display:flex; align-items:center; flex-shrink:0; transition:color 0.2s; }
 .login-eye:hover { color:rgba(255,255,255,0.7); }
 
-.login-btn { margin-top:6px; width:100%; padding:14px; border:none; border-radius:14px; background:linear-gradient(135deg,#4f46e5 0%,#7c3aed 100%); color:#fff; font-family:'DM Sans',sans-serif; font-size:15px; font-weight:600; cursor:pointer; transition:transform 0.2s,box-shadow 0.2s; position:relative; overflow:hidden; }
+.login-btn { margin-top:4px; width:100%; padding:12px; border:none; border-radius:14px; background:linear-gradient(135deg,#4f46e5 0%,#7c3aed 100%); color:#fff; font-family:'DM Sans',sans-serif; font-size:15px; font-weight:600; cursor:pointer; transition:transform 0.2s,box-shadow 0.2s; position:relative; overflow:hidden; }
 .login-btn::before { content:''; position:absolute; inset:0; background:linear-gradient(135deg,rgba(255,255,255,0.12) 0%,transparent 100%); opacity:0; transition:opacity 0.2s; }
 @keyframes btnGlow { 0%,100%{box-shadow:0 0 20px rgba(79,70,229,0.4),0 8px 20px rgba(79,70,229,0.3)} 50%{box-shadow:0 0 40px rgba(79,70,229,0.7),0 8px 28px rgba(79,70,229,0.5)} }
 .login-btn:not(:disabled) { animation:btnGlow 2.5s ease-in-out infinite; }
@@ -131,4 +131,30 @@
   .login-wrapper { grid-template-columns:1fr; margin:0; border-radius:0; min-height:100vh; }
   .login-brand { display:none; }
   .login-form-side { padding:40px 28px; }
+}
+
+/* =====================================================
+   ФИКС АВТОЗАПОЛНЕНИЯ — убираем белый фон
+   ===================================================== */
+.login-input:-webkit-autofill,
+.login-input:-webkit-autofill:hover,
+.login-input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px #111827 inset !important;
+  -webkit-text-fill-color: #f0f4ff !important;
+  caret-color: #f0f4ff;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* Убираем браузерную иконку ключа и замка */
+input::-webkit-credentials-auto-fill-button,
+input::-webkit-contacts-auto-fill-button,
+input::-webkit-password-auto-fill-button {
+  visibility: hidden;
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+}
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none;
 }
