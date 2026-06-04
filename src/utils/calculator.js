@@ -50,15 +50,15 @@ export function calcTrade({
     ? Math.floor(riskAmount / lossPerContract)
     : 0;
 
-  // Ограничение по ГО (только для фьючерсов)
+  // Ограничение по ГО (фьючерсы) или стоимости позиции (акции)
   const marginLimit = (maxMarginPercent || 30) / 100;
   const maxContractsByMargin = (instrumentType === 'future' && iMargin > 0)
     ? Math.floor((deposit * marginLimit) / iMargin)
     : contractsByRisk;
 
-  // Для акций — ограничение по стоимости позиции (не более 90% депозита)
+  // Для акций — ограничение по стоимости позиции (тот же лимит maxMarginPercent%)
   const maxContractsByPosition = instrumentType === 'stock'
-    ? Math.floor((deposit * 0.9) / (entry * l))
+    ? Math.floor((deposit * marginLimit) / (entry * l))
     : contractsByRisk;
 
   const contracts = Math.min(

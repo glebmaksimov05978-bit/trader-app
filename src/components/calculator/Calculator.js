@@ -489,7 +489,7 @@ export default function Calculator() {
                       }}>✕</button>
                     )}
                   </div>
-                  {/* Авто снизу */}
+                  {/* Авто снизу — всегда оригинал от программы */}
                   <div style={{
                     display:'flex', alignItems:'center', justifyContent:'space-between',
                     background:'rgba(255,255,255,0.04)', borderRadius:8,
@@ -499,7 +499,7 @@ export default function Calculator() {
                     <span style={{
                       fontSize:20, fontWeight:800,
                       color: manualContracts ? 'var(--text-muted)' : 'var(--text-primary)',
-                    }}>{displayResult?.contracts}</span>
+                    }}>{result?.contracts}</span>
                     <span style={{fontSize:11, color:'var(--text-muted)'}}>шт.</span>
                   </div>
                 </div>
