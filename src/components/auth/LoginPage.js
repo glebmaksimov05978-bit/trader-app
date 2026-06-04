@@ -278,19 +278,19 @@ export default function LoginPage() {
                   <p className="login-card-sub">Введите ваши данные для входа</p>
                 </div>
 
-                <form onSubmit={handleLogin} className="login-form">
+    <form onSubmit={handleLogin} className="login-form" autoComplete="off">
                   <Field label="Email или логин" focused={focused === 'user'} icon={<IconUser />}>
                     <input className="login-input" type="text" value={username}
                       onChange={e => setUsername(e.target.value)}
                       onFocus={() => setFocused('user')} onBlur={() => setFocused('')}
-                      placeholder="email или логин" autoComplete="username" required />
+                      placeholder="email или логин" autoComplete="off" name="login" required />
                   </Field>
 
                   <Field label="Пароль" focused={focused === 'pass'} icon={<IconLock />}>
                     <input className="login-input" type={showPass ? 'text' : 'password'}
                       value={password} onChange={e => setPassword(e.target.value)}
                       onFocus={() => setFocused('pass')} onBlur={() => setFocused('')}
-                      placeholder="••••••••" autoComplete="current-password" required />
+                      placeholder="••••••••" autoComplete="current-password" name="password" required />
                     <button type="button" className="login-eye" onClick={() => setShowPass(!showPass)}>
                       <EyeIcon open={showPass} />
                     </button>

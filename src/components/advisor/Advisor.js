@@ -5,7 +5,6 @@ import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, calcStats } from '../../services/trades';
 import toast from 'react-hot-toast';
 import './Advisor.css';
-import ProModal from '../common/ProModal';
 
 const MODES = [
   { id: 'journal',    icon: '📊', label: 'Анализ журнала',     desc: 'Паттерны ошибок и слабые места' },
@@ -26,7 +25,6 @@ export default function Advisor() {
   const [stats, setStats] = useState(null);
   const [selectedTrade, setSelectedTrade] = useState('');
   const [calcData, setCalcData] = useState(null);
-  const [showPro, setShowPro] = useState(false);
   const chatEndRef = useRef(null);
 
   useEffect(() => {
@@ -180,6 +178,62 @@ ${recentTrades || 'Нет данных'}${calcContext}
       .split('\n').join('<br/>');
   };
 
+  // Полный заблокированный экран для free пользователей
+  if (!isPro) {
+    return (
+      <div className="page" style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:'70vh'}}>
+        <div style={{
+          maxWidth:460, width:'100%', textAlign:'center',
+          padding:'40px 32px',
+          background:'linear-gradient(145deg,#0f1829,#131d35)',
+          border:'1px solid rgba(255,255,255,0.08)',
+          borderRadius:28,
+          boxShadow:'0 40px 80px rgba(0,0,0,0.4)',
+        }}>
+          <div style={{fontSize:56, marginBottom:12, filter:'drop-shadow(0 0 20px rgba(79,70,229,0.4))'}}>🤖</div>
+          <div style={{
+            display:'inline-flex', alignItems:'center', gap:6,
+            background:'linear-gradient(135deg,rgba(245,158,11,0.15),rgba(251,191,36,0.1))',
+            border:'1px solid rgba(245,158,11,0.3)',
+            borderRadius:20, padding:'5px 14px', marginBottom:14,
+          }}>
+            <span>⭐</span>
+            <span style={{fontSize:11,fontWeight:700,color:'#fbbf24',letterSpacing:'0.5px'}}>ТОЛЬКО ДЛЯ PRO</span>
+          </div>
+          <h2 style={{fontFamily:"'Syne',sans-serif",fontSize:26,fontWeight:800,color:'#f0f4ff',margin:'0 0 8px'}}>AI Советник</h2>
+          <p style={{fontSize:13,color:'rgba(255,255,255,0.4)',lineHeight:1.7,marginBottom:24}}>
+            Персональный торговый коуч анализирует твой журнал,<br/>находит паттерны ошибок и помогает расти
+          </p>
+          <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:24,textAlign:'left',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'14px 18px'}}>
+            {[['📊','Анализ журнала','Паттерны ошибок и слабые места'],['🧠','Психологический коуч','Эмоции и дисциплина'],['🔍','Разбор сделки','Детальный анализ позиции'],['📈','Анализ графиков','Загрузи скриншот — AI разберёт'],['💬','Свободный вопрос','Любой вопрос по трейдингу']].map(([icon,title,desc]) => (
+              <div key={title} style={{display:'flex',alignItems:'center',gap:10}}>
+                <span style={{fontSize:16,flexShrink:0}}>{icon}</span>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:12,fontWeight:600,color:'#f0f4ff'}}>{title}</div>
+                  <div style={{fontSize:11,color:'rgba(255,255,255,0.3)'}}>{desc}</div>
+                </div>
+                <span style={{width:14,height:14,borderRadius:'50%',background:'linear-gradient(135deg,#10b981,#059669)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:8,color:'#fff',flexShrink:0}}>✓</span>
+              </div>
+            ))}
+          </div>
+          <div style={{background:'rgba(79,70,229,0.08)',border:'1px solid rgba(79,70,229,0.2)',borderRadius:14,padding:'14px',marginBottom:14}}>
+            <div style={{display:'flex',alignItems:'baseline',justifyContent:'center',gap:4,marginBottom:2}}>
+              <span style={{fontSize:34,fontWeight:800,color:'#f0f4ff',fontFamily:"'Syne',sans-serif"}}>299</span>
+              <span style={{fontSize:16,color:'rgba(255,255,255,0.5)'}}>₽</span>
+              <span style={{fontSize:12,color:'rgba(255,255,255,0.3)',marginLeft:4}}>/месяц</span>
+            </div>
+            <div style={{fontSize:11,color:'rgba(255,255,255,0.3)'}}>или <strong style={{color:'rgba(255,255,255,0.5)'}}>2 490 ₽</strong> / год — экономия 40%</div>
+          </div>
+          <button style={{width:'100%',padding:14,border:'none',borderRadius:14,background:'linear-gradient(135deg,#4f46e5,#7c3aed)',color:'#fff',fontFamily:"'DM Sans',sans-serif",fontSize:14,fontWeight:700,cursor:'pointer',boxShadow:'0 8px 24px rgba(79,70,229,0.4)'}}
+            onClick={() => alert('Оплата скоро будет доступна!')}>
+            ⚡ Перейти на Pro — 299 ₽/мес
+          </button>
+          <p style={{fontSize:11,color:'rgba(255,255,255,0.2)',marginTop:8}}>Отмена в любой момент · Безопасная оплата</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="page">
       <div className="page-header">
@@ -233,7 +287,7 @@ ${recentTrades || 'Нет данных'}${calcContext}
               <button
                 className="btn btn-primary w-full"
                 style={{marginTop:16}}
-                onClick={() => { if (!isPro) { setShowPro(true); return; } startAnalysis(); }}
+                onClick={startAnalysis}
                 disabled={loading || (mode === 'trade' && !selectedTrade)}
               >
                 {loading ? <><div className="spinner" style={{width:14,height:14}}/> Анализирую...</> : '▶ Запустить анализ'}
@@ -346,7 +400,7 @@ ${recentTrades || 'Нет данных'}${calcContext}
               />
               <button
                 className="btn btn-primary"
-                onClick={() => { if (!isPro) { setShowPro(true); return; } sendMessage(); }}
+                onClick={() => sendMessage()}
                 disabled={loading || !input.trim()}
                 style={{borderRadius:12, padding:'10px 16px'}}
               >
@@ -356,7 +410,6 @@ ${recentTrades || 'Нет данных'}${calcContext}
           </div>
         </div>
       </div>
-      {showPro && <ProModal onClose={() => setShowPro(false)} />}
     </div>
   );
 }

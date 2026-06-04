@@ -19,7 +19,7 @@ const ADMIN_ITEMS = [
 ];
 
 export default function Sidebar() {
-  const { userProfile, logout, isAdmin } = useAuth();
+  const { userProfile, logout, isAdmin, isPro } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [profileOpen, setProfileOpen] = useState(false);
   const location = useLocation();
@@ -55,24 +55,35 @@ export default function Sidebar() {
 
       {/* Bottom section */}
       <div className="sidebar-bottom">
-        {/* Theme toggle */}
         <button className="theme-toggle" onClick={toggleTheme} title="Переключить тему">
           <span>{theme === 'dark' ? '☀️' : '🌙'}</span>
           <span className="theme-label">{theme === 'dark' ? 'Светлая' : 'Тёмная'}</span>
         </button>
 
-        {/* Profile */}
         <div className="profile-section">
-          <button
-            className="profile-btn"
-            onClick={() => setProfileOpen(!profileOpen)}
-          >
-            <div className="profile-avatar">
+          <button className="profile-btn" onClick={() => setProfileOpen(!profileOpen)}>
+            <div className="profile-avatar" style={{position:'relative'}}>
               {(userProfile?.displayName || 'U')[0].toUpperCase()}
+              {isPro && (
+                <span style={{
+                  position:'absolute', top:-4, right:-4,
+                  fontSize:10, lineHeight:1,
+                  filter:'drop-shadow(0 0 4px rgba(245,158,11,0.8))',
+                }}>⭐</span>
+              )}
             </div>
             <div className="profile-info">
-              <span className="profile-name">{userProfile?.displayName || 'Трейдер'}</span>
-              <span className="profile-email">{userProfile?.email}</span>
+              <span className="profile-name">
+                {userProfile?.displayName || 'Трейдер'}
+              </span>
+              <span className="profile-email">
+                {isAdmin
+                  ? <span style={{color:'#818cf8',fontSize:10,fontWeight:700}}>👑 Admin</span>
+                  : isPro
+                  ? <span style={{color:'#f59e0b',fontSize:10,fontWeight:700}}>⚡ Pro</span>
+                  : <span style={{color:'var(--text-muted)',fontSize:10}}>Free</span>
+                }
+              </span>
             </div>
             <span className="profile-chevron">{profileOpen ? '▲' : '▼'}</span>
           </button>
