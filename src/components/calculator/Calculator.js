@@ -205,7 +205,21 @@ export default function Calculator() {
         ].map(t => (
           <button
             key={t.id}
-            onClick={() => setInstrumentType(t.id)}
+            onClick={() => {
+              setInstrumentType(t.id);
+              setManualContracts('');
+              setForm(f => ({
+                ...f,
+                ticker: '',
+                entryPrice: '',
+                stopLoss: '',
+                takeProfit: '',
+                initialMargin: '',
+                minStep: '1',
+                minStepAmount: '0',
+                lot: '1',
+              }));
+            }}
             style={{
               padding:'8px 20px', borderRadius:12, border:'none', cursor:'pointer',
               fontFamily:'inherit', fontSize:13, fontWeight:600,
@@ -395,28 +409,34 @@ export default function Calculator() {
               <div className="calc-key-metrics">
                 <div className={`calc-metric-card ${result.direction === 'long' ? 'green' : 'red'}`} style={{position:'relative'}}>
                   <div className="calc-metric-label">{instrumentType === 'stock' ? 'Лотов' : 'Контрактов'}</div>
-                  <div style={{display:'flex', alignItems:'center', gap:6}}>
-                    <div className="calc-metric-value" style={{color: manualContracts ? 'var(--gold)' : ''}}>{effectiveContracts}</div>
-                    <div className="calc-metric-sub">шт.</div>
-                  </div>
-                  <div style={{marginTop:6}}>
+                  {/* Большое поле ввода вместо цифры */}
+                  <div style={{display:'flex', alignItems:'baseline', gap:6, marginBottom:4}}>
                     <input
                       type="number"
                       min="1"
-                      placeholder={`авто: ${result.contracts}`}
                       value={manualContracts}
                       onChange={e => setManualContracts(e.target.value)}
+                      placeholder={String(result.contracts)}
                       style={{
-                        width:'100%', background:'rgba(255,255,255,0.08)',
-                        border:'1px solid rgba(255,255,255,0.15)', borderRadius:8,
-                        padding:'4px 8px', fontSize:12, color:'var(--text-primary)',
-                        outline:'none', fontFamily:'inherit',
+                        width: '70px',
+                        background: 'none',
+                        border: 'none',
+                        outline: 'none',
+                        fontFamily: 'inherit',
+                        fontSize: 36,
+                        fontWeight: 800,
+                        color: manualContracts ? 'var(--gold)' : 'var(--text-primary)',
+                        padding: 0,
+                        MozAppearance: 'textfield',
                       }}
-                      title="Оставьте пустым для авторасчёта"
                     />
-                    {manualContracts && (
-                      <div style={{fontSize:10, color:'var(--gold)', marginTop:3}}>✏️ Ручной режим</div>
-                    )}
+                    <span style={{fontSize:14, color:'var(--text-muted)', fontWeight:500}}>шт.</span>
+                  </div>
+                  <div style={{fontSize:11, color:'var(--text-muted)'}}>
+                    {manualContracts
+                      ? <span style={{color:'var(--gold)'}}>✏️ ручной · авто: {result.contracts}</span>
+                      : <span>авто по риску</span>
+                    }
                   </div>
                 </div>
                 <div className={`calc-metric-card ${!result.rrValid && result.rr !== 0 ? 'red' : result.rr >= 2 ? 'green' : result.rr >= 1 ? 'gold' : 'red'}`}>
