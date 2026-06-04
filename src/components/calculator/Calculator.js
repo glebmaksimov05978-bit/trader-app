@@ -46,7 +46,8 @@ export default function Calculator() {
   const [tapi, setTapi] = useState(null);
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [openingTrade, setOpeningTrade] = useState(false);
-  const [manualContracts, setManualContracts] = useState();
+  const [manualContracts, setManualContracts] = useState('');
+  const [instrumentType, setInstrumentType] = useState('future'); // future | stock
   const refreshTimer = useRef(null);
 
   useEffect(() => {
@@ -79,6 +80,8 @@ export default function Calculator() {
       minStepAmount: form.minStepAmount,
       initialMargin: form.initialMargin,
       commissionRate: form.commissionRate,
+      maxMarginPercent: parseFloat(userProfile?.maxMarginPercent) || 30,
+      instrumentType,
     });
     setResult(r);
   }, [form]);
@@ -190,6 +193,35 @@ export default function Calculator() {
         <p className="page-subtitle">Автоматический расчёт параметров позиции</p>
       </div>
 
+      {/* Переключатель типа инструмента */}
+      <div style={{
+        display:'flex', gap:8, marginBottom:20,
+        background:'var(--bg-surface-2)', borderRadius:16,
+        padding:6, width:'fit-content',
+      }}>
+        {[
+          {id:'future', label:'Фьючерс', icon:'⚡'},
+          {id:'stock',  label:'Акция',   icon:'📈'},
+        ].map(t => (
+          <button
+            key={t.id}
+            onClick={() => setInstrumentType(t.id)}
+            style={{
+              padding:'8px 20px', borderRadius:12, border:'none', cursor:'pointer',
+              fontFamily:'inherit', fontSize:13, fontWeight:600,
+              transition:'all 0.2s',
+              background: instrumentType === t.id
+                ? 'linear-gradient(135deg,#4f46e5,#7c3aed)'
+                : 'transparent',
+              color: instrumentType === t.id ? '#fff' : 'var(--text-muted)',
+              boxShadow: instrumentType === t.id ? '0 4px 12px rgba(79,70,229,0.35)' : 'none',
+            }}
+          >
+            {t.icon} {t.label}
+          </button>
+        ))}
+      </div>
+
       <div className="calc-layout">
         {/* Input panel */}
         <div className="card calc-input-panel">
@@ -287,9 +319,19 @@ export default function Calculator() {
                 onChange={e => set('lot', e.target.value)} placeholder="1" />
             </div>
             <div className="input-group">
-              <label className="input-label">ГО (₽ на контракт)</label>
-              <input className="input" type="number" value={form.initialMargin}
-                onChange={e => set('initialMargin', e.target.value)} placeholder="авто" />
+{instrumentType === 'future' && (
+              <>
+                <label className="input-label">ГО (₽ на контракт)</label>
+                <input className="input" type="number" value={form.initialMargin}
+                  onChange={e => set('initialMargin', e.target.value)} placeholder="авто" />
+              </>
+            )}
+            {instrumentType === 'stock' && (
+              <>
+                <label className="input-label">ГО не нужно</label>
+                <input className="input" disabled value="—" style={{opacity:0.4}} />
+              </>
+            )}
             </div>
             <div className="input-group">
               <label className="input-label">Шаг цены</label>
@@ -308,15 +350,41 @@ export default function Calculator() {
               onChange={e => set('commissionRate', e.target.value)} />
           </div>
 
-          {/* Open trade button */}
+          {/* Кнопки */}
           {result && result.contracts > 0 && (
-            <button
-              className="btn btn-primary w-full"
-              style={{marginTop:16}}
-              onClick={handleOpenTrade}
-            >
-              📂 Открыть сделку в журнале
-            </button>
+            <div style={{display:'flex', gap:10, marginTop:16}}>
+              <button
+                className="btn btn-primary"
+                style={{flex:1}}
+                onClick={handleOpenTrade}
+              >
+                📂 В журнал
+              </button>
+              <button
+                className="btn"
+                style={{
+                  background:'linear-gradient(135deg,#7c3aed,#4f46e5)',
+                  color:'#fff', border:'none', borderRadius:14,
+                  padding:'0 18px', cursor:'pointer',
+                  fontWeight:600, fontSize:14, fontFamily:'inherit',
+                }}
+                onClick={() => {
+                  const p = new URLSearchParams({
+                    from:'calculator',
+                    ticker: form.ticker || '',
+                    entry: form.entryPrice || '',
+                    sl: form.stopLoss || '',
+                    tp: form.takeProfit || '',
+                    contracts: String(effectiveContracts),
+                    rr: String(result.rr),
+                    direction: result.direction,
+                  });
+                  window.location.href = '/advisor?' + p.toString();
+                }}
+              >
+                🤖 В AI
+              </button>
+            </div>
           )}
         </div>
 
@@ -326,7 +394,7 @@ export default function Calculator() {
             <>
               <div className="calc-key-metrics">
                 <div className={`calc-metric-card ${result.direction === 'long' ? 'green' : 'red'}`} style={{position:'relative'}}>
-                  <div className="calc-metric-label">Контракты</div>
+                  <div className="calc-metric-label">{instrumentType === 'stock' ? 'Лотов' : 'Контрактов'}</div>
                   <div style={{display:'flex', alignItems:'center', gap:6}}>
                     <div className="calc-metric-value" style={{color: manualContracts ? 'var(--gold)' : ''}}>{effectiveContracts}</div>
                     <div className="calc-metric-sub">шт.</div>
@@ -351,15 +419,48 @@ export default function Calculator() {
                     )}
                   </div>
                 </div>
-                <div className={`calc-metric-card ${result.rr >= 2 ? 'green' : result.rr >= 1 ? 'gold' : 'red'}`}>
+                <div className={`calc-metric-card ${!result.rrValid && result.rr !== 0 ? 'red' : result.rr >= 2 ? 'green' : result.rr >= 1 ? 'gold' : 'red'}`}>
                   <div className="calc-metric-label">Risk/Reward</div>
-                  <div className="calc-metric-value" style={{color: rrColor}}>1:{formatNumber(result.rr, 1)}</div>
-                  <div className="calc-metric-sub">{result.rr >= 2 ? '✅ Отличный' : result.rr >= 1 ? '⚠️ Норм' : '❌ Плохой'}</div>
+                  {(!result.rrValid && result.rr !== 0) ? (
+                    <>
+                      <div className="calc-metric-value" style={{color:'var(--red)',fontSize:13}}>⚠️ TP не там!</div>
+                      <div className="calc-metric-sub" style={{color:'var(--red)',fontSize:10}}>
+                        {result.direction === 'long' ? 'TP должен быть выше входа' : 'TP должен быть ниже входа'}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="calc-metric-value" style={{color: rrColor}}>1:{formatNumber(result.rr, 1)}</div>
+                      <div className="calc-metric-sub">{result.rr >= 2 ? '✅ Отличный' : result.rr >= 1 ? '⚠️ Норм' : '❌ Плохой'}</div>
+                    </>
+                  )}
                 </div>
-                <div className="calc-metric-card blue">
-                  <div className="calc-metric-label">ГО требуется</div>
-                  <div className="calc-metric-value" style={{fontSize:18}}>{formatCurrency(result.totalMargin)}</div>
-                  <div className="calc-metric-sub">{result.marginUsagePercent}% депозита</div>
+                <div className={`calc-metric-card ${result.marginUsagePercent > (result.maxMarginPercent || 30) ? 'red' : 'blue'}`}>
+                  <div className="calc-metric-label">{instrumentType === 'stock' ? 'Стоимость позиции' : 'ГО (заморозка)'}</div>
+                  <div className="calc-metric-value" style={{fontSize:16}}>
+                    {instrumentType === 'stock'
+                      ? formatCurrency(result.positionValue)
+                      : formatCurrency(result.totalMargin)}
+                  </div>
+                  <div className="calc-metric-sub" style={{
+                    color: result.marginUsagePercent > (result.maxMarginPercent || 30) ? 'var(--red)' : ''
+                  }}>
+                    {instrumentType === 'future'
+                      ? `${result.marginUsagePercent}% / лимит ${result.maxMarginPercent || 30}%`
+                      : `${result.marginUsagePercent}% депозита`}
+                  </div>
+                  {instrumentType === 'future' && (
+                    <div style={{
+                      marginTop:6, paddingTop:6,
+                      borderTop:'1px solid rgba(255,255,255,0.1)',
+                      fontSize:11, color:'var(--text-muted)',
+                    }}>
+                      <div>Стоимость позиции:</div>
+                      <div style={{color:'var(--text-primary)', fontWeight:600}}>
+                        {formatCurrency(result.positionValue)}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
