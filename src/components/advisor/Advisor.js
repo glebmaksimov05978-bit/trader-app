@@ -153,8 +153,8 @@ ${recentTrades || 'Нет данных'}${calcContext}
   // ===================== PRO GATE =====================
   if (!isPro) {
     return (
-      <div className="page" style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:'75vh',padding:'0 16px'}}>
-        <div style={{width:'100%',maxWidth:560,textAlign:'center',padding:'48px 40px',background:'linear-gradient(145deg,#0f1829,#131d35)',border:'1px solid rgba(255,255,255,0.08)',borderRadius:28,boxShadow:'0 40px 80px rgba(0,0,0,0.4)'}}>
+      <div className="pro-gate-page">
+        <div className="pro-gate-card">
           <div style={{fontSize:60,marginBottom:14,filter:'drop-shadow(0 0 20px rgba(79,70,229,0.4))'}}>🤖</div>
           <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'linear-gradient(135deg,rgba(245,158,11,0.15),rgba(251,191,36,0.1))',border:'1px solid rgba(245,158,11,0.3)',borderRadius:20,padding:'5px 16px',marginBottom:16}}>
             <span>⭐</span>

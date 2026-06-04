@@ -624,3 +624,76 @@ select.input {
 .empty-state-icon { font-size: 48px; opacity: 0.4; }
 .empty-state-title { font-size: 16px; font-weight: 600; color: var(--text-secondary); }
 .empty-state-text { font-size: 13px; max-width: 300px; }
+
+
+/* =====================================================
+   PRO GATE — адаптивный на весь экран
+   ===================================================== */
+.pro-gate-page {
+  min-height: calc(100vh - 80px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.pro-gate-card {
+  width: 100%;
+  max-width: 560px;
+  text-align: center;
+  padding: 48px 40px;
+  background: linear-gradient(145deg, #0f1829, #131d35);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 28px;
+  box-shadow: 0 40px 80px rgba(0,0,0,0.4);
+}
+
+.pro-gate-fine {
+  font-size: 11px;
+  color: rgba(255,255,255,0.2);
+  margin-top: 10px;
+}
+
+@media (max-width: 600px) {
+  .pro-gate-page {
+    align-items: flex-start;
+    padding: 12px;
+    min-height: unset;
+  }
+  .pro-gate-card {
+    padding: 28px 20px;
+    border-radius: 20px;
+    max-width: 100%;
+  }
+}
+
+/* =====================================================
+   МОБИЛЬНАЯ АДАПТАЦИЯ ОСНОВНОГО ПРИЛОЖЕНИЯ
+   ===================================================== */
+@media (max-width: 768px) {
+  .page { padding: 16px 12px; }
+  .page-title { font-size: 20px; }
+  .kpi-value { font-size: 22px; }
+  .card { padding: 16px; }
+
+  /* Таблица — горизонтальный скролл */
+  .table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .table { min-width: 600px; }
+
+  /* Кнопки */
+  .btn-lg { padding: 11px 20px; font-size: 14px; }
+
+  /* Advisor режимы */
+  .advisor-modes-row { gap: 6px; }
+}
+
+@media (max-width: 480px) {
+  .page { padding: 12px 10px; }
+  .grid-2 { grid-template-columns: 1fr; }
+  .kpi-card { padding: 14px 16px; }
+  .kpi-value { font-size: 20px; }
+  .section-title { font-size: 13px; }
+
+  /* Pro gate на очень маленьких */
+  .pro-gate-card { padding: 24px 16px; }
+}

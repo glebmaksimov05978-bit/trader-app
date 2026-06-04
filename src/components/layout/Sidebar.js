@@ -62,15 +62,8 @@ export default function Sidebar() {
 
         <div className="profile-section">
           <button className="profile-btn" onClick={() => setProfileOpen(!profileOpen)}>
-            <div className="profile-avatar" style={{position:'relative'}}>
+            <div className="profile-avatar">
               {(userProfile?.displayName || 'U')[0].toUpperCase()}
-              {isPro && (
-                <span style={{
-                  position:'absolute', top:-4, right:-4,
-                  fontSize:10, lineHeight:1,
-                  filter:'drop-shadow(0 0 4px rgba(245,158,11,0.8))',
-                }}>⭐</span>
-              )}
             </div>
             <div className="profile-info">
               <span className="profile-name">
