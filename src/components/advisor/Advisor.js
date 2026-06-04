@@ -178,57 +178,61 @@ ${recentTrades || 'Нет данных'}${calcContext}
       .split('\n').join('<br/>');
   };
 
-  // Полный заблокированный экран для free пользователей
   if (!isPro) {
     return (
-      <div className="page" style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:'70vh'}}>
+      <div className="page" style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:'75vh',padding:'0 16px'}}>
         <div style={{
-          maxWidth:460, width:'100%', textAlign:'center',
-          padding:'40px 32px',
+          width:'100%', maxWidth:560, textAlign:'center',
+          padding:'48px 40px',
           background:'linear-gradient(145deg,#0f1829,#131d35)',
           border:'1px solid rgba(255,255,255,0.08)',
           borderRadius:28,
           boxShadow:'0 40px 80px rgba(0,0,0,0.4)',
         }}>
-          <div style={{fontSize:56, marginBottom:12, filter:'drop-shadow(0 0 20px rgba(79,70,229,0.4))'}}>🤖</div>
-          <div style={{
-            display:'inline-flex', alignItems:'center', gap:6,
-            background:'linear-gradient(135deg,rgba(245,158,11,0.15),rgba(251,191,36,0.1))',
-            border:'1px solid rgba(245,158,11,0.3)',
-            borderRadius:20, padding:'5px 14px', marginBottom:14,
-          }}>
+          <div style={{fontSize:60, marginBottom:14, filter:'drop-shadow(0 0 20px rgba(79,70,229,0.4))'}}>🤖</div>
+          <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'linear-gradient(135deg,rgba(245,158,11,0.15),rgba(251,191,36,0.1))',border:'1px solid rgba(245,158,11,0.3)',borderRadius:20,padding:'5px 16px',marginBottom:16}}>
             <span>⭐</span>
-            <span style={{fontSize:11,fontWeight:700,color:'#fbbf24',letterSpacing:'0.5px'}}>ТОЛЬКО ДЛЯ PRO</span>
+            <span style={{fontSize:11,fontWeight:700,color:'#fbbf24',letterSpacing:'0.8px'}}>ТОЛЬКО ДЛЯ PRO</span>
           </div>
-          <h2 style={{fontFamily:"'Syne',sans-serif",fontSize:26,fontWeight:800,color:'#f0f4ff',margin:'0 0 8px'}}>AI Советник</h2>
-          <p style={{fontSize:13,color:'rgba(255,255,255,0.4)',lineHeight:1.7,marginBottom:24}}>
-            Персональный торговый коуч анализирует твой журнал,<br/>находит паттерны ошибок и помогает расти
+          <h2 style={{fontFamily:"'Syne',sans-serif",fontSize:30,fontWeight:800,color:'#f0f4ff',margin:'0 0 10px',letterSpacing:'-0.5px'}}>AI Советник</h2>
+          <p style={{fontSize:14,color:'rgba(255,255,255,0.4)',lineHeight:1.7,marginBottom:28}}>
+            Персональный торговый коуч анализирует твой журнал,<br/>находит паттерны ошибок и помогает расти как трейдеру
           </p>
-          <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:24,textAlign:'left',background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:14,padding:'14px 18px'}}>
-            {[['📊','Анализ журнала','Паттерны ошибок и слабые места'],['🧠','Психологический коуч','Эмоции и дисциплина'],['🔍','Разбор сделки','Детальный анализ позиции'],['📈','Анализ графиков','Загрузи скриншот — AI разберёт'],['💬','Свободный вопрос','Любой вопрос по трейдингу']].map(([icon,title,desc]) => (
-              <div key={title} style={{display:'flex',alignItems:'center',gap:10}}>
-                <span style={{fontSize:16,flexShrink:0}}>{icon}</span>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:12,fontWeight:600,color:'#f0f4ff'}}>{title}</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:28,textAlign:'left'}}>
+            {[
+              ['📊','Анализ журнала','Паттерны ошибок и слабые места'],
+              ['🧠','Психологический коуч','Эмоции и дисциплина'],
+              ['🔍','Разбор сделки','Детальный анализ позиции'],
+              ['📈','Анализ графиков','Загрузи скриншот — AI разберёт'],
+              ['💬','Свободный вопрос','Любой вопрос по трейдингу'],
+              ['🧮','Из калькулятора','Разбор сделки перед входом'],
+            ].map(([icon,title,desc]) => (
+              <div key={title} style={{display:'flex',alignItems:'flex-start',gap:10,background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:12,padding:'10px 12px'}}>
+                <span style={{fontSize:18,flexShrink:0,marginTop:1}}>{icon}</span>
+                <div>
+                  <div style={{fontSize:12,fontWeight:600,color:'#f0f4ff',marginBottom:2}}>{title}</div>
                   <div style={{fontSize:11,color:'rgba(255,255,255,0.3)'}}>{desc}</div>
                 </div>
-                <span style={{width:14,height:14,borderRadius:'50%',background:'linear-gradient(135deg,#10b981,#059669)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:8,color:'#fff',flexShrink:0}}>✓</span>
               </div>
             ))}
           </div>
-          <div style={{background:'rgba(79,70,229,0.08)',border:'1px solid rgba(79,70,229,0.2)',borderRadius:14,padding:'14px',marginBottom:14}}>
-            <div style={{display:'flex',alignItems:'baseline',justifyContent:'center',gap:4,marginBottom:2}}>
-              <span style={{fontSize:34,fontWeight:800,color:'#f0f4ff',fontFamily:"'Syne',sans-serif"}}>299</span>
-              <span style={{fontSize:16,color:'rgba(255,255,255,0.5)'}}>₽</span>
-              <span style={{fontSize:12,color:'rgba(255,255,255,0.3)',marginLeft:4}}>/месяц</span>
+          <div style={{background:'rgba(79,70,229,0.08)',border:'1px solid rgba(79,70,229,0.2)',borderRadius:16,padding:'16px',marginBottom:16}}>
+            <div style={{display:'flex',alignItems:'baseline',justifyContent:'center',gap:4,marginBottom:4}}>
+              <span style={{fontSize:40,fontWeight:800,color:'#f0f4ff',fontFamily:"'Syne',sans-serif"}}>299</span>
+              <span style={{fontSize:20,color:'rgba(255,255,255,0.5)'}}>₽</span>
+              <span style={{fontSize:13,color:'rgba(255,255,255,0.3)',marginLeft:4}}>/месяц</span>
             </div>
-            <div style={{fontSize:11,color:'rgba(255,255,255,0.3)'}}>или <strong style={{color:'rgba(255,255,255,0.5)'}}>2 490 ₽</strong> / год — экономия 40%</div>
+            <div style={{fontSize:12,color:'rgba(255,255,255,0.3)'}}>или <strong style={{color:'rgba(255,255,255,0.5)'}}>2 490 ₽</strong> / год — экономия 40%</div>
           </div>
-          <button style={{width:'100%',padding:14,border:'none',borderRadius:14,background:'linear-gradient(135deg,#4f46e5,#7c3aed)',color:'#fff',fontFamily:"'DM Sans',sans-serif",fontSize:14,fontWeight:700,cursor:'pointer',boxShadow:'0 8px 24px rgba(79,70,229,0.4)'}}
-            onClick={() => alert('Оплата скоро будет доступна!')}>
+          <button
+            style={{width:'100%',padding:15,border:'none',borderRadius:14,background:'linear-gradient(135deg,#4f46e5,#7c3aed)',color:'#fff',fontFamily:"'DM Sans',sans-serif",fontSize:15,fontWeight:700,cursor:'pointer',boxShadow:'0 8px 24px rgba(79,70,229,0.4)',transition:'transform 0.2s'}}
+            onMouseEnter={e=>e.currentTarget.style.transform='translateY(-2px)'}
+            onMouseLeave={e=>e.currentTarget.style.transform=''}
+            onClick={() => alert('Оплата скоро будет доступна! Напишите в поддержку для активации Pro.')}
+          >
             ⚡ Перейти на Pro — 299 ₽/мес
           </button>
-          <p style={{fontSize:11,color:'rgba(255,255,255,0.2)',marginTop:8}}>Отмена в любой момент · Безопасная оплата</p>
+          <p style={{fontSize:11,color:'rgba(255,255,255,0.2)',marginTop:10}}>Отмена в любой момент · Безопасная оплата</p>
         </div>
       </div>
     );
@@ -241,29 +245,33 @@ ${recentTrades || 'Нет данных'}${calcContext}
         <p className="page-subtitle">Анализ торговли с помощью искусственного интеллекта</p>
       </div>
 
+      {/* Горизонтальные режимы */}
+      <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:16}}>
+        {MODES.map(m => (
+          <button
+            key={m.id}
+            onClick={() => { setMode(m.id); setMessages([]); }}
+            style={{
+              display:'flex', alignItems:'center', gap:6,
+              padding:'8px 14px', borderRadius:20,
+              border: mode === m.id ? '1px solid rgba(79,70,229,0.6)' : '1px solid var(--border-subtle)',
+              background: mode === m.id ? 'rgba(79,70,229,0.15)' : 'var(--bg-surface-2)',
+              color: mode === m.id ? '#818cf8' : 'var(--text-muted)',
+              fontFamily:'inherit', fontSize:12, fontWeight:600,
+              cursor:'pointer', transition:'all 0.2s',
+              boxShadow: mode === m.id ? '0 0 0 1px rgba(79,70,229,0.3)' : 'none',
+            }}
+          >
+            <span>{m.icon}</span>
+            <span>{m.label}</span>
+          </button>
+        ))}
+      </div>
+
       <div className="advisor-layout">
-        {/* Left: mode selector */}
         <div className="advisor-sidebar">
           <div className="card">
-            <div className="section-title">
-              <div className="section-title-icon">🎯</div>
-              Режим
-            </div>
-            <div className="flex flex-col gap-2">
-              {MODES.map(m => (
-                <button
-                  key={m.id}
-                  className={`advisor-mode-btn ${mode === m.id ? 'active' : ''}`}
-                  onClick={() => { setMode(m.id); setMessages([]); }}
-                >
-                  <span className="advisor-mode-icon">{m.icon}</span>
-                  <div>
-                    <div className="advisor-mode-label">{m.label}</div>
-                    <div className="advisor-mode-desc">{m.desc}</div>
-                  </div>
-                </button>
-              ))}
-            </div>
+            <div>
 
             {/* Trade selector for 'trade' mode */}
             {mode === 'trade' && (

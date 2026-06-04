@@ -68,9 +68,24 @@
 .brand-stat-label { font-size:10px; color:rgba(255,255,255,0.35); text-transform:uppercase; letter-spacing:0.8px; }
 .brand-stat-divider { width:1px; height:36px; background:rgba(255,255,255,0.12); flex-shrink:0; }
 
-.login-form-side { background:#0d1525; display:flex; align-items:center; justify-content:center; padding:28px 36px; overflow-y:auto; }
+/* ПРАВАЯ ЧАСТЬ */
+.login-form-side {
+  background: #0d1525;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 36px;
+  overflow-y: auto;
+}
 
-.login-card { width:100%; max-width:340px; display:flex; flex-direction:column; align-items:stretch; animation:cardEntrance 0.6s cubic-bezier(0.16,1,0.3,1) forwards; }
+.login-card {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  animation: cardEntrance 0.6s cubic-bezier(0.16,1,0.3,1) forwards;
+}
 @keyframes cardEntrance { from{opacity:0;transform:translateY(24px)} to{opacity:1;transform:translateY(0)} }
 
 .login-card-header { margin-bottom:16px; text-align:center; }
@@ -82,14 +97,62 @@
 .login-field { display:flex; flex-direction:column; gap:6px; width:100%; }
 .login-field-label { font-size:12px; font-weight:500; color:rgba(255,255,255,0.4); letter-spacing:0.3px; transition:color 0.2s; text-align:left; }
 .login-field.focused .login-field-label { color:#818cf8; }
-.login-field-wrap { display:flex; align-items:center; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1); border-radius:14px; overflow:hidden; transition:all 0.2s; width:100%; }
-.login-field.focused .login-field-wrap { border-color:rgba(79,70,229,0.6); background:rgba(79,70,229,0.07); box-shadow:0 0 0 3px rgba(79,70,229,0.15); }
-.login-field-icon { padding:0 14px; color:rgba(255,255,255,0.3); display:flex; align-items:center; flex-shrink:0; transition:color 0.2s; }
+
+.login-field-wrap {
+  display: flex;
+  align-items: center;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px;
+  overflow: hidden;
+  transition: all 0.2s;
+  width: 100%;
+  /* Убираем внутренние браузерные иконки */
+  position: relative;
+}
+.login-field.focused .login-field-wrap {
+  border-color: rgba(79,70,229,0.6);
+  background: rgba(79,70,229,0.07);
+  box-shadow: 0 0 0 3px rgba(79,70,229,0.15);
+}
+
+.login-field-icon {
+  padding: 0 14px;
+  color: rgba(255,255,255,0.3);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  transition: color 0.2s;
+}
 .login-field.focused .login-field-icon { color:#818cf8; }
-.login-input { flex:1; background:none; border:none; outline:none; padding:11px 14px 11px 0; font-size:15px; font-family:'DM Sans',sans-serif; color:#f0f4ff; width:100%; min-width:0; }
+
+.login-input {
+  flex: 1;
+  background: none;
+  border: none;
+  outline: none;
+  padding: 13px 8px 13px 0;
+  font-size: 15px;
+  font-family: 'DM Sans', sans-serif;
+  color: #f0f4ff;
+  width: 100%;
+  min-width: 0;
+}
 .login-input::placeholder { color:rgba(255,255,255,0.22); }
-.login-eye { padding:0 14px; background:none; border:none; cursor:pointer; color:rgba(255,255,255,0.3); display:flex; align-items:center; flex-shrink:0; transition:color 0.2s; }
-.login-eye:hover { color:rgba(255,255,255,0.7); }
+
+/* Глаз кнопка */
+.login-eye {
+  padding: 0 14px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: rgba(255,255,255,0.3);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  transition: color 0.2s;
+}
+.login-eye:hover { color: rgba(255,255,255,0.7); }
 
 .login-btn { margin-top:4px; width:100%; padding:12px; border:none; border-radius:14px; background:linear-gradient(135deg,#4f46e5 0%,#7c3aed 100%); color:#fff; font-family:'DM Sans',sans-serif; font-size:15px; font-weight:600; cursor:pointer; transition:transform 0.2s,box-shadow 0.2s; position:relative; overflow:hidden; }
 .login-btn::before { content:''; position:absolute; inset:0; background:linear-gradient(135deg,rgba(255,255,255,0.12) 0%,transparent 100%); opacity:0; transition:opacity 0.2s; }
@@ -103,18 +166,18 @@
 .login-spinner { width:16px; height:16px; border:2px solid rgba(255,255,255,0.3); border-top-color:#fff; border-radius:50%; animation:spin 0.7s linear infinite; }
 @keyframes spin { to{transform:rotate(360deg)} }
 
-.login-footer { display:flex; align-items:center; gap:12px; margin-top:20px; }
+.login-footer { display:flex; align-items:center; gap:12px; margin-top:16px; }
 .login-footer-line { flex:1; height:1px; background:rgba(255,255,255,0.07); }
 .login-footer-text { font-size:11px; color:rgba(255,255,255,0.2); white-space:nowrap; }
 
 /* ТАБЫ */
-.login-tabs { display:flex; gap:4px; background:rgba(255,255,255,0.05); border-radius:16px; padding:4px; margin-bottom:20px; }
+.login-tabs { display:flex; gap:4px; background:rgba(255,255,255,0.05); border-radius:16px; padding:4px; margin-bottom:16px; }
 .login-tab { flex:1; padding:9px 16px; background:none; border:none; border-radius:12px; font-family:'DM Sans',sans-serif; font-size:13px; font-weight:600; color:rgba(255,255,255,0.35); cursor:pointer; transition:all 0.2s; }
 .login-tab.active { background:linear-gradient(135deg,#4f46e5,#7c3aed); color:#fff; box-shadow:0 4px 12px rgba(79,70,229,0.35); }
 .login-tab:hover:not(.active) { color:rgba(255,255,255,0.6); }
 
 /* Забыл пароль */
-.login-forgot { background:none; border:none; cursor:pointer; font-family:'DM Sans',sans-serif; font-size:12px; color:rgba(129,140,248,0.7); text-align:right; padding:0; transition:color 0.2s; margin-top:-6px; align-self:flex-end; }
+.login-forgot { background:none; border:none; cursor:pointer; font-family:'DM Sans',sans-serif; font-size:12px; color:rgba(129,140,248,0.7); text-align:right; padding:0; transition:color 0.2s; margin-top:-4px; align-self:flex-end; }
 .login-forgot:hover { color:#818cf8; }
 
 /* МОДАЛ СБРОСА */
@@ -127,15 +190,7 @@
 .login-modal-close:hover { background:rgba(255,255,255,0.15); color:#fff; }
 @keyframes fadeIn { from{opacity:0} to{opacity:1} }
 
-@media (max-width:700px) {
-  .login-wrapper { grid-template-columns:1fr; margin:0; border-radius:0; min-height:100vh; }
-  .login-brand { display:none; }
-  .login-form-side { padding:40px 28px; }
-}
-
-/* =====================================================
-   ФИКС АВТОЗАПОЛНЕНИЯ — убираем белый фон
-   ===================================================== */
+/* ФИКС АВТОЗАПОЛНЕНИЯ */
 .login-input:-webkit-autofill,
 .login-input:-webkit-autofill:hover,
 .login-input:-webkit-autofill:focus {
@@ -145,16 +200,25 @@
   transition: background-color 5000s ease-in-out 0s;
 }
 
-/* Убираем браузерную иконку ключа и замка */
+/* Убираем ВСЕ браузерные иконки в полях */
 input::-webkit-credentials-auto-fill-button,
 input::-webkit-contacts-auto-fill-button,
-input::-webkit-password-auto-fill-button {
-  visibility: hidden;
-  pointer-events: none;
-  position: absolute;
-  right: 0;
+input::-webkit-password-auto-fill-button,
+input::-webkit-caps-lock-indicator,
+input::-webkit-strong-password-auto-fill-button {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
 }
 input[type="password"]::-ms-reveal,
-input[type="password"]::-ms-clear {
-  display: none;
+input[type="password"]::-ms-clear { display: none; }
+/* Firefox */
+input { -moz-appearance: none; }
+
+@media (max-width:700px) {
+  .login-wrapper { grid-template-columns:1fr; margin:0; border-radius:0; min-height:100vh; }
+  .login-brand { display:none; }
+  .login-form-side { padding:32px 24px; }
 }

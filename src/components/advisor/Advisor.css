@@ -1,8 +1,9 @@
 /* src/components/advisor/Advisor.css */
+
 .advisor-layout {
   display: grid;
-  grid-template-columns: 300px 1fr;
-  gap: 24px;
+  grid-template-columns: 260px 1fr;
+  gap: 20px;
   align-items: start;
 }
 
@@ -11,37 +12,7 @@
   top: 24px;
 }
 
-.advisor-mode-btn {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  border-radius: 12px;
-  border: 1px solid var(--border-subtle);
-  background: transparent;
-  color: var(--text-primary);
-  cursor: pointer;
-  font-family: inherit;
-  text-align: left;
-  transition: all var(--transition);
-  width: 100%;
-}
-
-.advisor-mode-btn:hover {
-  background: var(--bg-surface-2);
-  border-color: var(--border-medium);
-}
-
-.advisor-mode-btn.active {
-  background: rgba(79,70,229,0.1);
-  border-color: var(--accent-primary);
-}
-
-.advisor-mode-icon { font-size: 20px; flex-shrink: 0; }
-.advisor-mode-label { font-size: 13px; font-weight: 600; }
-.advisor-mode-desc { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
-
-/* Chat */
+/* Чат на всю оставшуюся ширину */
 .advisor-chat { min-height: 0; }
 
 .advisor-messages-card {
@@ -67,39 +38,28 @@
   align-items: flex-start;
   animation: fadeIn 0.3s ease;
 }
-
 .advisor-message.user { flex-direction: row-reverse; }
 
 .advisor-message-avatar {
-  width: 32px;
-  height: 32px;
+  width: 32px; height: 32px;
   border-radius: 10px;
   background: var(--bg-surface-2);
   border: 1px solid var(--border-subtle);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  font-weight: 700;
-  flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; font-weight: 700; flex-shrink: 0;
 }
-
 .advisor-message.user .advisor-message-avatar {
-  background: var(--accent-gradient);
-  color: #fff;
-  border: none;
+  background: var(--accent-gradient); color: #fff; border: none;
 }
 
 .advisor-message-bubble {
-  max-width: 75%;
+  max-width: 78%;
   background: var(--bg-surface-2);
   border: 1px solid var(--border-subtle);
   border-radius: 16px;
   padding: 12px 16px;
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: 14px; line-height: 1.6;
 }
-
 .advisor-message.user .advisor-message-bubble {
   background: rgba(79,70,229,0.12);
   border-color: rgba(79,70,229,0.2);
@@ -108,33 +68,17 @@
 .advisor-message-content h1,
 .advisor-message-content h2,
 .advisor-message-content h3 {
-  font-size: 15px;
-  font-weight: 700;
-  margin: 12px 0 6px;
+  font-size: 15px; font-weight: 700; margin: 12px 0 6px;
   color: var(--text-primary);
 }
-
-.advisor-message-content ul {
-  padding-left: 20px;
-  margin: 6px 0;
-}
-
-.advisor-message-content li {
-  margin-bottom: 4px;
-}
-
+.advisor-message-content ul { padding-left: 20px; margin: 6px 0; }
+.advisor-message-content li { margin-bottom: 4px; }
 .advisor-message-content strong { color: var(--text-primary); }
 
-.advisor-typing {
-  display: flex;
-  gap: 4px;
-  padding: 4px 0;
-}
+.advisor-typing { display:flex; gap:4px; padding:4px 0; }
 
 .advisor-input-row {
-  display: flex;
-  gap: 8px;
-  padding: 16px;
+  display: flex; gap: 8px; padding: 16px;
   border-top: 1px solid var(--border-subtle);
 }
 

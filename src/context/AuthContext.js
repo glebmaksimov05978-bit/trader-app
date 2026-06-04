@@ -24,7 +24,12 @@ export function AuthProvider({ children }) {
         setUser(firebaseUser);
         const profileDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
         if (profileDoc.exists()) {
-          setUserProfile(profileDoc.data());
+          const data = profileDoc.data();
+          if (!data.role) {
+            await setDoc(doc(db, 'users', firebaseUser.uid), { role: 'free' }, { merge: true });
+            data.role = 'free';
+          }
+          setUserProfile(data);
         } else {
           const defaultProfile = {
             uid: firebaseUser.uid,
