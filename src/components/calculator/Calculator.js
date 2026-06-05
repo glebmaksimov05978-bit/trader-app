@@ -207,10 +207,11 @@ export default function Calculator() {
 
       <div className="calc-layout">
         {/* LEFT — форма */}
-        <div className="calc-form-col">
+        <div className="calc-input-panel">
 
+          <div className="card">
           {/* Инструмент */}
-          <div className="card" style={{marginBottom:16}}>
+          <div style={{marginBottom:20}}>
             <div className="calc-section-title">Инструмент</div>
             <div className="input-group">
               <label className="input-label">Тикер</label>
@@ -243,8 +244,9 @@ export default function Calculator() {
             )}
           </div>
 
+          <div className="divider" />
           {/* Направление */}
-          <div className="card" style={{marginBottom:16}}>
+          <div style={{marginBottom:20}}>
             <div className="calc-section-title">Направление</div>
             <div style={{display:'flex', gap:8}}>
               {['Лонг','Шорт'].map(d => (
@@ -263,8 +265,9 @@ export default function Calculator() {
             </div>
           </div>
 
+          <div className="divider" />
           {/* Цены */}
-          <div className="card" style={{marginBottom:16}}>
+          <div style={{marginBottom:20}}>
             <div className="calc-section-title">Цены</div>
             <div className="calc-grid-2">
               <div className="input-group">
@@ -285,8 +288,9 @@ export default function Calculator() {
             </div>
           </div>
 
+          <div className="divider" />
           {/* Управление риском */}
-          <div className="card" style={{marginBottom:16}}>
+          <div style={{marginBottom:20}}>
             <div className="calc-section-title">Управление риском</div>
             <div className="calc-grid-2">
               <div className="input-group">
@@ -305,8 +309,9 @@ export default function Calculator() {
             </div>
           </div>
 
+          <div className="divider" />
           {/* Параметры контракта */}
-          <div className="card">
+          <div>
             <div className="calc-section-title">Параметры контракта</div>
             <div className="calc-grid-2">
               <div className="input-group">
@@ -342,14 +347,15 @@ export default function Calculator() {
                 onChange={e => set('commissionRate', e.target.value)} placeholder="0.0006" />
             </div>
           </div>
+          </div> {/* конец большой карточки */}
         </div>
 
         {/* RIGHT — результаты */}
-        <div className="calc-result-col">
+        <div className="calc-results-panel">
           {result && displayResult && result.contracts > 0 ? (
             <>
               {/* Карточки метрик */}
-              <div className="calc-metrics-grid" style={{marginBottom:16}}>
+              <div className="calc-key-metrics" style={{marginBottom:16}}>
 
                 {/* Контракты — с ручным вводом */}
                 <div className={`calc-metric-card ${displayResult?.direction === 'long' ? 'green' : 'red'}`}>
@@ -543,6 +549,15 @@ export default function Calculator() {
           )}
         </div>
       </div>
+      </div>
+      </div>
+      </div>
+      </div>
+      </div>
+      </div>
+      </div>
+      </div>
     </div>
   );
 }
+

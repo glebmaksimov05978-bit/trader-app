@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, calcStats, buildEquityCurve } from '../../services/trades';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar
+  BarChart, Bar, Cell
 } from 'recharts';
 import { formatCurrency, formatNumber } from '../../utils/calculator';
 
@@ -104,7 +104,8 @@ export default function Dashboard() {
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
                 <XAxis dataKey="date" tick={{fill:'var(--text-muted)', fontSize:11}} tickLine={false} />
                 <YAxis tick={{fill:'var(--text-muted)', fontSize:11}} tickLine={false} axisLine={false}
-                  tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
+                  tickFormatter={(v) => `${(v/1000).toFixed(1)}k`}
+                  domain={['auto', 'auto']} width={48} />
                 <Tooltip
                   contentStyle={{background:'var(--bg-surface-3)', border:'1px solid var(--border-medium)', borderRadius:12, fontSize:12}}
                   formatter={(v) => [formatCurrency(v), 'Баланс']}
@@ -129,19 +130,31 @@ export default function Dashboard() {
             Последние 10 сделок
           </div>
           {barData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={barData} margin={{top:5, right:10, bottom:5, left:0}}>
+                        <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={barData} margin={{top:5, right:10, bottom:5, left:0}} barSize={18} barCategoryGap="40%">
+                <defs>
+                  <linearGradient id="barGreen" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#10b981" stopOpacity={1}/>
+                    <stop offset="100%" stopColor="#059669" stopOpacity={0.7}/>
+                  </linearGradient>
+                  <linearGradient id="barRed" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#ef4444" stopOpacity={1}/>
+                    <stop offset="100%" stopColor="#dc2626" stopOpacity={0.7}/>
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
                 <XAxis dataKey="name" tick={{fill:'var(--text-muted)', fontSize:10}} tickLine={false} />
                 <YAxis tick={{fill:'var(--text-muted)', fontSize:11}} tickLine={false} axisLine={false}
-                  tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} />
+                  tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} domain={['auto','auto']} width={44}/>
                 <Tooltip
                   contentStyle={{background:'var(--bg-surface-3)', border:'1px solid var(--border-medium)', borderRadius:12, fontSize:12}}
                   formatter={(v) => [formatCurrency(v), 'P&L']}
                 />
-                <Bar dataKey="pnl" fill="#4f46e5" radius={[4,4,0,0]}
-                  cell={(entry) => <rect fill={entry.pnl >= 0 ? '#10b981' : '#ef4444'} />}
-                />
+                <Bar dataKey="pnl" radius={[4,4,0,0]}>
+                  {barData.map((entry, i) => (
+                    <Cell key={i} fill={entry.pnl >= 0 ? 'url(#barGreen)' : 'url(#barRed)'} />
+                  ))}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
           ) : (
