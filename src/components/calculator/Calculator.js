@@ -439,7 +439,6 @@ export default function Calculator() {
                   {(displayResult.marginUsagePercent||0)>70?'⚠️ Высокая загрузка — рискованно':(displayResult.marginUsagePercent||0)>40?'🟡 Умеренная загрузка':'✅ Нормальная загрузка'}
                 </div>
               </div>
-            </div>
             </>
           ) : (
             <div className="card" style={{textAlign:'center',padding:'48px 24px'}}>
