@@ -177,10 +177,8 @@ export default function Calculator() {
       </div>
 
       <div className="calc-layout">
-        {/* Левая колонка — форма в одной карточке */}
         <div className="calc-input-panel">
           <div className="card">
-            {/* Инструмент */}
             <div className="calc-section-title">Инструмент</div>
             <div className="input-group" style={{marginBottom:12}}>
               <label className="input-label">Тикер</label>
@@ -209,10 +207,7 @@ export default function Calculator() {
                 <span className="text-xs" style={{color:'var(--green)'}}>🔄 авто 30с</span>
               </div>
             )}
-
             <div className="divider" />
-
-            {/* Направление */}
             <div className="calc-section-title">Направление</div>
             <div style={{display:'flex', gap:8, marginBottom:16}}>
               {['Лонг','Шорт'].map(d => (
@@ -226,10 +221,7 @@ export default function Calculator() {
                 >{d === 'Лонг' ? '✅' : '🔽'} {d}</button>
               ))}
             </div>
-
             <div className="divider" />
-
-            {/* Цены */}
             <div className="calc-section-title">Цены</div>
             <div className="calc-grid-2" style={{marginBottom:12}}>
               <div className="input-group">
@@ -245,10 +237,7 @@ export default function Calculator() {
               <label className="input-label">Тейк-профит <span style={{color:'var(--text-muted)'}}>(опц.)</span></label>
               <input className="input" type="number" value={form.takeProfit} onChange={e => set('takeProfit', e.target.value)} placeholder="0 (опц.)" />
             </div>
-
             <div className="divider" />
-
-            {/* Управление риском */}
             <div className="calc-section-title">Управление риском</div>
             <div className="calc-grid-2" style={{marginBottom:16}}>
               <div className="input-group">
@@ -263,10 +252,7 @@ export default function Calculator() {
                 </div>
               </div>
             </div>
-
             <div className="divider" />
-
-            {/* Параметры контракта */}
             <div className="calc-section-title">Параметры контракта</div>
             <div className="calc-grid-2" style={{marginBottom: instrumentType === 'future' ? 12 : 0}}>
               <div className="input-group">
@@ -299,40 +285,21 @@ export default function Calculator() {
           </div>
         </div>
 
-        {/* Правая колонка — результаты */}
         <div className="calc-results-panel">
           {result && displayResult && result.contracts > 0 ? (
             <>
-              {/* 3 карточки метрик */}
               <div className="calc-key-metrics">
-                {/* Контракты */}
                 <div className={`calc-metric-card ${displayResult.direction === 'long' ? 'green' : 'red'}`}>
                   <div className="calc-metric-label">{instrumentType === 'stock' ? 'Лотов' : 'Контрактов'}</div>
-                  <div style={{
-                    display:'flex', alignItems:'center', gap:6,
-                    background:'rgba(255,255,255,0.07)',
-                    border: manualContracts ? '1px solid var(--gold)' : '1px solid rgba(255,255,255,0.12)',
-                    borderRadius:10, padding:'6px 10px', marginBottom:8,
-                  }}>
-                    <input
-                      type="number" min="1"
-                      value={manualContracts}
+                  <div style={{display:'flex',alignItems:'center',gap:6,background:'rgba(255,255,255,0.07)',border:manualContracts?'1px solid var(--gold)':'1px solid rgba(255,255,255,0.12)',borderRadius:10,padding:'6px 10px',marginBottom:8}}>
+                    <input type="number" min="1" value={manualContracts}
                       onChange={e => setManualContracts(e.target.value)}
                       onClick={e => e.stopPropagation()}
                       placeholder="Введите..."
-                      style={{
-                        flex:1, background:'none', border:'none', outline:'none',
-                        fontFamily:'inherit', fontSize:16, fontWeight:700,
-                        color: manualContracts ? 'var(--gold)' : 'var(--text-primary)',
-                        padding:0, width:'60px',
-                        MozAppearance:'textfield', WebkitAppearance:'none',
-                        pointerEvents:'all', cursor:'text',
-                      }}
+                      style={{flex:1,background:'none',border:'none',outline:'none',fontFamily:'inherit',fontSize:16,fontWeight:700,color:manualContracts?'var(--gold)':'var(--text-primary)',padding:0,width:'60px',MozAppearance:'textfield',WebkitAppearance:'none',pointerEvents:'all',cursor:'text'}}
                     />
-                    <span style={{fontSize:11, color:'var(--text-muted)'}}>шт.</span>
-                    {manualContracts && (
-                      <button onClick={() => setManualContracts('')} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-muted)',fontSize:13,padding:0}}>✕</button>
-                    )}
+                    <span style={{fontSize:11,color:'var(--text-muted)'}}>шт.</span>
+                    {manualContracts && <button onClick={() => setManualContracts('')} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-muted)',fontSize:13,padding:0}}>✕</button>}
                   </div>
                   <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',background:'rgba(255,255,255,0.04)',borderRadius:8,padding:'4px 10px'}}>
                     <span style={{fontSize:11,color:'var(--text-muted)'}}>авто:</span>
@@ -340,63 +307,34 @@ export default function Calculator() {
                     <span style={{fontSize:11,color:'var(--text-muted)'}}>шт.</span>
                   </div>
                 </div>
-
-                {/* RR */}
                 <div className={`calc-metric-card ${!displayResult.rrValid && displayResult.rr !== 0 ? 'red' : displayResult.rr >= 2 ? 'green' : displayResult.rr >= 1 ? 'gold' : 'red'}`}>
                   <div className="calc-metric-label">RISK/REWARD</div>
-                  <div style={{fontSize:28,fontWeight:800,color:rrColor}}>
-                    {displayResult.rr > 0 ? `1:${formatNumber(displayResult.rr, 1)}` : '—'}
-                  </div>
-                  {!displayResult.rrValid && displayResult.rr !== 0
-                    ? <div style={{fontSize:11,color:'var(--red)'}}>⚠️ TP не там!</div>
-                    : displayResult.rr >= 2
-                    ? <div style={{fontSize:11,color:'var(--green)'}}>✅ Отличный</div>
-                    : displayResult.rr >= 1
-                    ? <div style={{fontSize:11,color:'var(--gold)'}}>🟡 Приемлемый</div>
-                    : null
-                  }
+                  <div style={{fontSize:28,fontWeight:800,color:rrColor}}>{displayResult.rr > 0 ? `1:${formatNumber(displayResult.rr, 1)}` : '—'}</div>
+                  {!displayResult.rrValid && displayResult.rr !== 0 ? <div style={{fontSize:11,color:'var(--red)'}}>⚠️ TP не там!</div>
+                    : displayResult.rr >= 2 ? <div style={{fontSize:11,color:'var(--green)'}}>✅ Отличный</div>
+                    : displayResult.rr >= 1 ? <div style={{fontSize:11,color:'var(--gold)'}}>🟡 Приемлемый</div>
+                    : null}
                 </div>
-
-                {/* ГО */}
                 <div className={`calc-metric-card ${(displayResult.marginUsagePercent||0) > (displayResult.maxMarginPercent||30) ? 'red' : 'blue'}`}>
                   <div className="calc-metric-label">{instrumentType==='stock' ? 'СТОИМОСТЬ ПОЗИЦИИ' : 'ГО (ЗАМОРОЗКА)'}</div>
-                  <div style={{fontSize:20,fontWeight:800}}>
-                    {formatCurrency(instrumentType==='stock' ? displayResult.positionValue : displayResult.totalMargin)}
-                  </div>
-                  <div style={{fontSize:11,color:(displayResult.marginUsagePercent||0)>(displayResult.maxMarginPercent||30)?'var(--red)':''}}>
-                    {displayResult.marginUsagePercent||0}% / лимит {displayResult.maxMarginPercent||30}%
-                  </div>
+                  <div style={{fontSize:20,fontWeight:800}}>{formatCurrency(instrumentType==='stock' ? displayResult.positionValue : displayResult.totalMargin)}</div>
+                  <div style={{fontSize:11,color:(displayResult.marginUsagePercent||0)>(displayResult.maxMarginPercent||30)?'var(--red)':''}}>{displayResult.marginUsagePercent||0}% / лимит {displayResult.maxMarginPercent||30}%</div>
                   <div className="divider" style={{margin:'6px 0'}}/>
                   <div style={{fontSize:11,color:'var(--text-muted)'}}>Стоимость позиции:</div>
                   <div style={{fontSize:13,fontWeight:700}}>{formatCurrency(displayResult.positionValue)}</div>
                 </div>
               </div>
-
-              {/* Кнопки */}
               <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
                 <button className="btn btn-primary" style={{flex:1}}>📂 В журнал</button>
                 <button className="btn btn-ai-hover" style={{flex:1,background:'linear-gradient(135deg,#7c3aed,#4f46e5)',color:'#fff',border:'none',borderRadius:12,fontWeight:600,fontSize:14}}
                   onClick={() => {
-                    const p = new URLSearchParams({
-                      from:'calculator', ticker:form.ticker||'', name:instrumentInfo?.name||'',
-                      direction:displayResult.direction||'', entry:form.entryPrice||'',
-                      sl:form.stopLoss||'', tp:form.takeProfit||'',
-                      contracts:String(effectiveContracts), rr:String(displayResult.rr||''),
-                      riskAmount:String(displayResult.riskAmount||''), totalLoss:String(displayResult.totalLoss||''),
-                      totalProfit:String(displayResult.totalProfit||''), commission:String(displayResult.commission||''),
-                      breakeven:String(displayResult.breakeven||''), deposit:form.depositSize||'', type:instrumentType,
-                    });
+                    const p = new URLSearchParams({from:'calculator',ticker:form.ticker||'',name:instrumentInfo?.name||'',direction:displayResult.direction||'',entry:form.entryPrice||'',sl:form.stopLoss||'',tp:form.takeProfit||'',contracts:String(effectiveContracts),rr:String(displayResult.rr||''),riskAmount:String(displayResult.riskAmount||''),totalLoss:String(displayResult.totalLoss||''),totalProfit:String(displayResult.totalProfit||''),commission:String(displayResult.commission||''),breakeven:String(displayResult.breakeven||''),deposit:form.depositSize||'',type:instrumentType});
                     window.location.href = '/advisor?' + p.toString();
                   }}
                 >🤖 В AI</button>
               </div>
-
-              {/* Детализация */}
               <div className="card">
-                <div className="section-title">
-                  <div className="section-title-icon">📋</div>
-                  Детализация
-                </div>
+                <div className="section-title"><div className="section-title-icon">📋</div>Детализация</div>
                 <ResultRow label="Риск на сделку" value={formatCurrency(displayResult.riskAmount)} color="var(--red)" />
                 <ResultRow label="Тиков до SL" value={formatNumber(displayResult.ticksToSL)} />
                 <ResultRow label="Тиков до TP" value={displayResult.ticksToTP > 0 ? formatNumber(displayResult.ticksToTP) : '—'} />
@@ -406,34 +344,16 @@ export default function Calculator() {
                 <ResultRow label="Точка безубытка" value={formatNumber(displayResult.breakeven, 2)} />
                 <div className="divider" />
                 <ResultRow label="Макс. убыток (с комис.)" value={formatCurrency(displayResult.totalLoss)} color="var(--red)" large />
-                {displayResult.totalProfit > 0 && (
-                  <ResultRow label="Потенц. прибыль (с комис.)" value={formatCurrency(displayResult.totalProfit)} color="var(--green)" large />
-                )}
+                {displayResult.totalProfit > 0 && <ResultRow label="Потенц. прибыль (с комис.)" value={formatCurrency(displayResult.totalProfit)} color="var(--green)" large />}
               </div>
-
-              {/* Прогресс-бар */}
               <div className="card">
-                <div className="section-title">
-                  <div className="section-title-icon">⚡</div>
-                  Использование капитала
-                </div>
+                <div className="section-title"><div className="section-title-icon">⚡</div>Использование капитала</div>
                 <div className="risk-gauge-bar">
-                  <div className="risk-gauge-fill" style={{
-                    width:`${Math.min(displayResult.marginUsagePercent||0,100)}%`,
-                    background:(displayResult.marginUsagePercent||0)>50
-                      ?'linear-gradient(90deg,#f59e0b,#ef4444)'
-                      :(displayResult.marginUsagePercent||0)>25
-                      ?'linear-gradient(90deg,#4f46e5,#f59e0b)'
-                      :'linear-gradient(90deg,#4f46e5,#10b981)',
-                  }}/>
+                  <div className="risk-gauge-fill" style={{width:`${Math.min(displayResult.marginUsagePercent||0,100)}%`,background:(displayResult.marginUsagePercent||0)>50?'linear-gradient(90deg,#f59e0b,#ef4444)':(displayResult.marginUsagePercent||0)>25?'linear-gradient(90deg,#4f46e5,#f59e0b)':'linear-gradient(90deg,#4f46e5,#10b981)'}}/>
                 </div>
                 <div className="risk-gauge-labels">
-                  <span className="text-sm text-secondary">
-                    {instrumentType==='stock'?'Позиция':'ГО'}: {formatCurrency(instrumentType==='stock'?displayResult.positionValue:displayResult.totalMargin)}
-                  </span>
-                  <span style={{fontWeight:700,fontSize:14,color:(displayResult.marginUsagePercent||0)>50?'var(--red)':'var(--text-primary)'}}>
-                    {displayResult.marginUsagePercent||0}%
-                  </span>
+                  <span className="text-sm text-secondary">{instrumentType==='stock'?'Позиция':'ГО'}: {formatCurrency(instrumentType==='stock'?displayResult.positionValue:displayResult.totalMargin)}</span>
+                  <span style={{fontWeight:700,fontSize:14,color:(displayResult.marginUsagePercent||0)>50?'var(--red)':'var(--text-primary)'}}>{displayResult.marginUsagePercent||0}%</span>
                 </div>
                 <div className="text-xs text-muted" style={{marginTop:6,color:(displayResult.marginUsagePercent||0)>70?'var(--gold)':(displayResult.marginUsagePercent||0)>40?'var(--gold)':'var(--green)'}}>
                   {(displayResult.marginUsagePercent||0)>70?'⚠️ Высокая загрузка — рискованно':(displayResult.marginUsagePercent||0)>40?'🟡 Умеренная загрузка':'✅ Нормальная загрузка'}
