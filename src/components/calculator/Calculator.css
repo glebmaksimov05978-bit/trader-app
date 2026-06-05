@@ -26,6 +26,13 @@
   margin-bottom: 8px;
 }
 
+/* Двухколоночная сетка внутри формы */
+.calc-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
 .calc-ticker-row {
   display: flex;
   gap: 8px;
@@ -58,7 +65,7 @@
   padding: 16px;
   text-align: center;
   position: relative;
-  overflow: hidden;
+  overflow: visible; /* было hidden — из-за него не работал клик на input */
   transition: transform var(--transition);
 }
 
@@ -73,12 +80,13 @@
   -webkit-mask-composite: xor;
   mask-composite: exclude;
   opacity: 0.5;
+  pointer-events: none; /* не перехватывает клики */
 }
 
 .calc-metric-card.green { --kpi-border: linear-gradient(135deg, #10b981, #34d399); }
-.calc-metric-card.red { --kpi-border: linear-gradient(135deg, #ef4444, #f87171); }
-.calc-metric-card.gold { --kpi-border: linear-gradient(135deg, #f59e0b, #fbbf24); }
-.calc-metric-card.blue { --kpi-border: linear-gradient(135deg, #3b82f6, #60a5fa); }
+.calc-metric-card.red   { --kpi-border: linear-gradient(135deg, #ef4444, #f87171); }
+.calc-metric-card.gold  { --kpi-border: linear-gradient(135deg, #f59e0b, #fbbf24); }
+.calc-metric-card.blue  { --kpi-border: linear-gradient(135deg, #3b82f6, #60a5fa); }
 
 .calc-metric-card:hover { transform: translateY(-2px); }
 
@@ -142,8 +150,10 @@
   .calc-layout { grid-template-columns: 1fr; }
   .calc-input-panel { position: static; }
   .calc-key-metrics { grid-template-columns: repeat(3, 1fr); }
+  .calc-grid-2 { grid-template-columns: 1fr 1fr; }
 }
 
 @media (max-width: 480px) {
   .calc-key-metrics { grid-template-columns: 1fr; }
+  .calc-grid-2 { grid-template-columns: 1fr; }
 }

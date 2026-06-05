@@ -210,16 +210,16 @@ export default function Calculator() {
             <div className="divider" />
             <div className="calc-section-title">Направление</div>
             <div style={{display:'flex', gap:8, marginBottom:16}}>
-              {['Лонг','Шорт'].map(d => (
-                <button key={d}
-                  className={result?.direction === d.toLowerCase() ? 'btn btn-primary' : 'btn btn-secondary'}
-                  style={{flex:1}}
-                  onClick={() => {
-                    if (d === 'Лонг' && parseFloat(form.stopLoss) > parseFloat(form.entryPrice)) set('stopLoss','');
-                    if (d === 'Шорт' && parseFloat(form.stopLoss) < parseFloat(form.entryPrice)) set('stopLoss','');
-                  }}
-                >{d === 'Лонг' ? '✅' : '🔽'} {d}</button>
-              ))}
+              <button
+                  className="btn"
+                  style={{flex:1, background: result?.direction === 'long' ? 'linear-gradient(135deg,#10b981,#059669)' : 'var(--bg-surface-2)', color: result?.direction === 'long' ? '#fff' : 'var(--text-secondary)', border: result?.direction === 'long' ? 'none' : '1px solid var(--border-medium)', fontWeight:600}}
+                  onClick={() => { if (parseFloat(form.stopLoss) > parseFloat(form.entryPrice)) set('stopLoss',''); }}
+                >↑ Лонг</button>
+                <button
+                  className="btn"
+                  style={{flex:1, background: result?.direction === 'short' ? 'linear-gradient(135deg,#ef4444,#dc2626)' : 'var(--bg-surface-2)', color: result?.direction === 'short' ? '#fff' : 'var(--text-secondary)', border: result?.direction === 'short' ? 'none' : '1px solid var(--border-medium)', fontWeight:600}}
+                  onClick={() => { if (parseFloat(form.stopLoss) < parseFloat(form.entryPrice)) set('stopLoss',''); }}
+                >↓ Шорт</button>
             </div>
             <div className="divider" />
             <div className="calc-section-title">Цены</div>
@@ -291,12 +291,12 @@ export default function Calculator() {
               <div className="calc-key-metrics">
                 <div className={`calc-metric-card ${displayResult.direction === 'long' ? 'green' : 'red'}`}>
                   <div className="calc-metric-label">{instrumentType === 'stock' ? 'Лотов' : 'Контрактов'}</div>
-                  <div style={{display:'flex',alignItems:'center',gap:6,background:'rgba(255,255,255,0.07)',border:manualContracts?'1px solid var(--gold)':'1px solid rgba(255,255,255,0.12)',borderRadius:10,padding:'6px 10px',marginBottom:8}}>
+                  <div style={{display:'flex',alignItems:'center',gap:6,background:'rgba(255,255,255,0.07)',border:manualContracts?'1px solid var(--gold)':'1px solid rgba(255,255,255,0.12)',borderRadius:10,padding:'6px 10px',marginBottom:8,position:'relative',zIndex:10}}>
                     <input type="number" min="1" value={manualContracts}
                       onChange={e => setManualContracts(e.target.value)}
                       onClick={e => e.stopPropagation()}
                       placeholder="Введите..."
-                      style={{flex:1,background:'none',border:'none',outline:'none',fontFamily:'inherit',fontSize:16,fontWeight:700,color:manualContracts?'var(--gold)':'var(--text-primary)',padding:0,width:'60px',MozAppearance:'textfield',WebkitAppearance:'none',pointerEvents:'all',cursor:'text'}}
+                      style={{flex:1,background:'none',border:'none',outline:'none',fontFamily:'inherit',fontSize:16,fontWeight:700,color:manualContracts?'var(--gold)':'var(--text-primary)',padding:0,width:'60px',MozAppearance:'textfield',WebkitAppearance:'none',pointerEvents:'all',cursor:'text',position:'relative',zIndex:10}}
                     />
                     <span style={{fontSize:11,color:'var(--text-muted)'}}>шт.</span>
                     {manualContracts && <button onClick={() => setManualContracts('')} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-muted)',fontSize:13,padding:0}}>✕</button>}
