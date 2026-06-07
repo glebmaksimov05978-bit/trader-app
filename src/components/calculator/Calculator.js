@@ -22,6 +22,7 @@ export default function Calculator() {
   const [instrumentType, setInstrumentType] = useState('future');
   const [manualContracts, setManualContracts] = useState('');
   const [journalAnim, setJournalAnim] = useState(false);
+  const [forcedDir, setForcedDir] = useState(null); // 'long' | 'short' | null
   const [form, setForm] = useState({
     ticker: '',
     entryPrice: '',
@@ -103,6 +104,18 @@ export default function Calculator() {
       maxMarginPercent: result.maxMarginPercent || 30,
     };
   }, [result, manualContracts, effectiveContracts, form, instrumentType]);
+
+  // Итоговое направление: forcedDir имеет приоритет, но если SL противоречит — переключаем
+  const activeDirection = (() => {
+    const sl = parseFloat(form.stopLoss);
+    const entry = parseFloat(form.entryPrice);
+    if (sl && entry) {
+      // SL введён — определяем по нему, forcedDir игнорируется если противоречит
+      return sl < entry ? 'long' : 'short';
+    }
+    // SL не введён — используем forcedDir или null
+    return forcedDir;
+  })();
 
   const rrColor = !displayResult ? '' : displayResult.rr >= 2 ? 'var(--green)' : displayResult.rr >= 1 ? 'var(--gold)' : 'var(--red)';
 
@@ -225,18 +238,18 @@ export default function Calculator() {
             <div className="calc-section-title">Направление</div>
             <div style={{display:'flex', gap:8, marginBottom:16}}>
               <button className="btn" style={{flex:1,
-                background: result?.direction === 'long' ? 'linear-gradient(135deg,#10b981,#059669)' : 'var(--bg-surface-2)',
-                color: result?.direction === 'long' ? '#fff' : 'var(--text-secondary)',
-                border: result?.direction === 'long' ? 'none' : '1px solid var(--border-medium)',
-                fontWeight:600}}
-                onClick={() => { if (parseFloat(form.stopLoss) > parseFloat(form.entryPrice)) set('stopLoss',''); }}
+                background: activeDirection === 'long' ? 'linear-gradient(135deg,#10b981,#059669)' : 'var(--bg-surface-2)',
+                color: activeDirection === 'long' ? '#fff' : 'var(--text-secondary)',
+                border: activeDirection === 'long' ? 'none' : '1px solid var(--border-medium)',
+                fontWeight:600, transition:'all 0.2s'}}
+                onClick={() => setForcedDir('long')}
               >↑ Лонг</button>
               <button className="btn" style={{flex:1,
-                background: result?.direction === 'short' ? 'linear-gradient(135deg,#ef4444,#dc2626)' : 'var(--bg-surface-2)',
-                color: result?.direction === 'short' ? '#fff' : 'var(--text-secondary)',
-                border: result?.direction === 'short' ? 'none' : '1px solid var(--border-medium)',
-                fontWeight:600}}
-                onClick={() => { if (parseFloat(form.stopLoss) < parseFloat(form.entryPrice)) set('stopLoss',''); }}
+                background: activeDirection === 'short' ? 'linear-gradient(135deg,#ef4444,#dc2626)' : 'var(--bg-surface-2)',
+                color: activeDirection === 'short' ? '#fff' : 'var(--text-secondary)',
+                border: activeDirection === 'short' ? 'none' : '1px solid var(--border-medium)',
+                fontWeight:600, transition:'all 0.2s'}}
+                onClick={() => setForcedDir('short')}
               >↓ Шорт</button>
             </div>
             <div className="divider" />
