@@ -11,6 +11,7 @@ export default function Settings() {
     depositSize: '',
     maxRiskPerTrade: '',
     dailyLossLimit: '',
+    askJournalExtra: true,
   });
   const [saving, setSaving] = useState(false);
   const [showToken, setShowToken] = useState(false);
@@ -23,6 +24,7 @@ export default function Settings() {
         depositSize: String(userProfile.depositSize ?? 0),
         maxRiskPerTrade: String(userProfile.maxRiskPerTrade || 1),
         dailyLossLimit: String(userProfile.dailyLossLimit || 3),
+        askJournalExtra: userProfile.askJournalExtra !== false,
       });
     }
   }, [userProfile]);
@@ -38,6 +40,7 @@ export default function Settings() {
         depositSize: parseFloat(form.depositSize),
         maxRiskPerTrade: parseFloat(form.maxRiskPerTrade),
         dailyLossLimit: parseFloat(form.dailyLossLimit),
+        askJournalExtra: form.askJournalExtra,
       });
       toast.success('Настройки сохранены');
     } catch {
@@ -127,6 +130,36 @@ export default function Settings() {
                   onChange={e => set('dailyLossLimit', e.target.value)}/>
               </div>
             </div>
+          </div>
+        </div>
+
+
+        <div className="card" style={{marginBottom:20}}>
+          <div className="section-title">
+            <div className="section-title-icon">📓</div>
+            Журнал сделок
+          </div>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 0'}}>
+            <div>
+              <div style={{fontSize:14,fontWeight:600,color:'var(--text-primary)'}}>Запрашивать детали при сохранении</div>
+              <div style={{fontSize:12,color:'var(--text-muted)',marginTop:2}}>Эмоция, стратегия и заметки при нажатии "В журнал"</div>
+            </div>
+            <button
+              onClick={() => set('askJournalExtra', !form.askJournalExtra)}
+              style={{
+                width:48, height:26, borderRadius:13, border:'none', cursor:'pointer',
+                background: form.askJournalExtra ? 'var(--accent-primary)' : 'var(--bg-surface-3)',
+                position:'relative', transition:'background 0.2s', flexShrink:0,
+              }}
+            >
+              <div style={{
+                width:20, height:20, borderRadius:'50%', background:'#fff',
+                position:'absolute', top:3,
+                left: form.askJournalExtra ? 25 : 3,
+                transition:'left 0.2s',
+                boxShadow:'0 1px 4px rgba(0,0,0,0.3)',
+              }}/>
+            </button>
           </div>
         </div>
 

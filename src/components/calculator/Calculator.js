@@ -3,8 +3,25 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { TinkoffAPI, parseFutureInfo, parseShareInfo } from '../../services/tinkoff';
 import { calcTrade, formatCurrency, formatNumber } from '../../utils/calculator';
+import { addTrade } from '../../services/trades';
 import toast from 'react-hot-toast';
 import './Calculator.css';
+
+// MOEX API — бесплатные цены без токена
+async function getMoexPrice(ticker, type) {
+  try {
+    const board = type === 'future' ? 'SPBFUT' : 'TQBR';
+    const market = type === 'future' ? 'forts' : 'shares';
+    const engine = type === 'future' ? 'futures' : 'stock';
+    const url = `https://iss.moex.com/iss/engines/${engine}/markets/${market}/boards/${board}/securities/${ticker}.json?iss.meta=off&iss.only=marketdata&marketdata.columns=LAST,LASTTOPREVPRICE`;
+    const res = await fetch(url);
+    const data = await res.json();
+    const price = data?.marketdata?.data?.[0]?.[0];
+    return price ? parseFloat(price) : null;
+  } catch { return null; }
+}
+
+const EMOTIONS = ['😊 Спокойный', '😤 Уверенный', '😰 Тревожный', '😴 Усталый', '😡 Злой', '🤔 Сомневающийся'];
 
 function ResultRow({ label, value, color, large }) {
   return (
@@ -18,11 +35,17 @@ function ResultRow({ label, value, color, large }) {
 }
 
 export default function Calculator() {
-  const { userProfile } = useAuth();
+  const { user, userProfile } = useAuth();
   const [instrumentType, setInstrumentType] = useState('future');
+  const [priceSource, setPriceSource] = useState('tinkoff'); // 'tinkoff' | 'moex'
+  const [orderType, setOrderType] = useState('market'); // 'market' | 'limit'
   const [manualContracts, setManualContracts] = useState('');
   const [journalAnim, setJournalAnim] = useState(false);
-  const [forcedDir, setForcedDir] = useState(null); // 'long' | 'short' | null
+  const [showJournalModal, setShowJournalModal] = useState(false);
+  const [journalExtra, setJournalExtra] = useState({ setup: '', emotion: '', notes: '' });
+  const [savingTrade, setSavingTrade] = useState(false);
+  const [forcedDir, setForcedDir] = useState(null);
+
   const [form, setForm] = useState({
     ticker: '',
     entryPrice: '',
@@ -105,53 +128,58 @@ export default function Calculator() {
     };
   }, [result, manualContracts, effectiveContracts, form, instrumentType]);
 
-  // Итоговое направление: forcedDir имеет приоритет, но если SL противоречит — переключаем
+  // Умное направление
   const activeDirection = (() => {
     const sl = parseFloat(form.stopLoss);
     const entry = parseFloat(form.entryPrice);
-    if (sl && entry) {
-      // SL введён — определяем по нему, forcedDir игнорируется если противоречит
-      return sl < entry ? 'long' : 'short';
-    }
-    // SL не введён — используем forcedDir или null
+    if (sl && entry) return sl < entry ? 'long' : 'short';
     return forcedDir;
   })();
 
   const rrColor = !displayResult ? '' : displayResult.rr >= 2 ? 'var(--green)' : displayResult.rr >= 1 ? 'var(--gold)' : 'var(--red)';
 
   const loadInstrument = useCallback(async () => {
-    if (!tapi || !form.ticker) {
-      toast.error('Введите тикер и API-токен в настройках');
-      return;
-    }
+    if (!form.ticker) { toast.error('Введите тикер'); return; }
+
     setLoadingPrice(true);
     try {
-      const raw = instrumentType === 'stock'
-        ? await tapi.getShareByTicker(form.ticker.toUpperCase())
-        : await tapi.getFutureByTicker(form.ticker.toUpperCase());
-      if (!raw) { toast.error(`Инструмент ${form.ticker.toUpperCase()} не найден`); return; }
-      const info = instrumentType === 'stock' ? parseShareInfo(raw) : parseFutureInfo(raw);
-      setInstrumentInfo(info);
-      const price = await tapi.getLastPrice(info.figi);
-      const fmtNum = (n) => n ? String(n).replace(',', '.') : '';
-      setForm(f => ({
-        ...f,
-        entryPrice: price ? String(price) : f.entryPrice,
-        lot: String(info.lot || 1),
-        minStep: fmtNum(info.minPriceIncrement) || '1',
-        minStepAmount: fmtNum(info.minPriceIncrementAmount) || '',
-        initialMargin: fmtNum(info.initialMargin) || '',
-      }));
-      if (price) toast.success(`${info.ticker}: ${price} ₽`);
+      if (priceSource === 'moex') {
+        // MOEX — только цена, параметры вручную
+        const price = await getMoexPrice(form.ticker.toUpperCase(), instrumentType);
+        if (!price) { toast.error('Инструмент не найден на MOEX'); return; }
+        if (orderType === 'market') set('entryPrice', String(price));
+        toast.success(`${form.ticker.toUpperCase()}: ${price} ₽ (MOEX, задержка 15 мин)`);
+      } else {
+        // Тинькофф
+        if (!tapi) { toast.error('Введите API-токен в настройках'); return; }
+        const raw = instrumentType === 'stock'
+          ? await tapi.getShareByTicker(form.ticker.toUpperCase())
+          : await tapi.getFutureByTicker(form.ticker.toUpperCase());
+        if (!raw) { toast.error(`Инструмент ${form.ticker.toUpperCase()} не найден`); return; }
+        const info = instrumentType === 'stock' ? parseShareInfo(raw) : parseFutureInfo(raw);
+        setInstrumentInfo(info);
+        const price = await tapi.getLastPrice(info.figi);
+        const fmtNum = (n) => n ? String(n).replace(',', '.') : '';
+        setForm(f => ({
+          ...f,
+          entryPrice: (orderType === 'market' && price) ? String(price) : f.entryPrice,
+          lot: String(info.lot || 1),
+          minStep: fmtNum(info.minPriceIncrement) || '1',
+          minStepAmount: fmtNum(info.minPriceIncrementAmount) || '',
+          initialMargin: fmtNum(info.initialMargin) || '',
+        }));
+        if (price) toast.success(`${info.ticker}: ${price} ₽`);
+      }
     } catch (e) {
       toast.error('Ошибка: ' + e.message);
     } finally {
       setLoadingPrice(false);
     }
-  }, [tapi, form.ticker, instrumentType]);
+  }, [tapi, form.ticker, instrumentType, priceSource, orderType]);
 
+  // Автообновление (только Тинькофф + рыночная)
   useEffect(() => {
-    if (!tapi || !instrumentInfo?.figi) return;
+    if (!tapi || !instrumentInfo?.figi || priceSource !== 'tinkoff' || orderType !== 'market') return;
     const interval = setInterval(async () => {
       try {
         const price = await tapi.getLastPrice(instrumentInfo.figi);
@@ -159,12 +187,56 @@ export default function Calculator() {
       } catch {}
     }, 30000);
     return () => clearInterval(interval);
-  }, [tapi, instrumentInfo]);
+  }, [tapi, instrumentInfo, priceSource, orderType]);
 
-  const handleJournal = () => {
+  // Сохранение в журнал
+  const handleSaveToJournal = async () => {
+    if (!user || !displayResult) return;
+    setSavingTrade(true);
+    try {
+      const deposit = parseFloat(form.depositSize) || 0;
+      await addTrade(user.uid, {
+        ticker: form.ticker || instrumentInfo?.ticker || '',
+        date: new Date().toISOString().split('T')[0],
+        status: 'open',
+        direction: activeDirection || displayResult.direction,
+        entryPrice: parseFloat(form.entryPrice),
+        exitPrice: null,
+        stopLoss: parseFloat(form.stopLoss) || null,
+        takeProfit: parseFloat(form.takeProfit) || null,
+        volume: effectiveContracts,
+        lot: parseFloat(form.lot) || 1,
+        commission: displayResult.commission,
+        depositSize: deposit,
+        depositPercent: deposit > 0 ? Math.round((displayResult.riskAmount / deposit) * 100 * 10) / 10 : 0,
+        rr: displayResult.rr,
+        pnl: null,
+        setup: journalExtra.setup,
+        emotion: journalExtra.emotion,
+        notes: journalExtra.notes,
+        source: 'calculator',
+        orderType,
+      });
+      toast.success('✅ Сделка открыта в журнале');
+      setShowJournalModal(false);
+      setJournalExtra({ setup: '', emotion: '', notes: '' });
+    } catch (e) {
+      toast.error('Ошибка сохранения: ' + e.message);
+    } finally {
+      setSavingTrade(false);
+    }
+  };
+
+  const handleJournalClick = () => {
+    // Анимация
     setJournalAnim(true);
     setTimeout(() => setJournalAnim(false), 700);
-    toast.success('Сделка сохранена в журнале ✅');
+    // Если настройка "запрашивать" включена (по умолчанию) — модалка
+    if (userProfile?.askJournalExtra !== false) {
+      setShowJournalModal(true);
+    } else {
+      handleSaveToJournal();
+    }
   };
 
   return (
@@ -178,9 +250,12 @@ export default function Calculator() {
         @keyframes flyToJournal {
           0% { transform: scale(1) translate(0,0); opacity:1; }
           40% { transform: scale(1.4) translate(-10px,-8px); opacity:1; }
-          100% { transform: scale(0.2) translate(-140px, 30px); opacity:0; }
+          100% { transform: scale(0.2) translate(-200px, 60px); opacity:0; }
         }
-        .journal-fly { animation: flyToJournal 0.65s cubic-bezier(0.4,0,0.2,1) forwards; }
+        .journal-fly { animation: flyToJournal 0.65s cubic-bezier(0.4,0,0.2,1) forwards; display:inline-block; }
+        .calc-modal-overlay { position:fixed;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(8px);z-index:1000;display:flex;align-items:flex-end;justify-content:center;padding:20px; }
+        .calc-modal { background:var(--bg-surface);border:1px solid var(--border-medium);border-radius:24px 24px 20px 20px;padding:28px;width:100%;max-width:520px;animation:slideUp 0.3s cubic-bezier(0.16,1,0.3,1); }
+        @keyframes slideUp { from{transform:translateY(40px);opacity:0} to{transform:translateY(0);opacity:1} }
       `}</style>
 
       <div className="page-header">
@@ -188,7 +263,8 @@ export default function Calculator() {
         <p className="page-subtitle">Автоматический расчёт параметров позиции</p>
       </div>
 
-      <div style={{display:'flex', gap:8, marginBottom:24}}>
+      {/* Тип инструмента */}
+      <div style={{display:'flex', gap:8, marginBottom:16, flexWrap:'wrap'}}>
         {[['future','⚡ Фьючерс'],['stock','📈 Акция']].map(([val, label]) => (
           <button key={val}
             className={val === instrumentType ? 'btn btn-primary' : 'btn btn-secondary'}
@@ -196,15 +272,41 @@ export default function Calculator() {
               setInstrumentType(val);
               setManualContracts('');
               setInstrumentInfo(null);
+              setForcedDir(null);
               setForm(f => ({ ...f, ticker:'', entryPrice:'', stopLoss:'', takeProfit:'', initialMargin:'', minStep:'1', minStepAmount:'', lot:'1' }));
+            }}
+          >{label}</button>
+        ))}
+
+        {/* Разделитель */}
+        <div style={{width:1, background:'var(--border-subtle)', margin:'0 4px'}}/>
+
+        {/* Источник цены */}
+        {[['tinkoff','🏦 Тинькофф'],['moex','📡 MOEX']].map(([val, label]) => (
+          <button key={val}
+            className={val === priceSource ? 'btn btn-secondary' : 'btn btn-ghost'}
+            style={{fontSize:13, border: val === priceSource ? '1px solid var(--accent-primary)' : undefined, color: val === priceSource ? 'var(--accent-primary)' : undefined}}
+            onClick={() => {
+              setPriceSource(val);
+              if (val === 'moex') {
+                setOrderType('limit');
+                set('entryPrice', '');
+              }
             }}
           >{label}</button>
         ))}
       </div>
 
+      {priceSource === 'moex' && (
+        <div style={{background:'rgba(245,158,11,0.1)',border:'1px solid rgba(245,158,11,0.3)',borderRadius:10,padding:'8px 14px',marginBottom:16,fontSize:12,color:'var(--gold)'}}>
+          ⚠️ MOEX: данные с задержкой ~15 минут. Параметры контракта (ГО, шаг цены) вводятся вручную. Работает без токена Тинькофф.
+        </div>
+      )}
+
       <div className="calc-layout">
         <div className="calc-input-panel">
           <div className="card">
+            {/* Инструмент */}
             <div className="calc-section-title">Инструмент</div>
             <div className="input-group" style={{marginBottom:12}}>
               <label className="input-label">Тикер</label>
@@ -231,10 +333,37 @@ export default function Calculator() {
                     </span>
                   )
                 }
-                <span className="text-xs" style={{color:'var(--green)'}}>🔄 авто 30с</span>
+                {priceSource === 'tinkoff' && orderType === 'market' && (
+                  <span className="text-xs" style={{color:'var(--green)'}}>🔄 авто 30с</span>
+                )}
               </div>
             )}
+
             <div className="divider" />
+
+            {/* Тип заявки */}
+            <div className="calc-section-title">Тип заявки</div>
+            <div style={{display:'flex', gap:8, marginBottom:16}}>
+              {[['market','По рынку'],['limit','Лимитная']].map(([val, label]) => (
+                <button key={val}
+                  className={val === orderType ? 'btn btn-primary' : 'btn btn-secondary'}
+                  style={{flex:1, fontSize:13}}
+                  onClick={() => {
+                    setOrderType(val);
+                    if (val === 'limit') set('entryPrice', '');
+                  }}
+                >{val === 'market' ? '⚡' : '🎯'} {label}</button>
+              ))}
+            </div>
+            {orderType === 'limit' && (
+              <div style={{background:'rgba(79,70,229,0.08)',border:'1px solid rgba(79,70,229,0.2)',borderRadius:10,padding:'8px 14px',marginBottom:12,fontSize:12,color:'var(--accent-primary)'}}>
+                🎯 Лимитная: введите цену по которой хотите войти. Расчёт ведётся от неё.
+              </div>
+            )}
+
+            <div className="divider" />
+
+            {/* Направление */}
             <div className="calc-section-title">Направление</div>
             <div style={{display:'flex', gap:8, marginBottom:16}}>
               <button className="btn" style={{flex:1,
@@ -252,12 +381,20 @@ export default function Calculator() {
                 onClick={() => setForcedDir('short')}
               >↓ Шорт</button>
             </div>
+
             <div className="divider" />
+
+            {/* Цены */}
             <div className="calc-section-title">Цены</div>
             <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, marginBottom:16}}>
               <div className="input-group">
-                <label className="input-label">Цена входа</label>
-                <input className="input" type="number" value={form.entryPrice} onChange={e => set('entryPrice', e.target.value)} placeholder="0" />
+                <label className="input-label">
+                  {orderType === 'limit' ? '🎯 Цена заявки' : 'Цена входа'}
+                </label>
+                <input className="input" type="number" value={form.entryPrice}
+                  onChange={e => set('entryPrice', e.target.value)}
+                  placeholder={orderType === 'limit' ? 'Ваша цена' : '0'}
+                  style={{borderColor: orderType === 'limit' ? 'rgba(79,70,229,0.5)' : undefined}} />
               </div>
               <div className="input-group">
                 <label className="input-label">Стоп-лосс</label>
@@ -268,7 +405,10 @@ export default function Calculator() {
                 <input className="input" type="number" value={form.takeProfit} onChange={e => set('takeProfit', e.target.value)} placeholder="0" />
               </div>
             </div>
+
             <div className="divider" />
+
+            {/* Управление риском */}
             <div className="calc-section-title">Управление риском</div>
             <div className="calc-grid-2" style={{marginBottom:16}}>
               <div className="input-group">
@@ -283,7 +423,10 @@ export default function Calculator() {
                 </div>
               </div>
             </div>
+
             <div className="divider" />
+
+            {/* Параметры контракта */}
             <div className="calc-section-title">Параметры контракта</div>
             <div className="calc-grid-2" style={{marginBottom: instrumentType === 'future' ? 12 : 0}}>
               <div className="input-group">
@@ -316,10 +459,12 @@ export default function Calculator() {
           </div>
         </div>
 
+        {/* Правая колонка */}
         <div className="calc-results-panel">
           {result && displayResult && result.contracts > 0 ? (
             <>
               <div className="calc-key-metrics">
+                {/* Контракты */}
                 <div className={`calc-metric-card ${displayResult.direction === 'long' ? 'green' : 'red'}`}>
                   <div className="calc-metric-label">{instrumentType === 'stock' ? 'Лотов' : 'Контрактов'}</div>
                   <div style={{display:'flex',alignItems:'center',gap:6,background:'rgba(255,255,255,0.07)',border:manualContracts?'1px solid var(--gold)':'1px solid rgba(255,255,255,0.12)',borderRadius:10,padding:'6px 10px',marginBottom:8,position:'relative',zIndex:10}}>
@@ -338,6 +483,8 @@ export default function Calculator() {
                     <span style={{fontSize:11,color:'var(--text-muted)'}}>шт.</span>
                   </div>
                 </div>
+
+                {/* RR */}
                 <div className={`calc-metric-card ${!displayResult.rrValid && displayResult.rr !== 0 ? 'red' : displayResult.rr >= 2 ? 'green' : displayResult.rr >= 1 ? 'gold' : 'red'}`}>
                   <div className="calc-metric-label">RISK/REWARD</div>
                   <div style={{fontSize:28,fontWeight:800,color:rrColor}}>{displayResult.rr > 0 ? `1:${formatNumber(displayResult.rr, 1)}` : '—'}</div>
@@ -346,6 +493,8 @@ export default function Calculator() {
                     : displayResult.rr >= 1 ? <div style={{fontSize:11,color:'var(--gold)'}}>🟡 Приемлемый</div>
                     : null}
                 </div>
+
+                {/* ГО */}
                 <div className={`calc-metric-card ${(displayResult.marginUsagePercent||0) > (displayResult.maxMarginPercent||30) ? 'red' : 'blue'}`}>
                   <div className="calc-metric-label">{instrumentType==='stock' ? 'СТОИМОСТЬ ПОЗИЦИИ' : 'ГО (ЗАМОРОЗКА)'}</div>
                   <div style={{fontSize:20,fontWeight:800}}>{formatCurrency(instrumentType==='stock' ? displayResult.positionValue : displayResult.totalMargin)}</div>
@@ -355,9 +504,11 @@ export default function Calculator() {
                   <div style={{fontSize:13,fontWeight:700}}>{formatCurrency(displayResult.positionValue)}</div>
                 </div>
               </div>
+
+              {/* Кнопки */}
               <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-                <button className="btn btn-primary" style={{flex:1, overflow:'hidden'}} onClick={handleJournal}>
-                  <span className={journalAnim ? 'journal-fly' : ''} style={{display:'inline-block',marginRight:4}}>📂</span>В журнал
+                <button className="btn btn-primary" style={{flex:1, overflow:'hidden'}} onClick={handleJournalClick}>
+                  <span className={journalAnim ? 'journal-fly' : ''} style={{marginRight:4}}>📂</span>В журнал
                 </button>
                 <button className="btn btn-ai-hover" style={{flex:1,background:'linear-gradient(135deg,#7c3aed,#4f46e5)',color:'#fff',border:'none',borderRadius:12,fontWeight:600,fontSize:14}}
                   onClick={() => {
@@ -366,6 +517,8 @@ export default function Calculator() {
                   }}
                 >🤖 В AI</button>
               </div>
+
+              {/* Детализация */}
               <div className="card">
                 <div className="section-title"><div className="section-title-icon">📋</div>Детализация</div>
                 <ResultRow label="Риск на сделку" value={formatCurrency(displayResult.riskAmount)} color="var(--red)" />
@@ -379,6 +532,8 @@ export default function Calculator() {
                 <ResultRow label="Макс. убыток (с комис.)" value={formatCurrency(displayResult.totalLoss)} color="var(--red)" large />
                 {displayResult.totalProfit > 0 && <ResultRow label="Потенц. прибыль (с комис.)" value={formatCurrency(displayResult.totalProfit)} color="var(--green)" large />}
               </div>
+
+              {/* Прогресс-бар */}
               <div className="card">
                 <div className="section-title"><div className="section-title-icon">⚡</div>Использование капитала</div>
                 <div className="risk-gauge-bar">
@@ -404,6 +559,61 @@ export default function Calculator() {
           )}
         </div>
       </div>
+
+      {/* Модалка "В журнал" */}
+      {showJournalModal && (
+        <div className="calc-modal-overlay" onClick={() => setShowJournalModal(false)}>
+          <div className="calc-modal" onClick={e => e.stopPropagation()}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+              <div>
+                <div style={{fontSize:18,fontWeight:700,color:'var(--text-primary)'}}>📂 Открыть сделку</div>
+                <div style={{fontSize:13,color:'var(--text-muted)',marginTop:2}}>
+                  {form.ticker} · {activeDirection === 'long' ? '↑ Лонг' : '↓ Шорт'} · {form.entryPrice} ₽ · {effectiveContracts} шт.
+                </div>
+              </div>
+              <button onClick={() => setShowJournalModal(false)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-muted)',fontSize:20}}>✕</button>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <div className="input-group">
+                <label className="input-label">Сетап / стратегия</label>
+                <input className="input" value={journalExtra.setup}
+                  onChange={e => setJournalExtra(p => ({...p, setup: e.target.value}))}
+                  placeholder="Пробой уровня, откат к MA..." />
+              </div>
+
+              <div className="input-group">
+                <label className="input-label">Эмоциональное состояние</label>
+                <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                  {EMOTIONS.map(e => (
+                    <button key={e}
+                      style={{padding:'6px 12px',borderRadius:20,border:'1px solid var(--border-subtle)',background:journalExtra.emotion===e?'rgba(79,70,229,0.2)':'var(--bg-surface-2)',color:journalExtra.emotion===e?'var(--accent-primary)':'var(--text-secondary)',cursor:'pointer',fontSize:12,fontFamily:'inherit',transition:'all 0.15s'}}
+                      onClick={() => setJournalExtra(p => ({...p, emotion: p.emotion === e ? '' : e}))}
+                    >{e}</button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="input-group">
+                <label className="input-label">Заметки</label>
+                <textarea className="input" value={journalExtra.notes}
+                  onChange={e => setJournalExtra(p => ({...p, notes: e.target.value}))}
+                  placeholder="Что ожидаю от сделки..."
+                  rows={3} style={{resize:'vertical'}} />
+              </div>
+            </div>
+
+            <div style={{display:'flex',gap:8,marginTop:20}}>
+              <button className="btn btn-secondary" style={{flex:1}} onClick={() => { setJournalExtra({setup:'',emotion:'',notes:''}); handleSaveToJournal(); }}>
+                Пропустить и сохранить
+              </button>
+              <button className="btn btn-primary" style={{flex:1}} onClick={handleSaveToJournal} disabled={savingTrade}>
+                {savingTrade ? <><div className="spinner" style={{width:14,height:14}}/> Сохранение...</> : '✅ Открыть сделку'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
