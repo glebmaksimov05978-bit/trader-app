@@ -142,8 +142,14 @@ export default function Journal() {
       // Открытые всегда сверху
       if (a.status === 'open' && b.status !== 'open') return -1;
       if (b.status === 'open' && a.status !== 'open') return 1;
-      // Для закрытых — по точному времени закрытия (новые первыми)
+
       const getTs = (t) => {
+        // Для открытых — по createdAt (время создания), новые сверху
+        if (t.status === 'open') {
+          if (t.createdAt?.seconds) return t.createdAt.seconds * 1000;
+          if (t.createdAt) return new Date(t.createdAt).getTime();
+        }
+        // Для закрытых — по дате закрытия
         if (t.closeDate) return new Date(t.closeDate).getTime();
         if (t.date?.seconds) return t.date.seconds * 1000;
         if (t.date) return new Date(t.date).getTime();
