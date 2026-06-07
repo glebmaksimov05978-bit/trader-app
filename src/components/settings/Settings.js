@@ -15,17 +15,22 @@ export default function Settings() {
   });
   const [saving, setSaving] = useState(false);
   const [showToken, setShowToken] = useState(false);
+  const [askExtra, setAskExtra] = useState(null); // null = не загружен ещё
 
   useEffect(() => {
     if (userProfile) {
-      setForm({
+      setForm(f => ({
+        ...f,
         displayName: userProfile.displayName || '',
         tinkoffToken: userProfile.tinkoffToken || '',
         depositSize: String(userProfile.depositSize ?? 0),
         maxRiskPerTrade: String(userProfile.maxRiskPerTrade || 1),
         dailyLossLimit: String(userProfile.dailyLossLimit || 3),
-        askJournalExtra: userProfile.askJournalExtra !== false,
-      });
+      }));
+      // askExtra инициализируем только один раз
+      if (askExtra === null) {
+        setAskExtra(userProfile.askJournalExtra === true);
+      }
     }
   }, [userProfile]);
 
@@ -40,7 +45,7 @@ export default function Settings() {
         depositSize: parseFloat(form.depositSize),
         maxRiskPerTrade: parseFloat(form.maxRiskPerTrade),
         dailyLossLimit: parseFloat(form.dailyLossLimit),
-        askJournalExtra: form.askJournalExtra,
+        askJournalExtra: askExtra === true,
       });
       toast.success('Настройки сохранены');
     } catch {
@@ -146,8 +151,8 @@ export default function Settings() {
             </div>
             <button
               onClick={async () => {
-                const newVal = !form.askJournalExtra;
-                set('askJournalExtra', newVal);
+                const newVal = !askExtra;
+                setAskExtra(newVal);
                 try {
                   await updateUserProfile({ askJournalExtra: newVal });
                   toast.success(newVal ? 'Детали будут запрашиваться' : 'Детали не будут запрашиваться');
@@ -155,14 +160,14 @@ export default function Settings() {
               }}
               style={{
                 width:48, height:26, borderRadius:13, border:'none', cursor:'pointer',
-                background: form.askJournalExtra ? 'var(--accent-primary)' : 'var(--bg-surface-3)',
+                background: askExtra ? 'var(--accent-primary)' : 'var(--bg-surface-3)',
                 position:'relative', transition:'background 0.2s', flexShrink:0,
               }}
             >
               <div style={{
                 width:20, height:20, borderRadius:'50%', background:'#fff',
                 position:'absolute', top:3,
-                left: form.askJournalExtra ? 25 : 3,
+                left: askExtra ? 25 : 3,
                 transition:'left 0.2s',
                 boxShadow:'0 1px 4px rgba(0,0,0,0.3)',
               }}/>
