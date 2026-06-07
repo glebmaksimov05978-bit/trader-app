@@ -232,7 +232,7 @@ export default function Calculator() {
     setJournalAnim(true);
     setTimeout(() => setJournalAnim(false), 700);
     // Если настройка "запрашивать" включена (по умолчанию) — модалка
-    if (userProfile?.askJournalExtra !== false) {
+    if (userProfile?.askJournalExtra === true) {
       setShowJournalModal(true);
     } else {
       handleSaveToJournal();
@@ -248,11 +248,11 @@ export default function Calculator() {
         .btn-ai-hover { transition: transform 0.2s, box-shadow 0.2s; }
         .btn-ai-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(124,58,237,0.4); }
         @keyframes flyToJournal {
-          0% { transform: scale(1) translate(0,0); opacity:1; }
-          40% { transform: scale(1.4) translate(-10px,-8px); opacity:1; }
-          100% { transform: scale(0.2) translate(-200px, 60px); opacity:0; }
+          0%   { transform: scale(1) translate(0, 0); opacity: 1; }
+          30%  { transform: scale(1.3) translate(-5px, -8px); opacity: 1; }
+          100% { transform: scale(0.2) translate(-120px, 40px); opacity: 0; }
         }
-        .journal-fly { animation: flyToJournal 0.65s cubic-bezier(0.4,0,0.2,1) forwards; display:inline-block; }
+        .journal-fly { animation: flyToJournal 0.7s cubic-bezier(0.4, 0, 0.2, 1) forwards; display:inline-block; }
         .calc-modal-overlay { position:fixed;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(8px);z-index:1000;display:flex;align-items:flex-end;justify-content:center;padding:20px; }
         .calc-modal { background:var(--bg-surface);border:1px solid var(--border-medium);border-radius:24px 24px 20px 20px;padding:28px;width:100%;max-width:520px;animation:slideUp 0.3s cubic-bezier(0.16,1,0.3,1); }
         @keyframes slideUp { from{transform:translateY(40px);opacity:0} to{transform:translateY(0);opacity:1} }
