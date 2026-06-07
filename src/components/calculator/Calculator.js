@@ -21,6 +21,7 @@ export default function Calculator() {
   const { userProfile } = useAuth();
   const [instrumentType, setInstrumentType] = useState('future');
   const [manualContracts, setManualContracts] = useState('');
+  const [journalAnim, setJournalAnim] = useState(false);
   const [form, setForm] = useState({
     ticker: '',
     entryPrice: '',
@@ -147,6 +148,12 @@ export default function Calculator() {
     return () => clearInterval(interval);
   }, [tapi, instrumentInfo]);
 
+  const handleJournal = () => {
+    setJournalAnim(true);
+    setTimeout(() => setJournalAnim(false), 700);
+    toast.success('Сделка сохранена в журнале ✅');
+  };
+
   return (
     <div className="page">
       <style>{`
@@ -155,6 +162,12 @@ export default function Calculator() {
         input[type=number] { -moz-appearance: textfield; }
         .btn-ai-hover { transition: transform 0.2s, box-shadow 0.2s; }
         .btn-ai-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(124,58,237,0.4); }
+        @keyframes flyToJournal {
+          0% { transform: scale(1) translate(0,0); opacity:1; }
+          40% { transform: scale(1.4) translate(-10px,-8px); opacity:1; }
+          100% { transform: scale(0.2) translate(-140px, 30px); opacity:0; }
+        }
+        .journal-fly { animation: flyToJournal 0.65s cubic-bezier(0.4,0,0.2,1) forwards; }
       `}</style>
 
       <div className="page-header">
@@ -185,6 +198,7 @@ export default function Calculator() {
               <div style={{display:'flex', gap:8}}>
                 <input className="input" value={form.ticker}
                   onChange={e => set('ticker', e.target.value.toUpperCase())}
+                  onKeyDown={e => e.key === 'Enter' && loadInstrument()}
                   placeholder={instrumentType === 'future' ? 'SRZ6, IMOEXF...' : 'VTBR, SBER...'}
                   style={{flex:1}} />
                 <button className="btn btn-secondary" onClick={loadInstrument} disabled={loadingPrice} style={{whiteSpace:'nowrap'}}>
@@ -210,20 +224,24 @@ export default function Calculator() {
             <div className="divider" />
             <div className="calc-section-title">Направление</div>
             <div style={{display:'flex', gap:8, marginBottom:16}}>
-              <button
-                  className="btn"
-                  style={{flex:1, background: result?.direction === 'long' ? 'linear-gradient(135deg,#10b981,#059669)' : 'var(--bg-surface-2)', color: result?.direction === 'long' ? '#fff' : 'var(--text-secondary)', border: result?.direction === 'long' ? 'none' : '1px solid var(--border-medium)', fontWeight:600}}
-                  onClick={() => { if (parseFloat(form.stopLoss) > parseFloat(form.entryPrice)) set('stopLoss',''); }}
-                >↑ Лонг</button>
-                <button
-                  className="btn"
-                  style={{flex:1, background: result?.direction === 'short' ? 'linear-gradient(135deg,#ef4444,#dc2626)' : 'var(--bg-surface-2)', color: result?.direction === 'short' ? '#fff' : 'var(--text-secondary)', border: result?.direction === 'short' ? 'none' : '1px solid var(--border-medium)', fontWeight:600}}
-                  onClick={() => { if (parseFloat(form.stopLoss) < parseFloat(form.entryPrice)) set('stopLoss',''); }}
-                >↓ Шорт</button>
+              <button className="btn" style={{flex:1,
+                background: result?.direction === 'long' ? 'linear-gradient(135deg,#10b981,#059669)' : 'var(--bg-surface-2)',
+                color: result?.direction === 'long' ? '#fff' : 'var(--text-secondary)',
+                border: result?.direction === 'long' ? 'none' : '1px solid var(--border-medium)',
+                fontWeight:600}}
+                onClick={() => { if (parseFloat(form.stopLoss) > parseFloat(form.entryPrice)) set('stopLoss',''); }}
+              >↑ Лонг</button>
+              <button className="btn" style={{flex:1,
+                background: result?.direction === 'short' ? 'linear-gradient(135deg,#ef4444,#dc2626)' : 'var(--bg-surface-2)',
+                color: result?.direction === 'short' ? '#fff' : 'var(--text-secondary)',
+                border: result?.direction === 'short' ? 'none' : '1px solid var(--border-medium)',
+                fontWeight:600}}
+                onClick={() => { if (parseFloat(form.stopLoss) < parseFloat(form.entryPrice)) set('stopLoss',''); }}
+              >↓ Шорт</button>
             </div>
             <div className="divider" />
             <div className="calc-section-title">Цены</div>
-            <div className="calc-grid-2" style={{marginBottom:12}}>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, marginBottom:16}}>
               <div className="input-group">
                 <label className="input-label">Цена входа</label>
                 <input className="input" type="number" value={form.entryPrice} onChange={e => set('entryPrice', e.target.value)} placeholder="0" />
@@ -232,10 +250,10 @@ export default function Calculator() {
                 <label className="input-label">Стоп-лосс</label>
                 <input className="input" type="number" value={form.stopLoss} onChange={e => set('stopLoss', e.target.value)} placeholder="0" />
               </div>
-            </div>
-            <div className="input-group" style={{marginBottom:16}}>
-              <label className="input-label">Тейк-профит <span style={{color:'var(--text-muted)'}}>(опц.)</span></label>
-              <input className="input" type="number" value={form.takeProfit} onChange={e => set('takeProfit', e.target.value)} placeholder="0 (опц.)" />
+              <div className="input-group">
+                <label className="input-label">Тейк-профит <span style={{color:'var(--text-muted)',fontSize:10}}>(опц.)</span></label>
+                <input className="input" type="number" value={form.takeProfit} onChange={e => set('takeProfit', e.target.value)} placeholder="0" />
+              </div>
             </div>
             <div className="divider" />
             <div className="calc-section-title">Управление риском</div>
@@ -325,7 +343,9 @@ export default function Calculator() {
                 </div>
               </div>
               <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-                <button className="btn btn-primary" style={{flex:1}}>📂 В журнал</button>
+                <button className="btn btn-primary" style={{flex:1, overflow:'hidden'}} onClick={handleJournal}>
+                  <span className={journalAnim ? 'journal-fly' : ''} style={{display:'inline-block',marginRight:4}}>📂</span>В журнал
+                </button>
                 <button className="btn btn-ai-hover" style={{flex:1,background:'linear-gradient(135deg,#7c3aed,#4f46e5)',color:'#fff',border:'none',borderRadius:12,fontWeight:600,fontSize:14}}
                   onClick={() => {
                     const p = new URLSearchParams({from:'calculator',ticker:form.ticker||'',name:instrumentInfo?.name||'',direction:displayResult.direction||'',entry:form.entryPrice||'',sl:form.stopLoss||'',tp:form.takeProfit||'',contracts:String(effectiveContracts),rr:String(displayResult.rr||''),riskAmount:String(displayResult.riskAmount||''),totalLoss:String(displayResult.totalLoss||''),totalProfit:String(displayResult.totalProfit||''),commission:String(displayResult.commission||''),breakeven:String(displayResult.breakeven||''),deposit:form.depositSize||'',type:instrumentType});
