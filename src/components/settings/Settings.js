@@ -145,7 +145,14 @@ export default function Settings() {
               <div style={{fontSize:12,color:'var(--text-muted)',marginTop:2}}>Эмоция, стратегия и заметки при нажатии "В журнал"</div>
             </div>
             <button
-              onClick={() => set('askJournalExtra', !form.askJournalExtra)}
+              onClick={async () => {
+                const newVal = !form.askJournalExtra;
+                set('askJournalExtra', newVal);
+                try {
+                  await updateUserProfile({ askJournalExtra: newVal });
+                  toast.success(newVal ? 'Детали будут запрашиваться' : 'Детали не будут запрашиваться');
+                } catch { toast.error('Ошибка сохранения'); }
+              }}
               style={{
                 width:48, height:26, borderRadius:13, border:'none', cursor:'pointer',
                 background: form.askJournalExtra ? 'var(--accent-primary)' : 'var(--bg-surface-3)',
