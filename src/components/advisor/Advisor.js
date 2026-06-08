@@ -150,44 +150,44 @@ ${recentTrades || 'Нет данных'}${calcContext}
       .split('\n').join('<br/>');
   };
 
-  // ===================== PRO GATE — полный экран, без прокрутки =====================
+  // ===================== PRO GATE — на весь доступный экран =====================
   if (!isPro) {
     return (
       <div style={{
-        position:'fixed', inset:0,
+        width:'100%', height:'100%',
+        minHeight:'calc(100vh - 0px)',
         display:'flex', alignItems:'center', justifyContent:'center',
-        background:'var(--bg-primary)',
-        padding:'20px',
+        background:'linear-gradient(160deg, #0b1220 0%, #0f1829 50%, #131d35 100%)',
+        padding:'24px',
+        boxSizing:'border-box',
         overflow:'hidden',
-        zIndex:10,
       }}>
+        {/* Фоновые глоу-пятна */}
+        <div style={{position:'absolute',inset:0,pointerEvents:'none',overflow:'hidden'}}>
+          <div style={{position:'absolute',top:'10%',left:'20%',width:400,height:400,borderRadius:'50%',background:'rgba(79,70,229,0.07)',filter:'blur(80px)'}}/>
+          <div style={{position:'absolute',bottom:'10%',right:'15%',width:300,height:300,borderRadius:'50%',background:'rgba(124,58,237,0.06)',filter:'blur(60px)'}}/>
+        </div>
+
         <div style={{
-          width:'100%', maxWidth:560,
-          background:'linear-gradient(145deg,#0f1829,#131d35)',
-          border:'1px solid rgba(255,255,255,0.08)',
-          borderRadius:28,
-          boxShadow:'0 40px 80px rgba(0,0,0,0.4)',
-          padding:'32px 32px 24px',
+          width:'100%', maxWidth:580, position:'relative',
           display:'flex', flexDirection:'column', alignItems:'center',
-          maxHeight:'calc(100vh - 40px)',
-          overflow:'auto',
         }}>
           {/* Иконка */}
-          <div style={{fontSize:52,marginBottom:10,filter:'drop-shadow(0 0 20px rgba(79,70,229,0.4))'}}>🤖</div>
+          <div style={{fontSize:56,marginBottom:10,filter:'drop-shadow(0 0 24px rgba(79,70,229,0.5))'}}>🤖</div>
 
           {/* PRO бейдж */}
-          <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'linear-gradient(135deg,rgba(245,158,11,0.15),rgba(251,191,36,0.1))',border:'1px solid rgba(245,158,11,0.3)',borderRadius:20,padding:'4px 14px',marginBottom:12}}>
+          <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'linear-gradient(135deg,rgba(245,158,11,0.15),rgba(251,191,36,0.1))',border:'1px solid rgba(245,158,11,0.3)',borderRadius:20,padding:'4px 14px',marginBottom:14}}>
             <span>⭐</span>
             <span style={{fontSize:11,fontWeight:700,color:'#fbbf24',letterSpacing:'0.8px'}}>ТОЛЬКО ДЛЯ PRO</span>
           </div>
 
-          <h2 style={{fontFamily:"'Syne',sans-serif",fontSize:26,fontWeight:800,color:'#f0f4ff',margin:'0 0 8px',letterSpacing:'-0.5px',textAlign:'center'}}>AI Советник</h2>
-          <p style={{fontSize:13,color:'rgba(255,255,255,0.4)',lineHeight:1.6,marginBottom:20,textAlign:'center'}}>
+          <h2 style={{fontFamily:"'Syne',sans-serif",fontSize:28,fontWeight:800,color:'#f0f4ff',margin:'0 0 8px',letterSpacing:'-0.5px',textAlign:'center'}}>AI Советник</h2>
+          <p style={{fontSize:13,color:'rgba(255,255,255,0.4)',lineHeight:1.6,marginBottom:24,textAlign:'center'}}>
             Персональный торговый коуч анализирует твой журнал,<br/>находит паттерны ошибок и помогает расти как трейдеру
           </p>
 
           {/* Фичи 2×3 */}
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:20,width:'100%',textAlign:'left'}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:24,width:'100%',textAlign:'left'}}>
             {[
               ['📊','Анализ журнала','Паттерны ошибок и слабые места'],
               ['🧠','Психологический коуч','Эмоции и дисциплина'],
@@ -196,45 +196,41 @@ ${recentTrades || 'Нет данных'}${calcContext}
               ['💬','Свободный вопрос','Любой вопрос по трейдингу'],
               ['🧮','Из калькулятора','Разбор сделки перед входом'],
             ].map(([icon,title,desc]) => (
-              <div key={title} style={{display:'flex',alignItems:'flex-start',gap:8,background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:10,padding:'8px 10px'}}>
-                <span style={{fontSize:16,flexShrink:0,marginTop:1}}>{icon}</span>
+              <div key={title} style={{display:'flex',alignItems:'flex-start',gap:10,background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.07)',borderRadius:12,padding:'10px 12px'}}>
+                <span style={{fontSize:18,flexShrink:0,marginTop:1}}>{icon}</span>
                 <div>
-                  <div style={{fontSize:12,fontWeight:600,color:'#f0f4ff',marginBottom:1}}>{title}</div>
-                  <div style={{fontSize:10,color:'rgba(255,255,255,0.3)'}}>{desc}</div>
+                  <div style={{fontSize:12,fontWeight:600,color:'#f0f4ff',marginBottom:2}}>{title}</div>
+                  <div style={{fontSize:11,color:'rgba(255,255,255,0.3)'}}>{desc}</div>
                 </div>
               </div>
             ))}
           </div>
 
-          {/* Цена — горизонтально в одну строку */}
+          {/* Цена — все элементы одного baseline-размера */}
           <div style={{
             background:'rgba(79,70,229,0.08)',
             border:'1px solid rgba(79,70,229,0.2)',
-            borderRadius:14, padding:'12px 20px',
-            marginBottom:14, width:'100%',
-            display:'flex', flexDirection:'column', alignItems:'center', gap:4,
+            borderRadius:14, padding:'14px 24px',
+            marginBottom:16, width:'100%',
+            display:'flex', alignItems:'center', justifyContent:'center', gap:0,
           }}>
-            <div style={{display:'flex',alignItems:'baseline',gap:6}}>
-              <span style={{fontSize:38,fontWeight:800,color:'#f0f4ff',fontFamily:"'Syne',sans-serif",lineHeight:1}}>299</span>
-              <span style={{fontSize:18,color:'rgba(255,255,255,0.5)'}}>₽</span>
-              <span style={{fontSize:13,color:'rgba(255,255,255,0.35)'}}>/мес</span>
-              <span style={{fontSize:13,color:'rgba(255,255,255,0.2)',margin:'0 6px'}}>·</span>
-              <span style={{fontSize:13,color:'rgba(255,255,255,0.5)',fontWeight:600}}>2 490 ₽</span>
-              <span style={{fontSize:12,color:'rgba(255,255,255,0.3)'}}>/год</span>
-              <span style={{fontSize:11,color:'#10b981',fontWeight:700,background:'rgba(16,185,129,0.12)',border:'1px solid rgba(16,185,129,0.25)',borderRadius:6,padding:'1px 6px',marginLeft:4}}>−40%</span>
-            </div>
+            <span style={{fontSize:36,fontWeight:800,color:'#f0f4ff',fontFamily:"'Syne',sans-serif",lineHeight:1,letterSpacing:'-1px'}}>299 ₽</span>
+            <span style={{fontSize:14,color:'rgba(255,255,255,0.4)',marginLeft:4,alignSelf:'flex-end',paddingBottom:2}}>/мес</span>
+            <span style={{fontSize:14,color:'rgba(255,255,255,0.2)',margin:'0 12px',alignSelf:'flex-end',paddingBottom:2}}>·</span>
+            <span style={{fontSize:14,color:'rgba(255,255,255,0.5)',fontWeight:600,alignSelf:'flex-end',paddingBottom:2}}>2 490 ₽/год</span>
+            <span style={{fontSize:11,color:'#10b981',fontWeight:700,background:'rgba(16,185,129,0.12)',border:'1px solid rgba(16,185,129,0.25)',borderRadius:6,padding:'2px 7px',marginLeft:8,alignSelf:'center'}}>−40%</span>
           </div>
 
           {/* Кнопка */}
           <button
-            style={{width:'100%',padding:'13px',border:'none',borderRadius:14,background:'linear-gradient(135deg,#4f46e5,#7c3aed)',color:'#fff',fontFamily:"'DM Sans',sans-serif",fontSize:15,fontWeight:700,cursor:'pointer',boxShadow:'0 8px 24px rgba(79,70,229,0.4)',transition:'transform 0.2s'}}
-            onMouseEnter={e => e.currentTarget.style.transform='translateY(-2px)'}
-            onMouseLeave={e => e.currentTarget.style.transform=''}
+            style={{width:'100%',padding:'14px',border:'none',borderRadius:14,background:'linear-gradient(135deg,#4f46e5,#7c3aed)',color:'#fff',fontFamily:"'DM Sans',sans-serif",fontSize:15,fontWeight:700,cursor:'pointer',boxShadow:'0 8px 24px rgba(79,70,229,0.4)',transition:'transform 0.2s, box-shadow 0.2s'}}
+            onMouseEnter={e => { e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow='0 12px 32px rgba(79,70,229,0.55)'; }}
+            onMouseLeave={e => { e.currentTarget.style.transform=''; e.currentTarget.style.boxShadow='0 8px 24px rgba(79,70,229,0.4)'; }}
             onClick={() => alert('Оплата скоро будет доступна! Напишите в поддержку для активации Pro.')}
           >
             ⚡ Перейти на Pro — 299 ₽/мес
           </button>
-          <p style={{fontSize:11,color:'rgba(255,255,255,0.2)',marginTop:8}}>Отмена в любой момент · Безопасная оплата</p>
+          <p style={{fontSize:11,color:'rgba(255,255,255,0.2)',marginTop:10}}>Отмена в любой момент · Безопасная оплата</p>
         </div>
       </div>
     );

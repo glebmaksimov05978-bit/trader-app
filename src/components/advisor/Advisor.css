@@ -1,8 +1,16 @@
 /* src/components/advisor/Advisor.css */
 
-/* ── Страница советника — flex-колонка, растягивается на высоту viewport ── */
-.advisor-page {
+/* ── ProGate занимает весь main-контент без сайдбара ── */
+.advisor-page-gate {
+  width: 100%;
+  min-height: 100vh;
   display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Страница советника — flex-колонка, растягивается на высоту viewport ── */
+.advisor-page {  display: flex;
   flex-direction: column;
   padding: 28px 32px 0;
   height: calc(100vh - 0px); /* вся высота минус сайдбар обрабатывается на уровне layout */
@@ -149,7 +157,6 @@
   display: flex;
   gap: 8px;
   padding: 14px 32px;
-  border-top: 1px solid var(--border-subtle);
   flex-shrink: 0;
   background: var(--bg-surface);
 }
