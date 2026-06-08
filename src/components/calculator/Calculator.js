@@ -386,7 +386,7 @@ export default function Calculator() {
 
             {/* Цены */}
             <div className="calc-section-title">Цены</div>
-            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, marginBottom:16}}>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:8}}>
               <div className="input-group">
                 <label className="input-label">
                   {orderType === 'limit' ? '🎯 Цена заявки' : 'Цена входа'}
@@ -400,6 +400,8 @@ export default function Calculator() {
                 <label className="input-label">Стоп-лосс</label>
                 <input className="input" type="number" value={form.stopLoss} onChange={e => set('stopLoss', e.target.value)} placeholder="0" />
               </div>
+            </div>
+            <div style={{marginBottom:16}}>
               <div className="input-group">
                 <label className="input-label">Тейк-профит <span style={{color:'var(--text-muted)',fontSize:10}}>(опц.)</span></label>
                 <input className="input" type="number" value={form.takeProfit} onChange={e => set('takeProfit', e.target.value)} placeholder="0" />
