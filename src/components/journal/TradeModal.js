@@ -1,7 +1,199 @@
 // src/components/journal/TradeModal.js
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { formatCurrency } from '../../utils/calculator';
 import './Journal.css';
+
+// ─── Кастомный date-пикер ────────────────────────────────────────────────────
+const MONTHS_RU = ['Январь','Февраль','Март','Апрель','Май','Июнь',
+                   'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
+const DAYS_RU = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+
+function CustomDatePicker({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [viewDate, setViewDate] = useState(() => value ? new Date(value + 'T12:00:00') : new Date());
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // Обновлять вид при смене value снаружи
+  useEffect(() => {
+    if (value) setViewDate(new Date(value + 'T12:00:00'));
+  }, [value]);
+
+  const year = viewDate.getFullYear();
+  const month = viewDate.getMonth();
+  const firstDay = new Date(year, month, 1).getDay(); // 0=вс
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const startOffset = (firstDay === 0 ? 6 : firstDay - 1);
+
+  const cells = [];
+  for (let i = 0; i < startOffset; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  const selectedDate = value ? new Date(value + 'T12:00:00') : null;
+  const isSelected = (d) => {
+    if (!d || !selectedDate) return false;
+    return selectedDate.getFullYear() === year &&
+           selectedDate.getMonth() === month &&
+           selectedDate.getDate() === d;
+  };
+  const isToday = (d) => {
+    if (!d) return false;
+    const t = new Date();
+    return t.getFullYear() === year && t.getMonth() === month && t.getDate() === d;
+  };
+
+  const pad = (n) => String(n).padStart(2, '0');
+  const select = (d) => {
+    if (!d) return;
+    onChange(`${year}-${pad(month + 1)}-${pad(d)}`);
+    setOpen(false);
+  };
+  const goToday = () => {
+    const t = new Date();
+    const str = `${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(t.getDate())}`;
+    onChange(str);
+    setViewDate(t);
+    setOpen(false);
+  };
+
+  const displayValue = value
+    ? new Date(value + 'T12:00:00').toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit', year:'numeric' })
+    : '';
+
+  return (
+    <div ref={ref} style={{ position:'relative' }}>
+      {/* Trigger */}
+      <div
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display:'flex', alignItems:'center', gap:8,
+          background:'var(--bg-surface-2)',
+          border:`1px solid ${open ? 'var(--accent-primary)' : 'var(--border-subtle)'}`,
+          borderRadius:'var(--radius-sm)',
+          padding:'10px 14px',
+          cursor:'pointer',
+          fontSize:14,
+          color: displayValue ? 'var(--text-primary)' : 'var(--text-muted)',
+          transition:'border-color 0.2s, box-shadow 0.2s',
+          userSelect:'none',
+          boxShadow: open ? '0 0 0 3px rgba(79,70,229,0.15)' : 'none',
+          width:'100%',
+        }}
+      >
+        <span style={{fontSize:15}}>📅</span>
+        <span style={{flex:1}}>{displayValue || 'Выберите дату'}</span>
+        <span style={{
+          color:'var(--text-muted)', fontSize:11,
+          transform: open ? 'rotate(180deg)' : 'none',
+          transition:'transform 0.2s',
+          display:'inline-block',
+        }}>▾</span>
+      </div>
+
+      {/* Dropdown */}
+      {open && (
+        <div style={{
+          position:'absolute', top:'calc(100% + 6px)', left:0, zIndex:1000,
+          background:'var(--bg-surface)',
+          border:'1px solid var(--border-medium)',
+          borderRadius:16,
+          padding:'14px',
+          boxShadow:'0 20px 50px rgba(0,0,0,0.5)',
+          width:260,
+          animation:'fadeIn 0.15s ease',
+        }}
+          onClick={e => e.stopPropagation()}
+        >
+          {/* Навигация по месяцу */}
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+            <button
+              onClick={() => setViewDate(new Date(year, month - 1, 1))}
+              style={{
+                background:'var(--bg-surface-2)', border:'1px solid var(--border-subtle)',
+                borderRadius:8, width:30, height:30, cursor:'pointer',
+                color:'var(--text-secondary)', fontSize:16,
+                display:'flex', alignItems:'center', justifyContent:'center',
+              }}
+            >‹</button>
+            <span style={{ fontWeight:700, fontSize:13, color:'var(--text-primary)', letterSpacing:0.3 }}>
+              {MONTHS_RU[month]} {year}
+            </span>
+            <button
+              onClick={() => setViewDate(new Date(year, month + 1, 1))}
+              style={{
+                background:'var(--bg-surface-2)', border:'1px solid var(--border-subtle)',
+                borderRadius:8, width:30, height:30, cursor:'pointer',
+                color:'var(--text-secondary)', fontSize:16,
+                display:'flex', alignItems:'center', justifyContent:'center',
+              }}
+            >›</button>
+          </div>
+
+          {/* Дни недели */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:2, marginBottom:6 }}>
+            {DAYS_RU.map(d => (
+              <div key={d} style={{
+                textAlign:'center', fontSize:10, fontWeight:700,
+                color:'var(--text-muted)', padding:'3px 0',
+                letterSpacing:0.5,
+              }}>{d}</div>
+            ))}
+          </div>
+
+          {/* Ячейки дней */}
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:3 }}>
+            {cells.map((d, i) => (
+              <div
+                key={i}
+                onClick={() => d && select(d)}
+                style={{
+                  height:32, display:'flex', alignItems:'center', justifyContent:'center',
+                  fontSize:13, borderRadius:8,
+                  cursor: d ? 'pointer' : 'default',
+                  fontWeight: isSelected(d) ? 700 : 400,
+                  background: isSelected(d)
+                    ? 'linear-gradient(135deg, #4f46e5, #7c3aed)'
+                    : isToday(d) ? 'rgba(79,70,229,0.18)' : 'transparent',
+                  color: isSelected(d) ? '#fff'
+                    : isToday(d) ? 'var(--accent-primary)'
+                    : d ? 'var(--text-primary)' : 'transparent',
+                  boxShadow: isSelected(d) ? '0 2px 8px rgba(79,70,229,0.4)' : 'none',
+                  transition:'background 0.12s, color 0.12s',
+                }}
+                onMouseEnter={e => {
+                  if (d && !isSelected(d)) e.currentTarget.style.background = 'var(--bg-surface-3)';
+                }}
+                onMouseLeave={e => {
+                  if (d && !isSelected(d)) e.currentTarget.style.background = isToday(d) ? 'rgba(79,70,229,0.18)' : 'transparent';
+                }}
+              >
+                {d || ''}
+              </div>
+            ))}
+          </div>
+
+          {/* Сегодня */}
+          <div style={{ marginTop:10, paddingTop:10, borderTop:'1px solid var(--border-subtle)', display:'flex', justifyContent:'flex-end' }}>
+            <button
+              onClick={goToday}
+              style={{
+                background:'transparent', border:'none', cursor:'pointer',
+                fontSize:12, color:'var(--accent-primary)', fontWeight:600,
+                fontFamily:'inherit', padding:'2px 6px', borderRadius:6,
+              }}
+            >Сегодня</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 const EMPTY = {
   ticker: '',
@@ -67,16 +259,13 @@ export default function TradeModal({ trade, onSave, onClose, defaultDeposit }) {
     if (entry && exit && vol) {
       let pnl;
       if (step && stepAmt) {
-        // Proper futures calculation
         const ticks = Math.abs(exit - entry) / step;
         const direction = form.direction === 'long' ? (exit > entry ? 1 : -1) : (exit < entry ? 1 : -1);
         pnl = ticks * stepAmt * vol * direction;
       } else {
-        // Fallback
         pnl = form.direction === 'long' ? (exit - entry) * vol * lot : (entry - exit) * vol * lot;
       }
 
-      // Commission
       const commission = entry * vol * lot * commRate * 2;
       const netPnl = pnl - commission;
 
@@ -137,8 +326,7 @@ export default function TradeModal({ trade, onSave, onClose, defaultDeposit }) {
             </div>
             <div className="input-group">
               <label className="input-label">Дата *</label>
-              <input className="input" type="date" value={form.date}
-                onChange={e => set('date', e.target.value)} />
+              <CustomDatePicker value={form.date} onChange={v => set('date', v)} />
             </div>
             <div className="input-group">
               <label className="input-label">Статус</label>

@@ -348,8 +348,8 @@ export default function Journal() {
               {/* Поле цены выхода */}
               <div style={{marginBottom:4}}>
                 <label style={{
-                  display:'block', fontSize:12, fontWeight:500,
-                  color:'rgba(255,255,255,0.4)', letterSpacing:'0.3px', marginBottom:6,
+                  display:'block', fontSize:11, fontWeight:500,
+                  color:'rgba(255,255,255,0.4)', letterSpacing:'0.3px', marginBottom:4,
                 }}>
                   Цена выхода *
                 </label>
@@ -357,20 +357,20 @@ export default function Journal() {
                   display:'flex', alignItems:'center',
                   background:'rgba(255,255,255,0.05)',
                   border:'1px solid rgba(79,70,229,0.4)',
-                  borderRadius:14, overflow:'hidden',
-                  boxShadow:'0 0 0 3px rgba(79,70,229,0.12)',
+                  borderRadius:10, overflow:'hidden',
+                  boxShadow:'0 0 0 2px rgba(79,70,229,0.1)',
                 }}>
                   <input
                     type="number"
                     step="any"
-                    placeholder="Введите цену закрытия"
+                    placeholder="Цена закрытия"
                     value={closePrice}
                     onChange={e => setClosePrice(e.target.value)}
                     autoFocus
                     style={{
                       flex:1, background:'none', border:'none', outline:'none',
-                      padding:'14px 14px 14px 0',
-                      fontSize:15, fontFamily:'inherit',
+                      padding:'10px 12px',
+                      fontSize:14, fontFamily:'inherit',
                       color:'#f0f4ff', fontWeight:600,
                     }}
                   />
@@ -434,7 +434,7 @@ export default function Journal() {
               </h3>
               <button className="modal-close" onClick={() => setConfirmDelete(null)}>✕</button>
             </div>
-            <div style={{padding:'16px 0', color:'var(--text-muted)', fontSize:14, lineHeight:1.6}}>
+            <div style={{padding:'16px 0', color:'var(--text-muted)', fontSize:14, lineHeight:1.6, textAlign:'center'}}>
               Это действие нельзя отменить. Сделка будет удалена из журнала навсегда.
             </div>
             <div className="modal-footer" style={{marginTop:8}}>
