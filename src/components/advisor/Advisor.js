@@ -150,21 +150,44 @@ ${recentTrades || 'Нет данных'}${calcContext}
       .split('\n').join('<br/>');
   };
 
-  // ===================== PRO GATE =====================
+  // ===================== PRO GATE — полный экран, без прокрутки =====================
   if (!isPro) {
     return (
-      <div className="pro-gate-page">
-        <div className="pro-gate-card">
-          <div style={{fontSize:60,marginBottom:14,filter:'drop-shadow(0 0 20px rgba(79,70,229,0.4))'}}>🤖</div>
-          <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'linear-gradient(135deg,rgba(245,158,11,0.15),rgba(251,191,36,0.1))',border:'1px solid rgba(245,158,11,0.3)',borderRadius:20,padding:'5px 16px',marginBottom:16}}>
+      <div style={{
+        position:'fixed', inset:0,
+        display:'flex', alignItems:'center', justifyContent:'center',
+        background:'var(--bg-primary)',
+        padding:'20px',
+        overflow:'hidden',
+        zIndex:10,
+      }}>
+        <div style={{
+          width:'100%', maxWidth:560,
+          background:'linear-gradient(145deg,#0f1829,#131d35)',
+          border:'1px solid rgba(255,255,255,0.08)',
+          borderRadius:28,
+          boxShadow:'0 40px 80px rgba(0,0,0,0.4)',
+          padding:'32px 32px 24px',
+          display:'flex', flexDirection:'column', alignItems:'center',
+          maxHeight:'calc(100vh - 40px)',
+          overflow:'auto',
+        }}>
+          {/* Иконка */}
+          <div style={{fontSize:52,marginBottom:10,filter:'drop-shadow(0 0 20px rgba(79,70,229,0.4))'}}>🤖</div>
+
+          {/* PRO бейдж */}
+          <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'linear-gradient(135deg,rgba(245,158,11,0.15),rgba(251,191,36,0.1))',border:'1px solid rgba(245,158,11,0.3)',borderRadius:20,padding:'4px 14px',marginBottom:12}}>
             <span>⭐</span>
             <span style={{fontSize:11,fontWeight:700,color:'#fbbf24',letterSpacing:'0.8px'}}>ТОЛЬКО ДЛЯ PRO</span>
           </div>
-          <h2 style={{fontFamily:"'Syne',sans-serif",fontSize:30,fontWeight:800,color:'#f0f4ff',margin:'0 0 10px',letterSpacing:'-0.5px'}}>AI Советник</h2>
-          <p style={{fontSize:14,color:'rgba(255,255,255,0.4)',lineHeight:1.7,marginBottom:28}}>
+
+          <h2 style={{fontFamily:"'Syne',sans-serif",fontSize:26,fontWeight:800,color:'#f0f4ff',margin:'0 0 8px',letterSpacing:'-0.5px',textAlign:'center'}}>AI Советник</h2>
+          <p style={{fontSize:13,color:'rgba(255,255,255,0.4)',lineHeight:1.6,marginBottom:20,textAlign:'center'}}>
             Персональный торговый коуч анализирует твой журнал,<br/>находит паттерны ошибок и помогает расти как трейдеру
           </p>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:28,textAlign:'left'}}>
+
+          {/* Фичи 2×3 */}
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:20,width:'100%',textAlign:'left'}}>
             {[
               ['📊','Анализ журнала','Паттерны ошибок и слабые места'],
               ['🧠','Психологический коуч','Эмоции и дисциплина'],
@@ -173,32 +196,45 @@ ${recentTrades || 'Нет данных'}${calcContext}
               ['💬','Свободный вопрос','Любой вопрос по трейдингу'],
               ['🧮','Из калькулятора','Разбор сделки перед входом'],
             ].map(([icon,title,desc]) => (
-              <div key={title} style={{display:'flex',alignItems:'flex-start',gap:10,background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:12,padding:'10px 12px'}}>
-                <span style={{fontSize:18,flexShrink:0,marginTop:1}}>{icon}</span>
+              <div key={title} style={{display:'flex',alignItems:'flex-start',gap:8,background:'rgba(255,255,255,0.03)',border:'1px solid rgba(255,255,255,0.06)',borderRadius:10,padding:'8px 10px'}}>
+                <span style={{fontSize:16,flexShrink:0,marginTop:1}}>{icon}</span>
                 <div>
-                  <div style={{fontSize:12,fontWeight:600,color:'#f0f4ff',marginBottom:2}}>{title}</div>
-                  <div style={{fontSize:11,color:'rgba(255,255,255,0.3)'}}>{desc}</div>
+                  <div style={{fontSize:12,fontWeight:600,color:'#f0f4ff',marginBottom:1}}>{title}</div>
+                  <div style={{fontSize:10,color:'rgba(255,255,255,0.3)'}}>{desc}</div>
                 </div>
               </div>
             ))}
           </div>
-          <div style={{background:'rgba(79,70,229,0.08)',border:'1px solid rgba(79,70,229,0.2)',borderRadius:16,padding:'16px',marginBottom:16}}>
-            <div style={{display:'flex',alignItems:'baseline',justifyContent:'center',gap:4,marginBottom:4}}>
-              <span style={{fontSize:40,fontWeight:800,color:'#f0f4ff',fontFamily:"'Syne',sans-serif"}}>299</span>
-              <span style={{fontSize:20,color:'rgba(255,255,255,0.5)'}}>₽</span>
-              <span style={{fontSize:13,color:'rgba(255,255,255,0.3)',marginLeft:4}}>/месяц</span>
+
+          {/* Цена — горизонтально в одну строку */}
+          <div style={{
+            background:'rgba(79,70,229,0.08)',
+            border:'1px solid rgba(79,70,229,0.2)',
+            borderRadius:14, padding:'12px 20px',
+            marginBottom:14, width:'100%',
+            display:'flex', flexDirection:'column', alignItems:'center', gap:4,
+          }}>
+            <div style={{display:'flex',alignItems:'baseline',gap:6}}>
+              <span style={{fontSize:38,fontWeight:800,color:'#f0f4ff',fontFamily:"'Syne',sans-serif",lineHeight:1}}>299</span>
+              <span style={{fontSize:18,color:'rgba(255,255,255,0.5)'}}>₽</span>
+              <span style={{fontSize:13,color:'rgba(255,255,255,0.35)'}}>/мес</span>
+              <span style={{fontSize:13,color:'rgba(255,255,255,0.2)',margin:'0 6px'}}>·</span>
+              <span style={{fontSize:13,color:'rgba(255,255,255,0.5)',fontWeight:600}}>2 490 ₽</span>
+              <span style={{fontSize:12,color:'rgba(255,255,255,0.3)'}}>/год</span>
+              <span style={{fontSize:11,color:'#10b981',fontWeight:700,background:'rgba(16,185,129,0.12)',border:'1px solid rgba(16,185,129,0.25)',borderRadius:6,padding:'1px 6px',marginLeft:4}}>−40%</span>
             </div>
-            <div style={{fontSize:12,color:'rgba(255,255,255,0.3)'}}>или <strong style={{color:'rgba(255,255,255,0.5)'}}>2 490 ₽</strong> / год — экономия 40%</div>
           </div>
+
+          {/* Кнопка */}
           <button
-            style={{width:'100%',padding:15,border:'none',borderRadius:14,background:'linear-gradient(135deg,#4f46e5,#7c3aed)',color:'#fff',fontFamily:"'DM Sans',sans-serif",fontSize:15,fontWeight:700,cursor:'pointer',boxShadow:'0 8px 24px rgba(79,70,229,0.4)',transition:'transform 0.2s'}}
+            style={{width:'100%',padding:'13px',border:'none',borderRadius:14,background:'linear-gradient(135deg,#4f46e5,#7c3aed)',color:'#fff',fontFamily:"'DM Sans',sans-serif",fontSize:15,fontWeight:700,cursor:'pointer',boxShadow:'0 8px 24px rgba(79,70,229,0.4)',transition:'transform 0.2s'}}
             onMouseEnter={e => e.currentTarget.style.transform='translateY(-2px)'}
             onMouseLeave={e => e.currentTarget.style.transform=''}
             onClick={() => alert('Оплата скоро будет доступна! Напишите в поддержку для активации Pro.')}
           >
             ⚡ Перейти на Pro — 299 ₽/мес
           </button>
-          <p style={{fontSize:11,color:'rgba(255,255,255,0.2)',marginTop:10}}>Отмена в любой момент · Безопасная оплата</p>
+          <p style={{fontSize:11,color:'rgba(255,255,255,0.2)',marginTop:8}}>Отмена в любой момент · Безопасная оплата</p>
         </div>
       </div>
     );
@@ -206,28 +242,20 @@ ${recentTrades || 'Нет данных'}${calcContext}
 
   // ===================== PRO ИНТЕРФЕЙС =====================
   return (
-    <div className="page">
-      <div className="page-header">
+    <div className="advisor-page">
+      {/* Заголовок */}
+      <div className="advisor-header">
         <h1 className="page-title">🤖 AI Советник</h1>
         <p className="page-subtitle">Анализ торговли с помощью искусственного интеллекта</p>
       </div>
 
-      {/* Горизонтальные таблетки режимов */}
-      <div style={{display:'flex',gap:8,flexWrap:'wrap',marginBottom:16}}>
+      {/* Режимы — на мобиле горизонтальный скролл, на десктопе flex-wrap */}
+      <div className="advisor-modes">
         {MODES.map(m => (
           <button
             key={m.id}
+            className={`advisor-mode-btn${mode === m.id ? ' active' : ''}`}
             onClick={() => { setMode(m.id); setMessages([]); }}
-            style={{
-              display:'flex', alignItems:'center', gap:6,
-              padding:'8px 16px', borderRadius:20,
-              border: mode === m.id ? '1px solid rgba(79,70,229,0.6)' : '1px solid var(--border-subtle)',
-              background: mode === m.id ? 'rgba(79,70,229,0.15)' : 'var(--bg-surface-2)',
-              color: mode === m.id ? '#818cf8' : 'var(--text-muted)',
-              fontFamily:'inherit', fontSize:13, fontWeight:600,
-              cursor:'pointer', transition:'all 0.2s',
-              boxShadow: mode === m.id ? '0 0 0 1px rgba(79,70,229,0.3)' : 'none',
-            }}
           >
             <span>{m.icon}</span>
             <span>{m.label}</span>
@@ -236,7 +264,7 @@ ${recentTrades || 'Нет данных'}${calcContext}
       </div>
 
       {/* Панель действий */}
-      <div style={{display:'flex',gap:10,alignItems:'center',marginBottom:16,flexWrap:'wrap'}}>
+      <div className="advisor-actions">
         {mode === 'trade' && (
           <select className="input" style={{maxWidth:240}} value={selectedTrade} onChange={e => setSelectedTrade(e.target.value)}>
             <option value="">— выберите сделку —</option>
@@ -256,17 +284,17 @@ ${recentTrades || 'Нет данных'}${calcContext}
           </button>
         )}
         {stats && stats.total > 0 && (
-          <div style={{display:'flex',gap:12,padding:'8px 14px',background:'var(--bg-surface-2)',borderRadius:12,border:'1px solid var(--border-subtle)',fontSize:12,color:'var(--text-muted)'}}>
-            Сделок <strong style={{color:'var(--text-primary)',marginLeft:4}}>{stats.total}</strong>
-            <span style={{marginLeft:8}}>Винрейт <strong style={{color:'var(--text-primary)'}}>{stats.winrate.toFixed(0)}%</strong></span>
-            <span style={{marginLeft:8}}>PF <strong style={{color:'var(--text-primary)'}}>{stats.profitFactor.toFixed(1)}</strong></span>
+          <div className="advisor-stats-badge">
+            Сделок <strong>{stats.total}</strong>
+            <span>Винрейт <strong>{stats.winrate.toFixed(0)}%</strong></span>
+            <span>PF <strong>{stats.profitFactor.toFixed(1)}</strong></span>
           </div>
         )}
       </div>
 
       {/* Карточка калькулятора */}
       {mode === 'calculator' && calcData && (
-        <div style={{padding:'14px 18px',background:'rgba(79,70,229,0.08)',border:'1px solid rgba(79,70,229,0.25)',borderRadius:16,marginBottom:16}}>
+        <div style={{padding:'14px 18px',background:'rgba(79,70,229,0.08)',border:'1px solid rgba(79,70,229,0.25)',borderRadius:16,marginBottom:12}}>
           <div style={{fontSize:12,color:'var(--accent-primary)',fontWeight:700,marginBottom:10,letterSpacing:'0.5px'}}>🧮 ДАННЫЕ ИЗ КАЛЬКУЛЯТОРА</div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:'6px 20px',fontSize:13}}>
             {[
@@ -290,9 +318,9 @@ ${recentTrades || 'Нет данных'}${calcContext}
         </div>
       )}
 
-      {/* Чат — на всю ширину */}
-      <div className="card advisor-messages-card">
-        <div className="advisor-messages" ref={el => { if (el) el.scrollTop = el.scrollHeight; }}>
+      {/* Чат — растянут до низа, прикреплён */}
+      <div className="advisor-chat-wrap card">
+        <div className="advisor-messages">
           {messages.length === 0 ? (
             <div className="empty-state">
               <div className="empty-state-icon">🤖</div>

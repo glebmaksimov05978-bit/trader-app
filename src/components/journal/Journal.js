@@ -349,7 +349,8 @@ export default function Journal() {
               <div style={{marginBottom:4}}>
                 <label style={{
                   display:'block', fontSize:11, fontWeight:500,
-                  color:'rgba(255,255,255,0.4)', letterSpacing:'0.3px', marginBottom:4,
+                  color:'rgba(255,255,255,0.4)', letterSpacing:'0.3px',
+                  marginBottom:4, paddingLeft:4,
                 }}>
                   Цена выхода *
                 </label>
@@ -369,8 +370,8 @@ export default function Journal() {
                     autoFocus
                     style={{
                       flex:1, background:'none', border:'none', outline:'none',
-                      padding:'10px 12px',
-                      fontSize:14, fontFamily:'inherit',
+                      padding:'9px 12px',
+                      fontSize:13, fontFamily:'inherit',
                       color:'#f0f4ff', fontWeight:600,
                     }}
                   />
