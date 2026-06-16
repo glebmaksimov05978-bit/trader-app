@@ -42,6 +42,8 @@ export default function Calculator() {
   const [manualContracts, setManualContracts] = useState('');
   const [journalAnim, setJournalAnim] = useState(false);
   const [showJournalModal, setShowJournalModal] = useState(false);
+  const [showTinkoffModal, setShowTinkoffModal] = useState(false);
+  const [tinkoffCopied, setTinkoffCopied] = useState('');
   const [journalExtra, setJournalExtra] = useState({ setup: '', emotion: '', notes: '' });
   const [savingTrade, setSavingTrade] = useState(false);
   const [forcedDir, setForcedDir] = useState(null);
@@ -386,7 +388,7 @@ export default function Calculator() {
 
             {/* Цены */}
             <div className="calc-section-title">Цены</div>
-            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:8}}>
+            <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, marginBottom:16}}>
               <div className="input-group">
                 <label className="input-label">
                   {orderType === 'limit' ? '🎯 Цена заявки' : 'Цена входа'}
@@ -400,8 +402,6 @@ export default function Calculator() {
                 <label className="input-label">Стоп-лосс</label>
                 <input className="input" type="number" value={form.stopLoss} onChange={e => set('stopLoss', e.target.value)} placeholder="0" />
               </div>
-            </div>
-            <div style={{marginBottom:16}}>
               <div className="input-group">
                 <label className="input-label">Тейк-профит <span style={{color:'var(--text-muted)',fontSize:10}}>(опц.)</span></label>
                 <input className="input" type="number" value={form.takeProfit} onChange={e => set('takeProfit', e.target.value)} placeholder="0" />
@@ -518,6 +518,11 @@ export default function Calculator() {
                     window.location.href = '/advisor?' + p.toString();
                   }}
                 >🤖 В AI</button>
+                <button
+                  className="btn"
+                  style={{flex:1,background:'linear-gradient(135deg,#ffdd2d,#f5a623)',color:'#1a1a1a',border:'none',borderRadius:12,fontWeight:700,fontSize:14}}
+                  onClick={() => setShowTinkoffModal(true)}
+                >🏦 В Т-Банк</button>
               </div>
 
               {/* Детализация */}
@@ -561,6 +566,96 @@ export default function Calculator() {
           )}
         </div>
       </div>
+
+      {/* Модалка Т-Банк */}
+      {showTinkoffModal && displayResult && (
+        <div className="calc-modal-overlay" onClick={() => setShowTinkoffModal(false)}>
+          <div className="calc-modal" onClick={e => e.stopPropagation()}>
+            {/* Заголовок */}
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
+              <div>
+                <div style={{fontSize:18,fontWeight:700,color:'var(--text-primary)'}}>🏦 Открыть в Т-Банке</div>
+                <div style={{fontSize:12,color:'var(--text-muted)',marginTop:2}}>Скопируй параметры и введи в приложении</div>
+              </div>
+              <button onClick={() => setShowTinkoffModal(false)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-muted)',fontSize:20}}>✕</button>
+            </div>
+
+            {/* Параметры */}
+            <div style={{display:'flex',flexDirection:'column',gap:8,marginBottom:20}}>
+              {[
+                ['Тикер', form.ticker || '—'],
+                ['Направление', activeDirection === 'long' ? '↑ Лонг' : '↓ Шорт'],
+                ['Тип заявки', orderType === 'market' ? '⚡ По рынку' : '🎯 Лимитная'],
+                ...(orderType === 'limit' ? [['Цена заявки', form.entryPrice || '—']] : []),
+                ['Контрактов', String(effectiveContracts)],
+                ['Стоп-лосс', form.stopLoss || '—'],
+                ...(form.takeProfit ? [['Тейк-профит', form.takeProfit]] : []),
+              ].map(([label, value]) => (
+                <div key={label} style={{
+                  display:'flex', alignItems:'center', justifyContent:'space-between',
+                  background:'var(--bg-surface-2)',
+                  border:'1px solid var(--border-subtle)',
+                  borderRadius:12, padding:'10px 14px',
+                }}>
+                  <span style={{fontSize:13,color:'var(--text-muted)'}}>{label}</span>
+                  <div style={{display:'flex',alignItems:'center',gap:8}}>
+                    <span style={{fontSize:14,fontWeight:700,color:'var(--text-primary)'}}>{value}</span>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(value).catch(()=>{});
+                        setTinkoffCopied(label);
+                        setTimeout(() => setTinkoffCopied(''), 1500);
+                      }}
+                      style={{
+                        background: tinkoffCopied === label ? 'rgba(16,185,129,0.15)' : 'var(--bg-surface-3)',
+                        border: `1px solid ${tinkoffCopied === label ? 'rgba(16,185,129,0.4)' : 'var(--border-subtle)'}`,
+                        borderRadius:8, padding:'4px 10px',
+                        cursor:'pointer', fontSize:11, fontFamily:'inherit',
+                        color: tinkoffCopied === label ? 'var(--green)' : 'var(--text-muted)',
+                        transition:'all 0.15s', whiteSpace:'nowrap',
+                      }}
+                    >
+                      {tinkoffCopied === label ? '✓ Скопировано' : '📋 Копировать'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Кнопка открыть */}
+            <button
+              style={{
+                width:'100%', padding:'14px', border:'none', borderRadius:14,
+                background:'linear-gradient(135deg,#ffdd2d,#f5a623)',
+                color:'#1a1a1a', fontFamily:'inherit', fontSize:15, fontWeight:700,
+                cursor:'pointer', boxShadow:'0 4px 16px rgba(245,166,35,0.3)',
+                transition:'transform 0.2s',
+              }}
+              onMouseEnter={e => e.currentTarget.style.transform='translateY(-1px)'}
+              onMouseLeave={e => e.currentTarget.style.transform=''}
+              onClick={() => {
+                const ticker = form.ticker || '';
+                const deeplink = `tinkoff://invest/terminal?ticker=${ticker}`;
+                const website = `https://www.tbank.ru/invest/${instrumentType === 'future' ? 'futures' : 'stocks'}/${ticker}/`;
+                // Пробуем открыть приложение, если не открылось — сайт
+                const iframe = document.createElement('iframe');
+                iframe.style.display = 'none';
+                document.body.appendChild(iframe);
+                iframe.src = deeplink;
+                setTimeout(() => {
+                  document.body.removeChild(iframe);
+                  window.open(website, '_blank');
+                }, 1500);
+              }}
+            >
+              Открыть {form.ticker || 'инструмент'} в Т-Банке →
+            </button>
+            <p style={{textAlign:'center',fontSize:11,color:'var(--text-muted)',marginTop:8}}>
+              Откроется приложение или сайт Т-Банка
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Модалка "В журнал" */}
       {showJournalModal && (
