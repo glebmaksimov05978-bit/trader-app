@@ -675,21 +675,9 @@ export default function Calculator() {
                 const website = isFuture
                   ? `https://www.tbank.ru/invest/futures/${ticker}/`
                   : `https://www.tbank.ru/invest/stocks/${ticker}/`;
-                const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-                if (isMobile) {
-                  // На мобильном — пробуем открыть приложение, сайт как fallback через таймаут
-                  const deeplink = `tinkoffinvestor://${isFuture ? 'futures' : 'stocks'}/${ticker}`;
-                  let didHide = false;
-                  const onVisibilityChange = () => { if (document.hidden) didHide = true; };
-                  document.addEventListener('visibilitychange', onVisibilityChange);
-                  window.location.href = deeplink;
-                  setTimeout(() => {
-                    document.removeEventListener('visibilitychange', onVisibilityChange);
-                    if (!didHide) window.open(website, '_blank');
-                  }, 800);
-                } else {
-                  window.open(website, '_blank');
-                }
+                // Прямая навигация даёт iOS/Android шанс перехватить Universal Link
+                // и открыть установленное приложение Т-Инвестиций вместо браузера.
+                window.location.href = website;
               }}
             >
               <span style={{
@@ -703,6 +691,9 @@ export default function Calculator() {
             </button>
             <p style={{textAlign:'center',fontSize:11,color:'var(--text-muted)',marginTop:8}}>
               Откроется приложение или сайт Т-Банка
+            </p>
+            <p style={{textAlign:'center',fontSize:11,color:'var(--text-muted)',marginTop:4}}>
+              Если откроется не та страница — тикер «{form.ticker || '—'}» уже скопирован, найдите его поиском
             </p>
           </div>
         </div>
