@@ -80,6 +80,14 @@ export default function Calculator() {
     }
   }, [userProfile]);
 
+  useEffect(() => {
+    if (showJournalModal || showTinkoffModal) {
+      const prevOverflow = document.body.style.overflow;
+      document.body.style.overflow = 'hidden';
+      return () => { document.body.style.overflow = prevOverflow; };
+    }
+  }, [showJournalModal, showTinkoffModal]);
+
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
 
   useEffect(() => {
@@ -255,9 +263,20 @@ export default function Calculator() {
           100% { transform: scale(0.2) translate(-120px, 40px); opacity: 0; }
         }
         .journal-fly { animation: flyToJournal 0.7s cubic-bezier(0.4, 0, 0.2, 1) forwards; display:inline-block; }
-        .calc-modal-overlay { position:fixed;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(8px);z-index:1000;display:flex;align-items:flex-end;justify-content:center;padding:20px; }
-        .calc-modal { background:var(--bg-surface);border:1px solid var(--border-medium);border-radius:24px 24px 20px 20px;padding:28px;width:100%;max-width:520px;animation:slideUp 0.3s cubic-bezier(0.16,1,0.3,1); }
-        @keyframes slideUp { from{transform:translateY(40px);opacity:0} to{transform:translateY(0);opacity:1} }
+        .calc-modal-overlay {
+          position:fixed;inset:0;background:rgba(0,0,0,0.7);backdrop-filter:blur(8px);
+          -webkit-backdrop-filter:blur(8px);
+          z-index:1000;display:flex;align-items:center;justify-content:center;
+          padding:20px; overflow-y:auto;
+        }
+        .calc-modal {
+          background:var(--bg-surface);border:1px solid var(--border-medium);
+          border-radius:24px;padding:28px;width:100%;max-width:520px;
+          max-height:calc(100vh - 40px); overflow-y:auto;
+          animation:modalPop 0.25s cubic-bezier(0.16,1,0.3,1);
+          margin:auto;
+        }
+        @keyframes modalPop { from{transform:scale(0.95);opacity:0} to{transform:scale(1);opacity:1} }
       `}</style>
 
       <div className="page-header">
@@ -403,7 +422,7 @@ export default function Calculator() {
                 <input className="input" type="number" value={form.stopLoss} onChange={e => set('stopLoss', e.target.value)} placeholder="0" />
               </div>
               <div className="input-group">
-                <label className="input-label">Тейк-профит <span style={{color:'var(--text-muted)',fontSize:10}}>(опц.)</span></label>
+                <label className="input-label">Тейк-профит</label>
                 <input className="input" type="number" value={form.takeProfit} onChange={e => set('takeProfit', e.target.value)} placeholder="0" />
               </div>
             </div>
@@ -520,9 +539,17 @@ export default function Calculator() {
                 >🤖 В AI</button>
                 <button
                   className="btn"
-                  style={{flex:1,background:'linear-gradient(135deg,#ffdd2d,#f5a623)',color:'#1a1a1a',border:'none',borderRadius:12,fontWeight:700,fontSize:14}}
+                  style={{flex:1,background:'linear-gradient(135deg,#ffdd2d,#f5a623)',color:'#1a1a1a',border:'none',borderRadius:12,fontWeight:700,fontSize:14,display:'flex',alignItems:'center',justifyContent:'center',gap:6}}
                   onClick={() => setShowTinkoffModal(true)}
-                >🏦 В Т-Банк</button>
+                >
+                  <span style={{
+                    display:'inline-flex', alignItems:'center', justifyContent:'center',
+                    width:18, height:18, borderRadius:5,
+                    background:'#1a1a1a', color:'#ffdd2d',
+                    fontWeight:800, fontSize:11, fontFamily:"'Syne',sans-serif", flexShrink:0,
+                  }}>T</span>
+                  В Т-Банк
+                </button>
               </div>
 
               {/* Детализация */}
@@ -574,7 +601,15 @@ export default function Calculator() {
             {/* Заголовок */}
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
               <div>
-                <div style={{fontSize:18,fontWeight:700,color:'var(--text-primary)'}}>🏦 Открыть в Т-Банке</div>
+                <div style={{fontSize:18,fontWeight:700,color:'var(--text-primary)',display:'flex',alignItems:'center',gap:8}}>
+                  <span style={{
+                    display:'inline-flex', alignItems:'center', justifyContent:'center',
+                    width:24, height:24, borderRadius:7,
+                    background:'linear-gradient(135deg,#ffdd2d,#f5a623)', color:'#1a1a1a',
+                    fontWeight:800, fontSize:13, fontFamily:"'Syne',sans-serif", flexShrink:0,
+                  }}>T</span>
+                  Открыть в Т-Банке
+                </div>
                 <div style={{fontSize:12,color:'var(--text-muted)',marginTop:2}}>Скопируй параметры и введи в приложении</div>
               </div>
               <button onClick={() => setShowTinkoffModal(false)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-muted)',fontSize:20}}>✕</button>
@@ -630,24 +665,40 @@ export default function Calculator() {
                 color:'#1a1a1a', fontFamily:'inherit', fontSize:15, fontWeight:700,
                 cursor:'pointer', boxShadow:'0 4px 16px rgba(245,166,35,0.3)',
                 transition:'transform 0.2s',
+                display:'flex', alignItems:'center', justifyContent:'center', gap:8,
               }}
               onMouseEnter={e => e.currentTarget.style.transform='translateY(-1px)'}
               onMouseLeave={e => e.currentTarget.style.transform=''}
               onClick={() => {
                 const ticker = form.ticker || '';
-                const deeplink = `tinkoff://invest/terminal?ticker=${ticker}`;
-                const website = `https://www.tbank.ru/invest/${instrumentType === 'future' ? 'futures' : 'stocks'}/${ticker}/`;
-                // Пробуем открыть приложение, если не открылось — сайт
-                const iframe = document.createElement('iframe');
-                iframe.style.display = 'none';
-                document.body.appendChild(iframe);
-                iframe.src = deeplink;
-                setTimeout(() => {
-                  document.body.removeChild(iframe);
+                const isFuture = instrumentType === 'future';
+                const website = isFuture
+                  ? `https://www.tbank.ru/invest/futures/${ticker}/`
+                  : `https://www.tbank.ru/invest/stocks/${ticker}/`;
+                const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+                if (isMobile) {
+                  // На мобильном — пробуем открыть приложение, сайт как fallback через таймаут
+                  const deeplink = `tinkoffinvestor://${isFuture ? 'futures' : 'stocks'}/${ticker}`;
+                  let didHide = false;
+                  const onVisibilityChange = () => { if (document.hidden) didHide = true; };
+                  document.addEventListener('visibilitychange', onVisibilityChange);
+                  window.location.href = deeplink;
+                  setTimeout(() => {
+                    document.removeEventListener('visibilitychange', onVisibilityChange);
+                    if (!didHide) window.open(website, '_blank');
+                  }, 800);
+                } else {
                   window.open(website, '_blank');
-                }, 1500);
+                }
               }}
             >
+              <span style={{
+                display:'inline-flex', alignItems:'center', justifyContent:'center',
+                width:20, height:20, borderRadius:6,
+                background:'#1a1a1a', color:'#ffdd2d',
+                fontWeight:800, fontSize:12, fontFamily:"'Syne',sans-serif",
+                flexShrink:0,
+              }}>T</span>
               Открыть {form.ticker || 'инструмент'} в Т-Банке →
             </button>
             <p style={{textAlign:'center',fontSize:11,color:'var(--text-muted)',marginTop:8}}>
