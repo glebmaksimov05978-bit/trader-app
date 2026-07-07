@@ -9,6 +9,8 @@ import {
   sendPasswordResetEmail,
   sendEmailVerification,
   updateEmail,
+  GoogleAuthProvider,
+  signInWithPopup,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../services/firebase';
@@ -58,6 +60,29 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     return signInWithEmailAndPassword(auth, email, password);
+  };
+
+  // Вход через Google — создаёт профиль в Firestore если это первый вход
+  const loginWithGoogle = async () => {
+    const provider = new GoogleAuthProvider();
+    const cred = await signInWithPopup(auth, provider);
+    const profileDoc = await getDoc(doc(db, 'users', cred.user.uid));
+    if (!profileDoc.exists()) {
+      const defaultProfile = {
+        uid: cred.user.uid,
+        email: cred.user.email,
+        displayName: cred.user.displayName || cred.user.email.split('@')[0],
+        role: 'free',
+        tinkoffToken: '',
+        depositSize: 0,
+        dailyLossLimit: 3,
+        maxRiskPerTrade: 1,
+        createdAt: serverTimestamp(),
+      };
+      await setDoc(doc(db, 'users', cred.user.uid), defaultProfile);
+    }
+    // Google-аккаунты уже подтверждены Google — сразу считаем почту верифицированной
+    return cred;
   };
 
   // Публичная регистрация
@@ -140,6 +165,7 @@ export function AuthProvider({ children }) {
     <AuthContext.Provider value={{
       user, userProfile, loading,
       login, register, logout, resetPassword,
+      loginWithGoogle,
       updateUserProfile, isAdmin, isPro,
       isEmailVerified, resendVerificationEmail, refreshEmailVerified,
       changeEmail,
