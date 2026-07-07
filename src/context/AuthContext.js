@@ -8,6 +8,7 @@ import {
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
   sendEmailVerification,
+  updateEmail,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../services/firebase';
@@ -94,6 +95,19 @@ export function AuthProvider({ children }) {
     return sendEmailVerification(auth.currentUser);
   };
 
+  // Смена email до подтверждения — на случай если пользователь ошибся при регистрации
+  const changeEmail = async (newEmail) => {
+    if (!auth.currentUser) throw new Error('Пользователь не авторизован');
+    await updateEmail(auth.currentUser, newEmail);
+    // Обновляем профиль в Firestore
+    await setDoc(doc(db, 'users', auth.currentUser.uid), { email: newEmail }, { merge: true });
+    setUserProfile(prev => ({ ...prev, email: newEmail }));
+    // Отправляем письмо верификации на новый адрес
+    await sendEmailVerification(auth.currentUser);
+    // Обновляем локальный user чтобы email в интерфейсе тоже обновился
+    setUser({ ...auth.currentUser });
+  };
+
   // Принудительно обновить статус верификации (после того как пользователь подтвердил почту в другой вкладке)
   const refreshEmailVerified = async () => {
     if (!auth.currentUser) return false;
@@ -128,6 +142,7 @@ export function AuthProvider({ children }) {
       login, register, logout, resetPassword,
       updateUserProfile, isAdmin, isPro,
       isEmailVerified, resendVerificationEmail, refreshEmailVerified,
+      changeEmail,
     }}>
       {children}
     </AuthContext.Provider>

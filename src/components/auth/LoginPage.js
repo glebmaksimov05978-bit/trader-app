@@ -58,9 +58,13 @@ function Field({ label, focused, icon, children }) {
   );
 }
 
-// Навигация по полям формы стрелками вверх/вниз — как Tab, но с клавиатуры без мыши
+// Навигация по полям формы стрелками вверх/вниз и Enter — как Tab, но с клавиатуры без мыши
 function handleArrowNav(e) {
-  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  const isEnter = e.key === 'Enter';
+  const isDown = e.key === 'ArrowDown';
+  const isUp = e.key === 'ArrowUp';
+  if (!isEnter && !isDown && !isUp) return;
+
   const form = e.target.closest('form');
   if (!form) return;
   const focusable = Array.from(
@@ -68,8 +72,13 @@ function handleArrowNav(e) {
   );
   const index = focusable.indexOf(e.target);
   if (index === -1) return;
+
+  // Enter на последнем поле — пусть форма отправляется как обычно
+  const isLastField = index === focusable.length - 2; // последнее поле перед кнопкой submit
+  if (isEnter && isLastField) return;
+
   e.preventDefault();
-  const nextIndex = e.key === 'ArrowDown' ? index + 1 : index - 1;
+  const nextIndex = isUp ? index - 1 : index + 1;
   const next = focusable[nextIndex];
   if (next) next.focus();
 }
