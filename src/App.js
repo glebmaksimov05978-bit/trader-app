@@ -17,12 +17,20 @@ import AdminPanel from './components/admin/AdminPanel';
 import LoadingScreen from './components/LoadingScreen';
 import './styles/globals.css';
 
+// Аккаунты созданные до включения верификации почты — пропускаем без проверки
+const TRUSTED_UIDS = [
+  'fuUAD1JLQ5VbfJRbajYgjhw5pCn2', // admin@trader.com
+  '1stzQToO77e61ubwLuo3g5KK1DI3', // gleb@trader.com
+];
+
 function ProtectedRoute({ children }) {
   const { user, loading, isEmailVerified } = useAuth();
   if (loading) return <LoadingScreen />;
   if (!user) return <Navigate to="/login" replace />;
-  // Если почта не подтверждена — показываем отдельный экран
-  if (!isEmailVerified) return <EmailNotVerifiedPage />;
+  // Если почта не подтверждена и это не доверенный старый аккаунт — показываем экран верификации
+  if (!isEmailVerified && !TRUSTED_UIDS.includes(user.uid)) {
+    return <EmailNotVerifiedPage />;
+  }
   return children;
 }
 
