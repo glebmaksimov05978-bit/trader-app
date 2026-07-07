@@ -58,6 +58,22 @@ function Field({ label, focused, icon, children }) {
   );
 }
 
+// Навигация по полям формы стрелками вверх/вниз — как Tab, но с клавиатуры без мыши
+function handleArrowNav(e) {
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  const form = e.target.closest('form');
+  if (!form) return;
+  const focusable = Array.from(
+    form.querySelectorAll('input:not([type="hidden"]), button[type="submit"]')
+  );
+  const index = focusable.indexOf(e.target);
+  if (index === -1) return;
+  e.preventDefault();
+  const nextIndex = e.key === 'ArrowDown' ? index + 1 : index - 1;
+  const next = focusable[nextIndex];
+  if (next) next.focus();
+}
+
 // Модал сброса пароля
 function ResetModal({ onClose }) {
   const { resetPassword } = useAuth();
@@ -283,6 +299,7 @@ export default function LoginPage() {
                     <input className="login-input" type="text" value={username}
                       onChange={e => setUsername(e.target.value)}
                       onFocus={() => setFocused('user')} onBlur={() => setFocused('')}
+                      onKeyDown={handleArrowNav}
                       placeholder="email или логин" autoComplete="off" name="login" required />
                   </Field>
 
@@ -290,6 +307,7 @@ export default function LoginPage() {
                     <input className="login-input" type={showPass ? 'text' : 'password'}
                       value={password} onChange={e => setPassword(e.target.value)}
                       onFocus={() => setFocused('pass')} onBlur={() => setFocused('')}
+                      onKeyDown={handleArrowNav}
                       placeholder="••••••••" autoComplete="current-password" name="password" required />
                     <button type="button" className="login-eye" onClick={() => setShowPass(!showPass)}>
                       <EyeIcon open={showPass} />
@@ -321,6 +339,7 @@ export default function LoginPage() {
                     <input className="login-input" type="text" value={regName}
                       onChange={e => setRegName(e.target.value)}
                       onFocus={() => setFocused('name')} onBlur={() => setFocused('')}
+                      onKeyDown={handleArrowNav}
                       placeholder="Ваше имя" required />
                   </Field>
 
@@ -328,6 +347,7 @@ export default function LoginPage() {
                     <input className="login-input" type="email" value={regEmail}
                       onChange={e => setRegEmail(e.target.value)}
                       onFocus={() => setFocused('email')} onBlur={() => setFocused('')}
+                      onKeyDown={handleArrowNav}
                       placeholder="your@email.com" autoComplete="email" required />
                   </Field>
 
@@ -335,6 +355,7 @@ export default function LoginPage() {
                     <input className="login-input" type={showPass ? 'text' : 'password'}
                       value={regPass} onChange={e => setRegPass(e.target.value)}
                       onFocus={() => setFocused('rpass')} onBlur={() => setFocused('')}
+                      onKeyDown={handleArrowNav}
                       placeholder="Минимум 6 символов" autoComplete="new-password" required />
                     <button type="button" className="login-eye" onClick={() => setShowPass(!showPass)}>
                       <EyeIcon open={showPass} />
@@ -345,6 +366,7 @@ export default function LoginPage() {
                     <input className="login-input" type={showPass ? 'text' : 'password'}
                       value={regPass2} onChange={e => setRegPass2(e.target.value)}
                       onFocus={() => setFocused('rpass2')} onBlur={() => setFocused('')}
+                      onKeyDown={handleArrowNav}
                       placeholder="Повторите пароль" autoComplete="new-password" required />
                   </Field>
 
