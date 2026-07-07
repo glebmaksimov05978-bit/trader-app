@@ -7,6 +7,7 @@ import {
   updateProfile,
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
+  sendEmailVerification,
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, db } from '../services/firebase';
@@ -74,7 +75,31 @@ export function AuthProvider({ children }) {
       createdAt: serverTimestamp(),
     };
     await setDoc(doc(db, 'users', cred.user.uid), profile);
+
+    // Отправляем письмо с подтверждением почты сразу после регистрации
+    try {
+      await sendEmailVerification(cred.user);
+    } catch (e) {
+      // Не блокируем регистрацию если письмо не отправилось (например лимит Firebase)
+      console.warn('Не удалось отправить письмо верификации:', e.message);
+    }
+
     return cred;
+  };
+
+  // Повторная отправка письма верификации (для баннера в интерфейсе)
+  const resendVerificationEmail = async () => {
+    if (!auth.currentUser) throw new Error('Пользователь не авторизован');
+    if (auth.currentUser.emailVerified) throw new Error('Почта уже подтверждена');
+    return sendEmailVerification(auth.currentUser);
+  };
+
+  // Принудительно обновить статус верификации (после того как пользователь подтвердил почту в другой вкладке)
+  const refreshEmailVerified = async () => {
+    if (!auth.currentUser) return false;
+    await auth.currentUser.reload();
+    setUser({ ...auth.currentUser });
+    return auth.currentUser.emailVerified;
   };
 
   // Сброс пароля
@@ -95,12 +120,14 @@ export function AuthProvider({ children }) {
 
   const isAdmin = userProfile?.role === 'admin';
   const isPro   = userProfile?.role === 'pro' || userProfile?.role === 'admin';
+  const isEmailVerified = user?.emailVerified ?? false;
 
   return (
     <AuthContext.Provider value={{
       user, userProfile, loading,
       login, register, logout, resetPassword,
       updateUserProfile, isAdmin, isPro,
+      isEmailVerified, resendVerificationEmail, refreshEmailVerified,
     }}>
       {children}
     </AuthContext.Provider>
