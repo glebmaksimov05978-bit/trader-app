@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import AppLayout from './components/layout/AppLayout';
 import LoginPage from './components/auth/LoginPage';
+import EmailNotVerifiedPage from './components/auth/EmailNotVerifiedPage';
 import Dashboard from './components/dashboard/Dashboard';
 import Calculator from './components/calculator/Calculator';
 import Journal from './components/journal/Journal';
@@ -17,9 +18,11 @@ import LoadingScreen from './components/LoadingScreen';
 import './styles/globals.css';
 
 function ProtectedRoute({ children }) {
-  const { user, loading } = useAuth();
+  const { user, loading, isEmailVerified } = useAuth();
   if (loading) return <LoadingScreen />;
   if (!user) return <Navigate to="/login" replace />;
+  // Если почта не подтверждена — показываем отдельный экран
+  if (!isEmailVerified) return <EmailNotVerifiedPage />;
   return children;
 }
 
