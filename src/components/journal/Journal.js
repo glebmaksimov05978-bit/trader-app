@@ -310,13 +310,13 @@ export default function Journal() {
       {/* Мини-модал быстрого закрытия */}
       {closeModal && (
         <div className="modal-overlay" onClick={() => setCloseModal(null)}>
-          <div className="modal" style={{maxWidth:400}} onClick={e => e.stopPropagation()}>
+          <div className="modal" style={{maxWidth:400, paddingLeft:24, paddingRight:24}} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3 className="modal-title">✅ Закрыть сделку</h3>
               <button className="modal-close" onClick={() => setCloseModal(null)}>✕</button>
             </div>
 
-            <div style={{padding:'0 0 8px'}}>
+            <div style={{padding:'0 4px 8px'}}>
               {/* Инфо о сделке */}
               <div style={{
                 background:'rgba(79,70,229,0.08)',
