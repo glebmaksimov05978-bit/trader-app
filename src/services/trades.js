@@ -7,6 +7,30 @@ import { db } from './firebase';
 
 const COLL = 'trades';
 
+// Fallback for trades saved before `openedAt`/`closedAt` existed: treat the
+// legacy `date` field as noon MSK (UTC+3) so sorting/analytics stay stable.
+export function resolveOpenedAt(trade) {
+  if (trade.openedAt) {
+    return trade.openedAt.seconds ? new Date(trade.openedAt.seconds * 1000) : new Date(trade.openedAt);
+  }
+  if (trade.date) {
+    const d = trade.date.seconds ? new Date(trade.date.seconds * 1000) : new Date(trade.date);
+    if (!trade.date.seconds && /^\d{4}-\d{2}-\d{2}$/.test(trade.date)) {
+      return new Date(`${trade.date}T09:00:00Z`); // 12:00 MSK = 09:00 UTC
+    }
+    return d;
+  }
+  return null;
+}
+
+export function resolveClosedAt(trade) {
+  if (trade.closedAt) {
+    return trade.closedAt.seconds ? new Date(trade.closedAt.seconds * 1000) : new Date(trade.closedAt);
+  }
+  if (trade.closeDate) return new Date(trade.closeDate);
+  return null;
+}
+
 export async function addTrade(uid, trade) {
   return addDoc(collection(db, COLL), {
     ...trade,
@@ -27,6 +51,13 @@ export async function deleteTrade(tradeId) {
   return deleteDoc(doc(db, COLL, tradeId));
 }
 
+export async function addTradeHistoryEntry(tradeId, entry) {
+  return addDoc(collection(db, COLL, tradeId, 'history'), {
+    ...entry,
+    at: serverTimestamp(),
+  });
+}
+
 export async function getUserTrades(uid) {
   const q = query(
     collection(db, COLL),
@@ -37,9 +68,15 @@ export async function getUserTrades(uid) {
   return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }
 
+// A partially closed position (some volume still open) already has realized P&L from the
+// portion that's been closed — it counts toward stats the same as a fully closed one.
+function hasRealizedPnl(t) {
+  return (t.status === 'closed' || t.status === 'partial') && t.pnl !== undefined && t.pnl !== null;
+}
+
 // Statistics calculation
 export function calcStats(trades) {
-  const closed = trades.filter((t) => t.status === 'closed' && t.pnl !== undefined);
+  const closed = trades.filter(hasRealizedPnl);
   if (!closed.length) return null;
 
   const wins = closed.filter((t) => t.pnl > 0);
@@ -93,7 +130,7 @@ export function calcStats(trades) {
 // Equity curve data
 export function buildEquityCurve(trades, initialBalance = 100000) {
   const sorted = [...trades]
-    .filter((t) => t.status === 'closed' && t.pnl !== undefined)
+    .filter(hasRealizedPnl)
     .sort((a, b) => new Date(a.date) - new Date(b.date));
 
   let balance = initialBalance;

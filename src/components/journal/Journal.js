@@ -1,10 +1,11 @@
 // src/components/journal/Journal.js
 import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { getUserTrades, addTrade, updateTrade, deleteTrade, calcStats } from '../../services/trades';
+import { getUserTrades, addTrade, updateTrade, deleteTrade, calcStats, resolveOpenedAt, resolveClosedAt } from '../../services/trades';
 import { formatCurrency, formatNumber } from '../../utils/calculator';
 import toast from 'react-hot-toast';
 import TradeModal from './TradeModal';
+import ImportModal from './ImportModal';
 import './Journal.css';
 
 const COLS = ['Тикер', 'Дата', 'Направление', 'Вход', 'Выход', 'Объём', 'P&L', '% депоз.', 'Статус', ''];
@@ -23,7 +24,10 @@ export default function Journal() {
   // Кастомный confirm вместо window.confirm
   const [confirmDelete, setConfirmDelete] = useState(null); // trade.id // trade object
   const [closePrice, setClosePrice] = useState('');
+  const [closedAt, setClosedAt] = useState('');
   const [closing, setClosing] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [expandedId, setExpandedId] = useState(null);
 
   const deposit = userProfile?.depositSize || 100000;
 
@@ -75,6 +79,9 @@ export default function Journal() {
   const openClose = (trade) => {
     setCloseModal(trade);
     setClosePrice('');
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    setClosedAt(`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`);
   };
 
   // Автоматический расчёт P&L при закрытии
@@ -108,14 +115,32 @@ export default function Journal() {
     setClosing(true);
     try {
       const result = calcQuickPnl();
-      await updateTrade(closeModal.id, {
+      const closedAtDate = closedAt ? new Date(closedAt) : new Date();
+      const remaining = closeModal.remainingVolume ?? closeModal.volume;
+      const patch = {
         ...closeModal,
         exitPrice: parseFloat(closePrice),
         status: 'closed',
+        remainingVolume: 0,
         pnl: result?.pnl ?? 0,
         commission: result?.commission ?? 0,
-        closeDate: new Date().toISOString(),
-      });
+        closeDate: closedAtDate.toISOString(),
+        closedAt: closedAtDate.toISOString(),
+      };
+      // Manually closing an imported position that still has a step-by-step history
+      // appends one more "close" leg instead of silently disappearing from it.
+      if (Array.isArray(closeModal.legs)) {
+        patch.legs = [...closeModal.legs, {
+          type: 'close',
+          side: closeModal.direction === 'long' ? 'sell' : 'buy',
+          price: parseFloat(closePrice),
+          quantity: remaining,
+          commission: result?.commission ?? 0,
+          timestampUtc: closedAtDate.toISOString(),
+          dealNumber: null,
+        }];
+      }
+      await updateTrade(closeModal.id, patch);
       toast.success(`Сделка закрыта. P&L: ${result?.pnl >= 0 ? '+' : ''}${formatCurrency(result?.pnl ?? 0)}`);
       setCloseModal(null);
       setClosePrice('');
@@ -133,19 +158,22 @@ export default function Journal() {
     .filter(t => {
       if (filter === 'long') return t.direction === 'long';
       if (filter === 'short') return t.direction === 'short';
-      if (filter === 'open') return t.status === 'open';
+      // A partially closed position still has volume open — group it with "Открытые".
+      if (filter === 'open') return t.status === 'open' || t.status === 'partial';
       if (filter === 'closed') return t.status === 'closed';
       return true;
     })
     .filter(t => !search || t.ticker?.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
-      // Открытые всегда сверху
-      if (a.status === 'open' && b.status !== 'open') return -1;
-      if (b.status === 'open' && a.status !== 'open') return 1;
+      // Открытые и частично закрытые всегда сверху
+      const aOpen = a.status === 'open' || a.status === 'partial';
+      const bOpen = b.status === 'open' || b.status === 'partial';
+      if (aOpen && !bOpen) return -1;
+      if (bOpen && !aOpen) return 1;
 
       const getTs = (t) => {
         // Для открытых — по createdAt (время создания), новые сверху
-        if (t.status === 'open') {
+        if (t.status === 'open' || t.status === 'partial') {
           if (t.createdAt?.seconds) return t.createdAt.seconds * 1000;
           if (t.createdAt) return new Date(t.createdAt).getTime();
         }
@@ -158,10 +186,12 @@ export default function Journal() {
       return getTs(b) - getTs(a);
     });
 
-  const fmtDate = (d) => {
+  const fmtDateTime = (d) => {
     if (!d) return '—';
-    const date = d.seconds ? new Date(d.seconds * 1000) : new Date(d);
-    return date.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit', year:'2-digit' });
+    const date = d instanceof Date ? d : (d.seconds ? new Date(d.seconds * 1000) : new Date(d));
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit', year:'2-digit' }) +
+      ', ' + date.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit' });
   };
 
   return (
@@ -171,9 +201,14 @@ export default function Journal() {
           <h1 className="page-title">📓 Журнал сделок</h1>
           <p className="page-subtitle">История всех ваших позиций</p>
         </div>
-        <button className="btn btn-primary" onClick={() => { setEditTrade(null); setModalOpen(true); }}>
-          + Добавить сделку
-        </button>
+        <div className="flex gap-2">
+          <button className="btn btn-secondary" onClick={() => setImportOpen(true)}>
+            📥 Импортировать отчёт
+          </button>
+          <button className="btn btn-primary" onClick={() => { setEditTrade(null); setModalOpen(true); }}>
+            + Добавить сделку
+          </button>
+        </div>
       </div>
 
       {/* Stats strip */}
@@ -237,10 +272,36 @@ export default function Journal() {
                 <tr>{COLS.map(c => <th key={c}>{c}</th>)}</tr>
               </thead>
               <tbody>
-                {filtered.map(trade => (
-                  <tr key={trade.id}>
-                    <td><span className="font-semibold">{trade.ticker || '—'}</span></td>
-                    <td className="text-secondary">{fmtDate(trade.date)}</td>
+                {filtered.map(trade => {
+                  const hasHistory = Array.isArray(trade.legs) && trade.legs.length > 1;
+                  const isExpanded = expandedId === trade.id;
+                  const isPartial = trade.status === 'partial';
+                  const statusLabel = trade.status === 'partial' ? 'Частично закрыта'
+                    : trade.status === 'closed' ? 'Закрыта' : 'Открыта';
+                  const statusCls = trade.status === 'partial' ? 'badge-blue'
+                    : trade.status === 'open' ? 'badge-blue'
+                    : trade.pnl >= 0 ? 'badge-green' : 'badge-red';
+                  return (
+                  <React.Fragment key={trade.id}>
+                  <tr>
+                    <td>
+                      <div className="flex gap-2" style={{alignItems:'center'}}>
+                        {hasHistory && (
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            style={{padding:'2px 6px'}}
+                            onClick={() => setExpandedId(isExpanded ? null : trade.id)}
+                            title={isExpanded ? 'Свернуть историю' : 'Показать историю сделки'}
+                          >
+                            {isExpanded ? '▾' : '▸'}
+                          </button>
+                        )}
+                        <span className="font-semibold">{trade.ticker || '—'}</span>
+                      </div>
+                    </td>
+                    <td className="text-secondary" title={`Открыта: ${fmtDateTime(resolveOpenedAt(trade))}${trade.status === 'closed' ? `\nЗакрыта: ${fmtDateTime(resolveClosedAt(trade))}` : ''}`}>
+                      {fmtDateTime(resolveOpenedAt(trade) || trade.date)}
+                    </td>
                     <td>
                       <span className={`badge ${trade.direction==='long' ? 'badge-green' : 'badge-red'}`}>
                         {trade.direction === 'long' ? '📈 Лонг' : '📉 Шорт'}
@@ -248,7 +309,11 @@ export default function Journal() {
                     </td>
                     <td>{formatNumber(trade.entryPrice, 1)}</td>
                     <td>{trade.exitPrice ? formatNumber(trade.exitPrice, 1) : <span className="text-muted">—</span>}</td>
-                    <td>{trade.volume || '—'}</td>
+                    <td>
+                      {isPartial
+                        ? <span title="Осталось открыто / всего было">{formatNumber(trade.remainingVolume, 0)} / {formatNumber(trade.volume, 0)}</span>
+                        : (trade.volume ?? '—')}
+                    </td>
                     <td>
                       {trade.pnl !== undefined && trade.pnl !== null ? (
                         <span style={{color: trade.pnl >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 600}}>
@@ -267,14 +332,12 @@ export default function Journal() {
                       ) : <span className="text-muted">—</span>}
                     </td>
                     <td>
-                      <span className={`badge ${trade.status==='open' ? 'badge-blue' : trade.pnl >= 0 ? 'badge-green' : 'badge-red'}`}>
-                        {trade.status==='open' ? 'Открыта' : 'Закрыта'}
-                      </span>
+                      <span className={`badge ${statusCls}`}>{statusLabel}</span>
                     </td>
                     <td>
                       <div className="flex gap-2" style={{alignItems:'center'}}>
-                        {/* Кнопка "Закрыть сделку" — только для открытых */}
-                        {trade.status === 'open' && (
+                        {/* Кнопка "Закрыть сделку" — для открытых и частично закрытых */}
+                        {(trade.status === 'open' || trade.status === 'partial') && (
                           <button
                             className="btn btn-sm"
                             style={{
@@ -300,7 +363,38 @@ export default function Journal() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  {isExpanded && (
+                    <tr>
+                      <td colSpan={COLS.length} style={{background:'var(--bg-surface-2)', padding:'12px 16px 16px 44px'}}>
+                        <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:8}}>История сделки — {trade.legs.length} операций</div>
+                        <table className="table" style={{fontSize:13}}>
+                          <thead>
+                            <tr>
+                              <th>Время</th><th>Действие</th><th>Объём</th><th>Цена</th><th>Комиссия</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {trade.legs.map((leg, i) => (
+                              <tr key={i}>
+                                <td className="text-secondary">{fmtDateTime(leg.timestampUtc)}</td>
+                                <td>
+                                  <span className={`badge ${leg.type === 'open' ? 'badge-green' : 'badge-red'}`}>
+                                    {leg.type === 'open' ? (leg.side === 'buy' ? 'Докупка' : 'Открытие шорта') : (leg.side === 'sell' ? 'Продажа' : 'Выкуп')}
+                                  </span>
+                                </td>
+                                <td>{formatNumber(leg.quantity, 0)}</td>
+                                <td>{formatNumber(leg.price, 2)}</td>
+                                <td className="text-secondary">{formatCurrency(Math.round(leg.commission || 0))}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  )}
+                  </React.Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -376,6 +470,24 @@ export default function Journal() {
                     }}
                   />
                 </div>
+              </div>
+
+              {/* Время закрытия */}
+              <div style={{marginTop:12, marginBottom:4}}>
+                <label style={{
+                  display:'block', fontSize:11, fontWeight:500,
+                  color:'rgba(255,255,255,0.4)', letterSpacing:'0.3px',
+                  marginBottom:4, paddingLeft:4,
+                }}>
+                  Время закрытия
+                </label>
+                <input
+                  type="datetime-local"
+                  value={closedAt}
+                  onChange={e => setClosedAt(e.target.value)}
+                  className="input"
+                  style={{width:'100%'}}
+                />
               </div>
 
               {/* Предпросмотр P&L */}
@@ -464,6 +576,14 @@ export default function Journal() {
           onSave={handleSave}
           onClose={() => { setModalOpen(false); setEditTrade(null); }}
           defaultDeposit={userProfile?.depositSize}
+        />
+      )}
+
+      {importOpen && (
+        <ImportModal
+          existingTrades={trades}
+          onClose={() => setImportOpen(false)}
+          onImported={async () => { setImportOpen(false); await load(); }}
         />
       )}
     </div>

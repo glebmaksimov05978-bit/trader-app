@@ -23,6 +23,11 @@ async function getMoexPrice(ticker, type) {
 
 const EMOTIONS = ['😊 Спокойный', '😤 Уверенный', '😰 Тревожный', '😴 Усталый', '😡 Злой', '🤔 Сомневающийся'];
 
+function toLocalDatetimeInput(date) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 function ResultRow({ label, value, color, large }) {
   return (
     <div className="result-row">
@@ -47,6 +52,7 @@ export default function Calculator() {
   const [journalExtra, setJournalExtra] = useState({ setup: '', emotion: '', notes: '' });
   const [savingTrade, setSavingTrade] = useState(false);
   const [forcedDir, setForcedDir] = useState(null);
+  const [openedAt, setOpenedAt] = useState(() => toLocalDatetimeInput(new Date()));
 
   const [form, setForm] = useState({
     ticker: '',
@@ -205,12 +211,15 @@ export default function Calculator() {
     setSavingTrade(true);
     try {
       const deposit = parseFloat(form.depositSize) || 0;
+      const openedAtDate = new Date(openedAt);
       await addTrade(user.uid, {
         ticker: form.ticker || instrumentInfo?.ticker || '',
-        date: new Date().toISOString().split('T')[0],
+        date: openedAtDate.toISOString().split('T')[0],
+        openedAt: openedAtDate.toISOString(),
         status: 'open',
         direction: activeDirection || displayResult.direction,
         entryPrice: parseFloat(form.entryPrice),
+        intendedEntryPrice: parseFloat(form.entryPrice) || null,
         exitPrice: null,
         stopLoss: parseFloat(form.stopLoss) || null,
         takeProfit: parseFloat(form.takeProfit) || null,
@@ -714,6 +723,12 @@ export default function Calculator() {
             </div>
 
             <div className="flex flex-col gap-3">
+              <div className="input-group">
+                <label className="input-label">Время открытия</label>
+                <input className="input" type="datetime-local" value={openedAt}
+                  onChange={e => setOpenedAt(e.target.value)} />
+              </div>
+
               <div className="input-group">
                 <label className="input-label">Сетап / стратегия</label>
                 <input className="input" value={journalExtra.setup}

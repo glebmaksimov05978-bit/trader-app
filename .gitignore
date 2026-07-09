@@ -67,3 +67,10 @@ node_modules/
 
 # dataconnect generated files
 .dataconnect
+
+# Real broker report samples used as golden-test fixtures — personal financial data,
+# never commit these. See src/services/import/__fixtures__/README.md.
+src/services/import/__fixtures__/
+
+# CRA production build output
+/build

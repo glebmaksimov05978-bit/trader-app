@@ -10,12 +10,15 @@
     "recharts": "^2.12.0",
     "react-scripts": "5.0.1",
     "date-fns": "^3.3.1",
-    "react-hot-toast": "^2.4.1"
+    "react-hot-toast": "^2.4.1",
+    "xlsx": "^0.18.5",
+    "pdfjs-dist": "^4.0.379"
   },
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
+    "test:import": "node scripts/goldenImportTests.mjs",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {
