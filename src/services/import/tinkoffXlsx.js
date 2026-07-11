@@ -1,6 +1,6 @@
 // src/services/import/tinkoffXlsx.js
 import * as XLSX from 'xlsx';
-import { resolveInstrumentCode, buildIsinTickerMap, isFuturesCode } from './instrumentResolver';
+import { resolveInstrumentCode, buildIsinTickerMap, isFuturesCode, isCurrencyCode, parseReportPeriod } from './instrumentResolver';
 
 function normNum(v) {
   if (v === null || v === undefined || v === '') return null;
@@ -161,6 +161,12 @@ export async function parseTinkoffXlsx(file) {
     return { ok: false, reason: 'Не найдена секция 1.1 в отчёте' };
   }
 
+  let reportPeriod = null;
+  for (let i = 0; i < Math.min(headerIdx, 10); i++) {
+    reportPeriod = parseReportPeriod(normStr(rows[i]?.[0]));
+    if (reportPeriod) break;
+  }
+
   const section41Rows = parseSection41(rows);
   const isinTickerMap = buildIsinTickerMap(section41Rows);
   const futuresCodeSet = parseSection43FuturesCodes(rows);
@@ -169,6 +175,10 @@ export async function parseTinkoffXlsx(file) {
   const executed = [];
   const unexecutedRows = [];
   const cancelledRows = [];
+  // Rows that look like a real deal (deal-number-shaped, not flagged "unexecuted") but
+  // failed to parse into a transaction for some other reason — a parser bug silently
+  // dropping a real row, as opposed to legitimately-skipped noise.
+  const unparsedDealNumbers = [];
   let currentSection = '1.1';
   let flagged = [];
 
@@ -191,11 +201,15 @@ export async function parseTinkoffXlsx(file) {
     if (currentSection === '1.3') { cancelledRows.push(row); continue; }
 
     const tx = rowToTransaction(row, futuresCodeSet);
-    if (!tx) continue;
+    if (!tx) {
+      if (!normStr(row[COL.executedFlag])) unparsedDealNumbers.push(dealNumber);
+      continue;
+    }
     const resolved = resolveInstrumentCode(tx.rawCode, isinTickerMap);
     tx.ticker = resolved.ticker;
     tx.isin = resolved.isin || null;
     tx.needsReview = resolved.flagged;
+    tx.instrumentType = isCurrencyCode(resolved.ticker) ? 'currency' : (tx.isFuture ? 'future' : 'stock');
     if (resolved.flagged) flagged.push(tx.dealNumber);
     executed.push(tx);
   }
@@ -207,6 +221,8 @@ export async function parseTinkoffXlsx(file) {
     ok: true,
     transactions,
     repoOperations,
+    reportPeriod,
+    unparsedDealNumbers,
     unexecutedCount: unexecutedRows.length,
     cancelledCount: cancelledRows.length,
     flaggedForReview: flagged,

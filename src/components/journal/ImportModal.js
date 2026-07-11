@@ -5,7 +5,8 @@ import { formatCurrency, formatNumber } from '../../utils/calculator';
 import { parseTinkoffXlsx } from '../../services/import/tinkoffXlsx';
 import { parseTinkoffPdfExact } from '../../services/import/tinkoffPdf';
 import { parseTinkoffPdfViaAI } from '../../services/import/tinkoffPdfAi';
-import { matchTransactionsToTrades, classifyForPreview, enrichPnl, commitImport, filterAlreadyImportedTransactions } from '../../services/import/importTrades';
+import { matchTransactionsToTrades, classifyForPreview, enrichPnl, commitImport, filterAlreadyImportedTransactions, sanityCheck } from '../../services/import/importTrades';
+import { saveImportArtifacts } from '../../services/trades';
 import toast from 'react-hot-toast';
 import './Journal.css';
 
@@ -70,7 +71,8 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
       const enriched = await enrichPnl(matched, userProfile?.tinkoffToken);
 
       setStage('dedup');
-      const classified = classifyForPreview(enriched, existingTrades);
+      const classified = classifyForPreview(enriched, existingTrades)
+        .map((c) => ({ ...c, warnings: sanityCheck(c.candidate, parseResult.reportPeriod) }));
 
       const initialChecked = {};
       classified.forEach((c, i) => { initialChecked[i] = c.status !== 'duplicate'; });
@@ -78,12 +80,15 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
 
       setPreview({
         classified,
+        repoOperations: parseResult.repoOperations || [],
+        unmatchedClosings,
         repoCount: parseResult.repoOperations?.length || 0,
         unmatchedCount: unmatchedClosings.length,
         unexecutedCount: parseResult.unexecutedCount || 0,
         cancelledCount: parseResult.cancelledCount || 0,
         flagged: parseResult.flaggedForReview || [],
         invalidRows: parseResult.invalidRows || [],
+        unparsedDealNumbers: parseResult.unparsedDealNumbers || [],
       });
       setStage(null);
     } catch (e) {
@@ -108,6 +113,16 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
         .map((c) => c.candidate);
 
       const result = await commitImport(user.uid, toImport, existingTrades);
+
+      // Saving unmatched/REPO artifacts is a "nice to have" for a future rebuild-journal
+      // feature — it must never make a successful trade import look like it failed (that
+      // invites the user to retry and create duplicates from a stale, pre-import dedup list).
+      try {
+        await saveImportArtifacts(user.uid, preview.unmatchedClosings, 'unmatched');
+        await saveImportArtifacts(user.uid, preview.repoOperations, 'repo');
+      } catch (artifactError) {
+        console.error('Failed to save import artifacts (trades were still imported):', artifactError);
+      }
 
       toast.success(
         `Создано ${result.created}, обновлено ${result.updated}, ` +
@@ -201,12 +216,28 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
                 {preview.invalidRows?.length > 0 && (
                   <span className="badge badge-red">Невалидных строк от AI: {preview.invalidRows.length}</span>
                 )}
+                {preview.unparsedDealNumbers?.length > 0 && (
+                  <span className="badge badge-red">Не распознано парсером: {preview.unparsedDealNumbers.length}</span>
+                )}
+                {preview.classified.some((c) => c.warnings?.length > 0) && (
+                  <span className="badge badge-red">
+                    ⚠️ Подозрительных позиций: {preview.classified.filter((c) => c.warnings?.length > 0).length}
+                  </span>
+                )}
               </div>
 
               {preview.unmatchedCount > 0 && (
                 <div style={{marginBottom:12, padding:'12px 16px', background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.3)', borderRadius:12, color:'var(--text-secondary)', fontSize:13, lineHeight:1.5}}>
                   ⚠️ {preview.unmatchedCount === 1 ? 'Одна сделка' : `${preview.unmatchedCount} сделки`} не сопоставилась — вероятно, позиция была открыта до начала периода отчёта.
                   Чтобы этого избежать, запросите у брокера отчёт за более широкий период (например, за весь год) или за месяц, когда позиция была открыта, и импортируйте его.
+                </div>
+              )}
+
+              {preview.unparsedDealNumbers?.length > 0 && (
+                <div style={{marginBottom:12, padding:'12px 16px', background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.3)', borderRadius:12, color:'var(--text-secondary)', fontSize:13, lineHeight:1.5}}>
+                  ⚠️ В отчёте есть {preview.unparsedDealNumbers.length === 1 ? 'строка' : 'строки'} с номером сделки
+                  ({preview.unparsedDealNumbers.slice(0, 5).join(', ')}{preview.unparsedDealNumbers.length > 5 ? '…' : ''}),
+                  которую парсер не смог разобрать в сделку — вероятно, потеряна. Проверьте эти сделки в отчёте вручную и добавьте их в журнал руками, если нужно.
                 </div>
               )}
 
@@ -233,7 +264,12 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
                             <input type="checkbox" checked={!!checked[i]}
                               onChange={e => setChecked(prev => ({ ...prev, [i]: e.target.checked }))} />
                           </td>
-                          <td><span className="font-semibold">{t.ticker}</span></td>
+                          <td>
+                            <span className="font-semibold">{t.ticker}</span>
+                            {c.warnings?.length > 0 && (
+                              <span title={c.warnings.join('; ')} style={{marginLeft:6, cursor:'help'}}>⚠️</span>
+                            )}
+                          </td>
                           <td>
                             <span className={`badge ${t.direction === 'long' ? 'badge-green' : 'badge-red'}`}>
                               {t.direction === 'long' ? '📈 Лонг' : '📉 Шорт'}

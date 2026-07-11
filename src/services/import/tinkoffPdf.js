@@ -1,5 +1,5 @@
 // src/services/import/tinkoffPdf.js
-import { resolveInstrumentCode, buildIsinTickerMap, isFuturesCode } from './instrumentResolver.js';
+import { resolveInstrumentCode, buildIsinTickerMap, isFuturesCode, isCurrencyCode, parseReportPeriod } from './instrumentResolver.js';
 
 // pdfjs is loaded lazily: the ~400KB library only downloads when the user actually
 // imports a report (smaller main bundle), and tests running under plain Node can inject
@@ -234,6 +234,7 @@ function rowToTransaction(cols, isinTickerMap, futuresCodeSet) {
     currency: cols[IDX.priceCcy],
     timestampUtc,
     isFuture,
+    instrumentType: isCurrencyCode(code) ? 'currency' : (isFuture ? 'future' : 'stock'),
     tradeMode: (cols[IDX.tradeMode] || '').replace(/\s+/g, ''),
     parseMethod: 'exact',
   };
@@ -284,6 +285,32 @@ function extractTransposedSection(pages, markerRe, nextMarkerRe) {
   return { fieldYs, columns };
 }
 
+// Sections 1.2 (unexecuted orders) and 1.3 (deals cancelled other than by execution) use
+// the same transposed per-column layout as 1.1, but usually have zero data columns (just
+// the header) when nothing happened that period — count real order columns, ignoring the
+// page-footer "N из M" pagination marker, which can land in the same x-range as a column.
+function extractSectionRowCount(pages, markerRe, nextMarkerRe) {
+  const start = findMarkerItem(pages, markerRe);
+  if (!start) return 0;
+  const next = findMarkerItem(pages, nextMarkerRe);
+  const endPageIdx = next ? next.pageIdx : pages.length - 1;
+
+  const sectionItems = [];
+  for (let pi = start.pageIdx; pi <= endPageIdx; pi++) {
+    const minX = pi === start.pageIdx ? start.x + 1 : -Infinity;
+    const maxX = (next && next.pageIdx === pi) ? next.x : Infinity;
+    for (const it of pages[pi].items) {
+      if (it.x > minX && it.x < maxX && !/^\d+\s*из\s*\d+$/.test(it.str.trim())) sectionItems.push(it);
+    }
+  }
+  if (sectionItems.length === 0) return 0;
+
+  const headerX = Math.min(...sectionItems.map((it) => it.x));
+  const dataItems = sectionItems.filter((it) => it.x > headerX + 2);
+  if (dataItems.length === 0) return 0;
+  return clusterColumns(dataItems).length;
+}
+
 function extractSection41(pages) {
   const { columns } = extractTransposedSection(
     pages, /4\.1\s*Информация о ценных бумагах/, /4\.2\s*Информация/
@@ -315,6 +342,12 @@ export async function parseTinkoffPdfExact(file) {
       pages.push({ pageNum: p, items });
     }
 
+    let reportPeriod = null;
+    for (const it of pages[0]?.items || []) {
+      reportPeriod = parseReportPeriod(it.str);
+      if (reportPeriod) break;
+    }
+
     const section41Rows = extractSection41(pages);
     const isinTickerMap = buildIsinTickerMap(section41Rows);
     const futuresCodeSet = extractSection43FuturesCodes(pages);
@@ -325,6 +358,10 @@ export async function parseTinkoffPdfExact(file) {
     }
 
     const executed = [];
+    // Columns that look like a real deal (a deal-number-shaped first field, not flagged
+    // "unexecuted") but failed to parse into a transaction for some other reason — a
+    // parser bug losing a real row silently, as opposed to legitimately-skipped noise.
+    const unparsedDealNumbers = [];
     let columnsAttempted = 0;
     let done = false;
 
@@ -355,7 +392,10 @@ export async function parseTinkoffPdfExact(file) {
         columnsAttempted++;
         const cols = splitMergedFields(alignColumnToFields(column, fieldYs));
         const tx = rowToTransaction(cols, isinTickerMap, futuresCodeSet);
-        if (tx) executed.push(tx);
+        if (tx) { executed.push(tx); continue; }
+        const dealNumber = cols[IDX.dealNumber];
+        const looksLikeDeal = dealNumber && /^[A-Za-z0-9]+$/.test(dealNumber) && dealNumber.length >= 4;
+        if (looksLikeDeal && !cols[IDX.executedFlag]) unparsedDealNumbers.push(dealNumber);
       }
     }
 
@@ -369,12 +409,21 @@ export async function parseTinkoffPdfExact(file) {
     const repoOperations = executed.filter((t) => t.isRepo);
     const transactions = executed.filter((t) => !t.isRepo);
 
+    const unexecutedCount = extractSectionRowCount(
+      pages, /^1\.2\s*Информация о неисполненных/, /^1\.3\s*Сделки за расчетный период/
+    );
+    const cancelledCount = extractSectionRowCount(
+      pages, /^1\.3\s*Сделки за расчетный период/, /^2\.\s*Операции с денежными/
+    );
+
     return {
       ok: true,
       transactions,
       repoOperations,
-      unexecutedCount: 0,
-      cancelledCount: 0,
+      reportPeriod,
+      unparsedDealNumbers,
+      unexecutedCount,
+      cancelledCount,
       flaggedForReview: executed.filter((t) => t.needsReview).map((t) => t.dealNumber),
       parseMethod: 'exact',
     };

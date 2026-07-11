@@ -14,6 +14,31 @@ export function isFuturesCode(code) {
   return FUTURES_TICKER_RE.test(String(code || '').toUpperCase());
 }
 
+// Currency spot pairs (CNYRUB_TOM, USDRUB_TOM, EURRUB_TOM, ...) are real speculative
+// trades that stay in the journal — this just tags them so they can be filtered
+// separately from stocks/futures.
+const CURRENCY_PAIR_RE = /^[A-Z]{6}_TOM$/;
+
+export function isCurrencyCode(code) {
+  return CURRENCY_PAIR_RE.test(String(code || '').toUpperCase());
+}
+
+const PERIOD_RE = /за период\s+(\d{2})\.(\d{2})\.(\d{4})\s*-\s*(\d{2})\.(\d{2})\.(\d{4})/;
+
+// Parses "Отчет о сделках и операциях за период DD.MM.YYYY - DD.MM.YYYY" (identical
+// wording in both the PDF and xlsx report) into UTC bounds — 00:00 MSK on the start day
+// through 23:59:59 MSK on the end day — so a sanity check can flag a transaction whose
+// date falls outside the very report it was parsed from (a sign of a parser mis-read).
+export function parseReportPeriod(text) {
+  const m = PERIOD_RE.exec(text || '');
+  if (!m) return null;
+  const [, d1, mo1, y1, d2, mo2, y2] = m.map((v, i) => (i === 0 ? v : parseInt(v, 10)));
+  return {
+    start: new Date(Date.UTC(y1, mo1 - 1, d1, -3, 0, 0)),
+    end: new Date(Date.UTC(y2, mo2 - 1, d2, 20, 59, 59)),
+  };
+}
+
 // Standard MOEX month-letter+year-digit coding, e.g. GZU5 -> September 2025.
 // Year digit is the last digit of the year; we assume the nearest such year
 // to "now" (or to an optional referenceDate) to disambiguate the decade.

@@ -29,6 +29,7 @@ function openPosition(ticker, exchange, isFuture, tx, quantity) {
     ticker,
     exchange,
     isFuture,
+    instrumentType: tx.instrumentType || (isFuture ? 'future' : 'stock'),
     direction: tx.side === 'buy' ? 'long' : 'short',
     volume: quantity,
     remainingVolume: quantity,
@@ -37,6 +38,10 @@ function openPosition(ticker, exchange, isFuture, tx, quantity) {
     openedAt: tx.timestampUtc,
     closedAt: null,
     commission: commissionOf(tx) * (quantity / tx.quantity),
+    // Weighted-average open commission per unit, mirroring how entryPrice is averaged —
+    // lets addCloseLeg charge stocks their fair share of the *opening* commission too,
+    // instead of only the closing-side commission (which is all it used to subtract).
+    openCommissionPerUnit: quantity > 0 ? (commissionOf(tx) * (quantity / tx.quantity)) / quantity : 0,
     pnl: null,
     pnlPoints: 0, // futures only: raw price-point P&L, rescaled to rubles in enrichPnl()
     legs: [{
@@ -65,6 +70,7 @@ function fromExistingTrade(et) {
     ticker: et.ticker,
     exchange: et.exchange,
     isFuture: !!et.isFuture,
+    instrumentType: et.instrumentType || (et.isFuture ? 'future' : 'stock'),
     direction: et.direction,
     volume: et.volume ?? (et.remainingVolume ?? 0),
     remainingVolume: et.remainingVolume ?? et.volume ?? 0,
@@ -73,6 +79,10 @@ function fromExistingTrade(et) {
     openedAt: et.openedAt,
     closedAt: et.closedAt ?? null,
     commission: et.commission || 0,
+    // Legacy trades saved before this field existed have no exact record of what was
+    // charged to open vs. close — approximate from the average commission over the whole
+    // position rather than leaving it at 0 (which would silently drop the open-side cost).
+    openCommissionPerUnit: et.openCommissionPerUnit ?? (et.volume ? (et.commission || 0) / et.volume : 0),
     pnl: et.pnl ?? null,
     pnlPoints: et.pnlPoints || 0,
     legs,
@@ -81,11 +91,14 @@ function fromExistingTrade(et) {
 }
 
 function addOpenLeg(position, tx, quantity) {
+  const legCommission = commissionOf(tx) * (quantity / tx.quantity);
   const newVolume = position.remainingVolume + quantity;
   position.entryPrice = (position.entryPrice * position.remainingVolume + tx.price * quantity) / newVolume;
+  position.openCommissionPerUnit = quantity > 0
+    ? (position.openCommissionPerUnit * position.remainingVolume + legCommission) / newVolume
+    : position.openCommissionPerUnit;
   position.remainingVolume = newVolume;
   position.volume += quantity;
-  const legCommission = commissionOf(tx) * (quantity / tx.quantity);
   position.commission += legCommission;
   position.legs.push({
     type: 'open', side: tx.side, price: tx.price, quantity,
@@ -107,7 +120,11 @@ function addCloseLeg(position, tx, closeVol) {
   if (position.isFuture) {
     position.pnlPoints += priceDiff * closeVol;
   } else {
-    position.pnl = (position.pnl || 0) + priceDiff * closeVol - legCommission;
+    // Charge this closed slice its share of both the closing commission and the
+    // opening commission it originally cost — matching futures, which net out the
+    // position's *total* commission (open + close) against realized P&L.
+    const openShare = position.openCommissionPerUnit * closeVol;
+    position.pnl = (position.pnl || 0) + priceDiff * closeVol - legCommission - openShare;
   }
 
   position.exitPrice = position.exitPrice == null
@@ -129,6 +146,7 @@ function finalize(position, isFuture) {
     ticker: position.ticker,
     exchange: position.exchange,
     isFuture,
+    instrumentType: position.instrumentType,
     direction: position.direction,
     status,
     volume: position.volume,
@@ -139,6 +157,7 @@ function finalize(position, isFuture) {
     closedAt: status === 'closed' ? position.closedAt : null,
     durationMinutes: status === 'closed' ? durationMinutes(position.openedAt, position.closedAt) : null,
     commission: position.commission,
+    openCommissionPerUnit: position.openCommissionPerUnit || 0,
     pnl: position.isFuture ? null : position.pnl,
     // Firestore rejects `undefined` field values outright, so this must always be a
     // real number — 0 for non-futures (unused, but harmless) rather than undefined.

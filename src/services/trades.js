@@ -1,11 +1,51 @@
 // src/services/trades.js
 import {
   collection, addDoc, updateDoc, deleteDoc,
-  doc, query, where, orderBy, getDocs, serverTimestamp,
+  doc, query, where, orderBy, getDocs, serverTimestamp, writeBatch,
 } from 'firebase/firestore';
 import { db } from './firebase';
 
 const COLL = 'trades';
+const IMPORT_ARTIFACTS_COLL = 'importArtifacts';
+
+// Firestore rejects `undefined` field values outright — round-tripping through JSON
+// drops any undefined keys (and turns Date objects into ISO strings) in one pass.
+function stripUndefined(obj) {
+  return JSON.parse(JSON.stringify(obj));
+}
+
+// Persists transactions the importer couldn't fold into a position (unmatched closings)
+// or that were REPO legs (kept separate from real trades) — previously these were only
+// counted for the import summary toast and then discarded. Kept around so a future
+// "rebuild journal" feature can re-derive positions without re-uploading the report.
+// `kind` dedup happens against dealNumber, since the same transaction can reappear when
+// re-importing an overlapping period.
+export async function saveImportArtifacts(uid, items, kind) {
+  if (!items?.length) return 0;
+  const existingDealNumbers = new Set(
+    (await getImportArtifacts(uid, kind)).map((a) => a.dealNumber).filter(Boolean)
+  );
+  const fresh = items.filter((it) => !it.dealNumber || !existingDealNumbers.has(it.dealNumber));
+  if (!fresh.length) return 0;
+
+  const batch = writeBatch(db);
+  for (const item of fresh) {
+    const ref = doc(collection(db, IMPORT_ARTIFACTS_COLL));
+    batch.set(ref, { ...stripUndefined(item), uid, kind, createdAt: serverTimestamp() });
+  }
+  await batch.commit();
+  return fresh.length;
+}
+
+export async function getImportArtifacts(uid, kind) {
+  const q = query(
+    collection(db, IMPORT_ARTIFACTS_COLL),
+    where('uid', '==', uid),
+    where('kind', '==', kind)
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
 
 // Fallback for trades saved before `openedAt`/`closedAt` existed: treat the
 // legacy `date` field as noon MSK (UTC+3) so sorting/analytics stay stable.
@@ -56,6 +96,40 @@ export async function addTradeHistoryEntry(tradeId, entry) {
     ...entry,
     at: serverTimestamp(),
   });
+}
+
+// Pre-allocates a document ref for a new trade without writing anything yet, so a batch
+// caller (e.g. bulk import) can reference the same doc id across its own set/update ops.
+export function newTradeRef() {
+  return doc(collection(db, COLL));
+}
+
+export function tradeRefById(tradeId) {
+  return doc(db, COLL, tradeId);
+}
+
+export function tradeHistoryRef(tradeId) {
+  return doc(collection(db, COLL, tradeId, 'history'));
+}
+
+// Firestore caps a single batch at 500 writes — chunk transparently so a large import
+// (many trades × several history entries each) never hits that ceiling.
+const BATCH_CHUNK_SIZE = 450;
+
+export async function commitTradeBatch(operations) {
+  for (let i = 0; i < operations.length; i += BATCH_CHUNK_SIZE) {
+    const batch = writeBatch(db);
+    for (const op of operations.slice(i, i + BATCH_CHUNK_SIZE)) {
+      if (op.type === 'set') {
+        batch.set(op.ref, { ...op.data, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+      } else if (op.type === 'update') {
+        batch.update(op.ref, { ...op.data, updatedAt: serverTimestamp() });
+      } else if (op.type === 'history') {
+        batch.set(op.ref, { ...op.data, at: serverTimestamp() });
+      }
+    }
+    await batch.commit();
+  }
 }
 
 export async function getUserTrades(uid) {

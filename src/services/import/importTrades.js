@@ -1,11 +1,12 @@
 // src/services/import/importTrades.js
-import { addTrade, updateTrade, addTradeHistoryEntry } from '../trades.js';
+import { newTradeRef, tradeRefById, tradeHistoryRef, commitTradeBatch } from '../trades.js';
 import { matchTransactionsToTrades } from './fifoMatcher.js';
 import { TinkoffAPI, parseFutureInfo } from '../tinkoff.js';
 
 const OBJECTIVE_FIELDS = [
-  'entryPrice', 'exitPrice', 'volume', 'remainingVolume', 'commission', 'openedAt', 'closedAt',
-  'direction', 'status', 'pnl', 'pnlNeedsSpecs', 'expiredUnclosed',
+  'entryPrice', 'exitPrice', 'volume', 'remainingVolume', 'commission', 'openCommissionPerUnit',
+  'openedAt', 'closedAt', 'direction', 'status', 'pnl', 'pnlNeedsSpecs', 'expiredUnclosed',
+  'instrumentType',
 ];
 const SUBJECTIVE_FIELDS = ['emotion', 'setup', 'notes'];
 
@@ -127,10 +128,45 @@ function mergePatch(existing, candidate) {
   return { patch, historyEntries };
 }
 
+// Sanity-checks a matched position for the preview UI — catches obvious data problems
+// (a parser mis-read, a merged/split number, a garbled date) before they get written to
+// the journal, without blocking the import outright.
+export function sanityCheck(candidate, reportPeriod) {
+  const warnings = [];
+  if (!(candidate.entryPrice > 0)) warnings.push('Цена входа не больше нуля');
+  if (candidate.exitPrice != null && !(candidate.exitPrice > 0)) warnings.push('Цена выхода не больше нуля');
+  if (!(candidate.volume > 0)) warnings.push('Объём не больше нуля');
+  // A single retail fill moving >100k units of anything is far outside normal size —
+  // more likely a parser mis-split of a merged number than a real trade.
+  if (candidate.volume > 100000) warnings.push('Необычно большой объём — проверьте вручную');
+
+  if (reportPeriod) {
+    // Only flag openedAt when this position was newly opened in THIS batch — a partial
+    // position being extended legitimately opened back in an earlier imported report.
+    if (!candidate.existingTradeId && candidate.openedAt) {
+      const opened = new Date(candidate.openedAt);
+      if (opened < reportPeriod.start || opened > reportPeriod.end) {
+        warnings.push('Дата открытия вне периода отчёта');
+      }
+    }
+    if (candidate.closedAt) {
+      const closed = new Date(candidate.closedAt);
+      if (closed < reportPeriod.start || closed > reportPeriod.end) {
+        warnings.push('Дата закрытия вне периода отчёта');
+      }
+    }
+  }
+  return warnings;
+}
+
 // Runs the create/merge logic for the positions the user left checked in the preview UI.
+// Builds every write as a batch operation instead of awaiting addDoc/updateDoc one at a
+// time — an import of a full year's activity is dozens of positions plus their history
+// entries, and Firestore bills/round-trips each sequential write separately.
 export async function commitImport(uid, checkedTrades, existingTrades) {
   const classified = classifyForPreview(checkedTrades, existingTrades);
   let created = 0, updated = 0;
+  const operations = [];
 
   for (const { candidate, status, existing } of classified) {
     if (status === 'duplicate') continue;
@@ -138,39 +174,50 @@ export async function commitImport(uid, checkedTrades, existingTrades) {
     if (status === 'update' && existing) {
       const { patch, historyEntries } = mergePatch(existing, candidate);
       if (Object.keys(patch).length) {
-        await updateTrade(existing.id, patch);
-        for (const h of historyEntries) await addTradeHistoryEntry(existing.id, h);
+        operations.push({ type: 'update', ref: tradeRefById(existing.id), data: patch });
+        for (const h of historyEntries) {
+          operations.push({ type: 'history', ref: tradeHistoryRef(existing.id), data: h });
+        }
       }
       updated++;
     } else {
       const { existingTradeId, ...rest } = candidate;
-      await addTrade(uid, {
-        ticker: rest.ticker,
-        date: rest.openedAt ? new Date(rest.openedAt).toISOString().split('T')[0] : null,
-        openedAt: rest.openedAt,
-        closedAt: rest.closedAt || null,
-        status: rest.status,
-        direction: rest.direction,
-        entryPrice: rest.entryPrice,
-        exitPrice: rest.exitPrice ?? null,
-        volume: rest.volume,
-        remainingVolume: rest.remainingVolume,
-        commission: rest.commission,
-        pnl: rest.pnl ?? null,
-        pnlPoints: rest.pnlPoints,
-        pnlNeedsSpecs: rest.pnlNeedsSpecs || false,
-        isFuture: rest.isFuture || false,
-        exchange: rest.exchange || null,
-        dataSource: 'imported',
-        brokerSource: 'tinkoff',
-        parseMethod: rest.parseMethod,
-        expiredUnclosed: rest.expiredUnclosed || false,
-        legs: rest.legs,
-        sourceTransactionIds: rest.sourceTransactionIds,
+      operations.push({
+        type: 'set',
+        ref: newTradeRef(),
+        data: {
+          uid,
+          ticker: rest.ticker,
+          date: rest.openedAt ? new Date(rest.openedAt).toISOString().split('T')[0] : null,
+          openedAt: rest.openedAt,
+          closedAt: rest.closedAt || null,
+          status: rest.status,
+          direction: rest.direction,
+          entryPrice: rest.entryPrice,
+          exitPrice: rest.exitPrice ?? null,
+          volume: rest.volume,
+          remainingVolume: rest.remainingVolume,
+          commission: rest.commission,
+          openCommissionPerUnit: rest.openCommissionPerUnit || 0,
+          pnl: rest.pnl ?? null,
+          pnlPoints: rest.pnlPoints,
+          pnlNeedsSpecs: rest.pnlNeedsSpecs || false,
+          isFuture: rest.isFuture || false,
+          instrumentType: rest.instrumentType || (rest.isFuture ? 'future' : 'stock'),
+          exchange: rest.exchange || null,
+          dataSource: 'imported',
+          brokerSource: 'tinkoff',
+          parseMethod: rest.parseMethod,
+          expiredUnclosed: rest.expiredUnclosed || false,
+          legs: rest.legs,
+          sourceTransactionIds: rest.sourceTransactionIds,
+        },
       });
       created++;
     }
   }
+
+  if (operations.length) await commitTradeBatch(operations);
 
   return { created, updated, skippedDuplicates: classified.filter((c) => c.status === 'duplicate').length };
 }

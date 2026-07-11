@@ -1,5 +1,5 @@
 // src/services/import/tinkoffPdfAi.js
-import { resolveInstrumentCode, buildIsinTickerMap, isFuturesCode } from './instrumentResolver.js';
+import { resolveInstrumentCode, buildIsinTickerMap, isFuturesCode, isCurrencyCode, parseReportPeriod } from './instrumentResolver.js';
 
 // Same lazy-loading contract as tinkoffPdf.js: browser build on demand, or the
 // Node-compatible build injected via globalThis.__PDFJS_OVERRIDE__ in tests.
@@ -104,6 +104,7 @@ export async function parseTinkoffPdfViaAI(file) {
       currency: row.currency,
       timestampUtc: mskToUtc(row.date, row.time),
       isFuture,
+      instrumentType: isCurrencyCode(resolved.ticker) ? 'currency' : (isFuture ? 'future' : 'stock'),
       tradeMode: row.tradeMode || '',
       parseMethod: 'ai',
     });
@@ -116,6 +117,7 @@ export async function parseTinkoffPdfViaAI(file) {
     ok: true,
     transactions,
     repoOperations,
+    reportPeriod: parseReportPeriod(rawText),
     unexecutedCount: unexecuted.length,
     cancelledCount: cancelled.length,
     flaggedForReview: executed.filter((t) => t.needsReview).map((t) => t.dealNumber),

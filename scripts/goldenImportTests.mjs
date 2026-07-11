@@ -43,6 +43,10 @@ fs.writeFileSync(path.join(tmpDir, 'trades.js'), `
 export async function addTrade() {}
 export async function updateTrade() {}
 export async function addTradeHistoryEntry() {}
+export function newTradeRef() { return {}; }
+export function tradeRefById() { return {}; }
+export function tradeHistoryRef() { return {}; }
+export async function commitTradeBatch() {}
 `);
 fs.writeFileSync(path.join(tmpDir, 'tinkoff.js'), `
 export class TinkoffAPI {}
