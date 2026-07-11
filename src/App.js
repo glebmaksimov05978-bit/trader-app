@@ -21,6 +21,7 @@ import './styles/globals.css';
 const TRUSTED_UIDS = [
   'fuUAD1JLQ5VbfJRbajYgjhw5pCn2', // admin@trader.com
   '1stzQToO77e61ubwLuo3g5KK1DI3', // gleb@trader.com
+  'SK2s0DtLAxNRtHhV3HwEwTVuK292', // radartest.20260710@example.com — QA test account
 ];
 
 function ProtectedRoute({ children }) {

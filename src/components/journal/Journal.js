@@ -3,6 +3,13 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, addTrade, updateTrade, deleteTrade, calcStats, resolveOpenedAt, resolveClosedAt } from '../../services/trades';
 import { formatCurrency, formatNumber } from '../../utils/calculator';
+import { fetchDailyCandles } from '../../services/marketData/candles';
+import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
+import { computePatternsAtEntry } from '../../services/analytics/patterns';
+import { computeMarketContextAtEntry } from '../../services/analytics/marketContext';
+import { isFuturesCode, isCurrencyCode } from '../../services/import/instrumentResolver';
+import { addRadarItem, getRadarItems, deleteRadarItem } from '../../services/radar';
+import TechnicalAnalysisBlock from '../shared/TechnicalAnalysisBlock';
 import toast from 'react-hot-toast';
 import TradeModal from './TradeModal';
 import ImportModal from './ImportModal';
@@ -28,6 +35,25 @@ export default function Journal() {
   const [closing, setClosing] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
+  // tradeId -> { loading, data, error }
+  const [indicatorsState, setIndicatorsState] = useState({});
+  // "Сделки" | "Радар" — watchlist of tickers with a setup forming, kept separate from
+  // the trades table because a radar item isn't a position yet.
+  const [view, setView] = useState('trades');
+  const [radarItems, setRadarItems] = useState([]);
+  const [radarLoading, setRadarLoading] = useState(true);
+  const [radarState, setRadarState] = useState({}); // itemId -> { loading, data, error }
+  const [addRadarOpen, setAddRadarOpen] = useState(false);
+  const [radarForm, setRadarForm] = useState({ ticker: '', instrumentType: 'stock', note: '' });
+  // Once the trader manually picks a type, stop overriding it as they keep typing.
+  const [radarTypeTouched, setRadarTypeTouched] = useState(false);
+
+  const guessInstrumentType = (ticker) => {
+    if (isCurrencyCode(ticker)) return 'currency';
+    if (isFuturesCode(ticker)) return 'future';
+    return 'stock';
+  };
+  const [confirmDeleteRadar, setConfirmDeleteRadar] = useState(null);
 
   const deposit = userProfile?.depositSize || 100000;
 
@@ -41,9 +67,21 @@ export default function Journal() {
 
   useEffect(() => { load(); }, [load]);
 
+  const loadRadar = useCallback(async () => {
+    if (!user) return;
+    setRadarLoading(true);
+    const items = await getRadarItems(user.uid);
+    setRadarItems(items);
+    setRadarLoading(false);
+  }, [user]);
+
+  useEffect(() => { if (view === 'radar') loadRadar(); }, [view, loadRadar]);
+
   const handleSave = async (data) => {
     try {
-      if (editTrade) {
+      // A prefilled "from radar" trade has no `.id` (it's not an existing document) —
+      // that's what tells us to create rather than update, same as a brand-new trade.
+      if (editTrade?.id) {
         await updateTrade(editTrade.id, data);
         toast.success('Сделка обновлена');
       } else {
@@ -88,7 +126,7 @@ export default function Journal() {
   const calcQuickPnl = () => {
     const exit = parseFloat(closePrice);
     const entry = parseFloat(closeModal?.entryPrice);
-    const vol = parseFloat(closeModal?.volume) || 1;
+    const vol = parseFloat(closeModal?.remainingVolume ?? closeModal?.volume) || 1;
     const lot = parseFloat(closeModal?.lot) || 1;
     const step = parseFloat(closeModal?.minStep) || 1;
     const stepAmt = parseFloat(closeModal?.minStepAmount) || 0;
@@ -122,8 +160,10 @@ export default function Journal() {
         exitPrice: parseFloat(closePrice),
         status: 'closed',
         remainingVolume: 0,
-        pnl: result?.pnl ?? 0,
-        commission: result?.commission ?? 0,
+        // Add to whatever P&L/commission the position already accumulated from
+        // earlier partial closes, rather than overwriting it.
+        pnl: (closeModal.pnl ?? 0) + (result?.pnl ?? 0),
+        commission: (closeModal.commission ?? 0) + (result?.commission ?? 0),
         closeDate: closedAtDate.toISOString(),
         closedAt: closedAtDate.toISOString(),
       };
@@ -141,7 +181,7 @@ export default function Journal() {
         }];
       }
       await updateTrade(closeModal.id, patch);
-      toast.success(`Сделка закрыта. P&L: ${result?.pnl >= 0 ? '+' : ''}${formatCurrency(result?.pnl ?? 0)}`);
+      toast.success(`Сделка закрыта. P&L: ${patch.pnl >= 0 ? '+' : ''}${formatCurrency(patch.pnl)}`);
       setCloseModal(null);
       setClosePrice('');
       await load();
@@ -154,10 +194,108 @@ export default function Journal() {
 
   const quickResult = closeModal && closePrice ? calcQuickPnl() : null;
 
+  // Fetches candles once per trade, derives both indicators and pattern candidates from
+  // the same series, and persists them to technicalAnalysis so re-opening the row later
+  // doesn't re-hit the market data API. `force` bypasses the Firestore cache — used by
+  // the "Обновить" button. Trades cached from before pattern detection existed only have
+  // `.indicators` — loading such a trade shows indicators immediately but re-fetches to
+  // fill in `.patternCandidates`/`.levels` (cheap, happens once).
+  const loadIndicators = async (trade, force = false) => {
+    const cached = trade.technicalAnalysis;
+    if (!force && cached?.indicators && cached?.patterns) {
+      setIndicatorsState((s) => ({ ...s, [trade.id]: { loading: false, data: cached, error: null } }));
+      return;
+    }
+    setIndicatorsState((s) => ({ ...s, [trade.id]: { loading: true, data: null, error: null } }));
+    try {
+      const openedAt = resolveOpenedAt(trade);
+      if (!openedAt) throw new Error('Нет даты открытия сделки');
+      const candles = await fetchDailyCandles({
+        ticker: trade.ticker,
+        instrumentType: trade.instrumentType || 'stock',
+        toDate: openedAt,
+        tinkoffToken: userProfile?.tinkoffToken,
+      });
+      const indicators = computeIndicatorsAtEntry(candles, openedAt);
+      const patterns = computePatternsAtEntry(candles, openedAt);
+      const marketContext = computeMarketContextAtEntry(candles, openedAt);
+      if (!indicators) throw new Error('Нет исторических свечей по этому тикеру');
+      const result = { indicators, patterns, marketContext };
+      setIndicatorsState((s) => ({ ...s, [trade.id]: { loading: false, data: result, error: null } }));
+      await updateTrade(trade.id, { technicalAnalysis: { ...(trade.technicalAnalysis || {}), ...result } });
+    } catch (e) {
+      setIndicatorsState((s) => ({ ...s, [trade.id]: { loading: false, data: null, error: e.message || 'Не удалось загрузить данные' } }));
+    }
+  };
+
+  // Same computation as loadIndicators, but anchored to "now" instead of a trade's
+  // entry date, and deliberately not cached in Firestore — a radar item's whole point
+  // is to reflect the current moment, so a stale cache would defeat it. Refetches every
+  // time the row is opened or "Обновить" is pressed.
+  const loadRadarAnalysis = async (item, force = false) => {
+    if (!force && radarState[item.id]?.data) return;
+    setRadarState((s) => ({ ...s, [item.id]: { loading: true, data: null, error: null } }));
+    try {
+      const now = new Date();
+      const candles = await fetchDailyCandles({
+        ticker: item.ticker,
+        instrumentType: item.instrumentType || 'stock',
+        toDate: now,
+        tinkoffToken: userProfile?.tinkoffToken,
+      });
+      const indicators = computeIndicatorsAtEntry(candles, now);
+      const patterns = computePatternsAtEntry(candles, now);
+      const marketContext = computeMarketContextAtEntry(candles, now);
+      if (!indicators) throw new Error('Нет исторических свечей по этому тикеру');
+      setRadarState((s) => ({ ...s, [item.id]: { loading: false, data: { indicators, patterns, marketContext }, error: null } }));
+    } catch (e) {
+      setRadarState((s) => ({ ...s, [item.id]: { loading: false, data: null, error: e.message || 'Не удалось загрузить данные' } }));
+    }
+  };
+
+  const handleAddRadar = async () => {
+    if (!radarForm.ticker.trim()) return;
+    try {
+      await addRadarItem(user.uid, radarForm);
+      toast.success('Добавлено в радар');
+      setAddRadarOpen(false);
+      setRadarForm({ ticker: '', instrumentType: 'stock', note: '' });
+      setRadarTypeTouched(false);
+      await loadRadar();
+    } catch (e) {
+      toast.error('Ошибка сохранения');
+    }
+  };
+
+  const handleDeleteRadar = async () => {
+    if (!confirmDeleteRadar) return;
+    await deleteRadarItem(confirmDeleteRadar);
+    toast.success('Удалено из радара');
+    setConfirmDeleteRadar(null);
+    await loadRadar();
+  };
+
+  // Radar items stay in the list after this — the trader may want to fill in another
+  // trade from the same setup later, or keep watching it. Deleting is a separate,
+  // explicit action.
+  const openFromRadar = (item) => {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    setEditTrade({
+      ticker: item.ticker,
+      instrumentType: item.instrumentType || 'stock',
+      direction: 'long',
+      status: 'open',
+      date: `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`,
+    });
+    setModalOpen(true);
+  };
+
   const filtered = trades
     .filter(t => {
       if (filter === 'long') return t.direction === 'long';
       if (filter === 'short') return t.direction === 'short';
+      if (filter === 'currency') return t.instrumentType === 'currency';
       // A partially closed position still has volume open — group it with "Открытые".
       if (filter === 'open') return t.status === 'open' || t.status === 'partial';
       if (filter === 'closed') return t.status === 'closed';
@@ -199,20 +337,33 @@ export default function Journal() {
       <div className="page-header flex justify-between items-center">
         <div>
           <h1 className="page-title">📓 Журнал сделок</h1>
-          <p className="page-subtitle">История всех ваших позиций</p>
+          <p className="page-subtitle">{view === 'trades' ? 'История всех ваших позиций' : 'Тикеры, за которыми вы следите, пока сетап не подтвердился'}</p>
         </div>
-        <div className="flex gap-2">
-          <button className="btn btn-secondary" onClick={() => setImportOpen(true)}>
-            📥 Импортировать отчёт
-          </button>
-          <button className="btn btn-primary" onClick={() => { setEditTrade(null); setModalOpen(true); }}>
-            + Добавить сделку
-          </button>
+        <div className="flex gap-2 page-header-actions">
+          {view === 'trades' ? (
+            <>
+              <button className="btn btn-primary" onClick={() => { setEditTrade(null); setModalOpen(true); }}>
+                + Добавить сделку
+              </button>
+              <button className="btn btn-secondary" onClick={() => setImportOpen(true)}>
+                📥 Импортировать отчёт
+              </button>
+            </>
+          ) : (
+            <button className="btn btn-primary" onClick={() => { setRadarTypeTouched(false); setAddRadarOpen(true); }}>
+              + Добавить в радар
+            </button>
+          )}
         </div>
       </div>
 
+      <div className="tabs" style={{maxWidth:300, marginBottom:20}}>
+        <button className={`tab ${view==='trades'?'active':''}`} onClick={() => setView('trades')}>📓 Сделки</button>
+        <button className={`tab ${view==='radar'?'active':''}`} onClick={() => setView('radar')}>📡 Радар</button>
+      </div>
+
       {/* Stats strip */}
-      {stats && (
+      {view === 'trades' && stats && (
         <div className="grid-4" style={{marginBottom:24}}>
           <div className="kpi-card green">
             <div className="kpi-label">Всего сделок</div>
@@ -240,9 +391,10 @@ export default function Journal() {
       )}
 
       {/* Filters */}
+      {view === 'trades' && (
       <div className="journal-toolbar" style={{marginBottom:16}}>
         <div className="tabs" style={{maxWidth:400}}>
-          {[['all','Все'],['open','Открытые'],['closed','Закрытые'],['long','Лонг'],['short','Шорт']].map(([v,l]) => (
+          {[['all','Все'],['open','Открытые'],['closed','Закрытые'],['long','Лонг'],['short','Шорт'],['currency','Валюта']].map(([v,l]) => (
             <button key={v} className={`tab ${filter===v?'active':''}`} onClick={() => setFilter(v)}>{l}</button>
           ))}
         </div>
@@ -254,8 +406,10 @@ export default function Journal() {
           onChange={e => setSearch(e.target.value)}
         />
       </div>
+      )}
 
       {/* Table */}
+      {view === 'trades' && (
       <div className="card" style={{padding:0}}>
         {loading ? (
           <div className="empty-state"><div className="spinner" style={{width:28,height:28}}/></div>
@@ -286,16 +440,18 @@ export default function Journal() {
                   <tr>
                     <td>
                       <div className="flex gap-2" style={{alignItems:'center'}}>
-                        {hasHistory && (
-                          <button
-                            className="btn btn-ghost btn-sm"
-                            style={{padding:'2px 6px'}}
-                            onClick={() => setExpandedId(isExpanded ? null : trade.id)}
-                            title={isExpanded ? 'Свернуть историю' : 'Показать историю сделки'}
-                          >
-                            {isExpanded ? '▾' : '▸'}
-                          </button>
-                        )}
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          style={{padding:'2px 6px'}}
+                          onClick={() => {
+                            const next = isExpanded ? null : trade.id;
+                            setExpandedId(next);
+                            if (next && !indicatorsState[trade.id]) loadIndicators(trade);
+                          }}
+                          title={isExpanded ? 'Свернуть' : 'Показать историю и индикаторы'}
+                        >
+                          {isExpanded ? '▾' : '▸'}
+                        </button>
                         <span className="font-semibold">{trade.ticker || '—'}</span>
                       </div>
                     </td>
@@ -366,29 +522,40 @@ export default function Journal() {
                   {isExpanded && (
                     <tr>
                       <td colSpan={COLS.length} style={{background:'var(--bg-surface-2)', padding:'12px 16px 16px 44px'}}>
-                        <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:8}}>История сделки — {trade.legs.length} операций</div>
-                        <table className="table" style={{fontSize:13}}>
-                          <thead>
-                            <tr>
-                              <th>Время</th><th>Действие</th><th>Объём</th><th>Цена</th><th>Комиссия</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {trade.legs.map((leg, i) => (
-                              <tr key={i}>
-                                <td className="text-secondary">{fmtDateTime(leg.timestampUtc)}</td>
-                                <td>
-                                  <span className={`badge ${leg.type === 'open' ? 'badge-green' : 'badge-red'}`}>
-                                    {leg.type === 'open' ? (leg.side === 'buy' ? 'Докупка' : 'Открытие шорта') : (leg.side === 'sell' ? 'Продажа' : 'Выкуп')}
-                                  </span>
-                                </td>
-                                <td>{formatNumber(leg.quantity, 0)}</td>
-                                <td>{formatNumber(leg.price, 2)}</td>
-                                <td className="text-secondary">{formatCurrency(Math.round(leg.commission || 0))}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                        {hasHistory && (
+                          <>
+                            <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:8}}>История сделки — {trade.legs.length} операций</div>
+                            <table className="table" style={{fontSize:13, marginBottom:16}}>
+                              <thead>
+                                <tr>
+                                  <th>Время</th><th>Действие</th><th>Объём</th><th>Цена</th><th>Комиссия</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {trade.legs.map((leg, i) => (
+                                  <tr key={i}>
+                                    <td className="text-secondary">{fmtDateTime(leg.timestampUtc)}</td>
+                                    <td>
+                                      <span className={`badge ${leg.type === 'open' ? 'badge-green' : 'badge-red'}`}>
+                                        {leg.type === 'open' ? (leg.side === 'buy' ? 'Докупка' : 'Открытие шорта') : (leg.side === 'sell' ? 'Продажа' : 'Выкуп')}
+                                      </span>
+                                    </td>
+                                    <td>{formatNumber(leg.quantity, 0)}</td>
+                                    <td>{formatNumber(leg.price, 2)}</td>
+                                    <td className="text-secondary">{formatCurrency(Math.round(leg.commission || 0))}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </>
+                        )}
+
+                        {/* Технический анализ на момент входа — module 4 */}
+                        <TechnicalAnalysisBlock
+                          state={indicatorsState[trade.id]}
+                          onRefresh={() => loadIndicators(trade, true)}
+                          title="Технический анализ на момент входа"
+                        />
                       </td>
                     </tr>
                   )}
@@ -400,6 +567,129 @@ export default function Journal() {
           </div>
         )}
       </div>
+      )}
+
+      {/* Радар — watchlist of forming setups */}
+      {view === 'radar' && (
+        <div className="flex flex-col gap-3">
+          {radarLoading ? (
+            <div className="card empty-state"><div className="spinner" style={{width:28,height:28}}/></div>
+          ) : radarItems.length === 0 ? (
+            <div className="card empty-state">
+              <div className="empty-state-icon">📡</div>
+              <div className="empty-state-title">Радар пуст</div>
+              <div className="empty-state-text">Добавьте тикер, за которым хотите следить, пока сетап не подтвердится</div>
+            </div>
+          ) : (
+            radarItems.map((item) => {
+              const isExpanded = expandedId === `radar-${item.id}`;
+              return (
+                <div className="card" key={item.id}>
+                  <div className="flex justify-between items-center">
+                    <div className="flex gap-2" style={{alignItems:'center'}}>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        style={{padding:'2px 6px'}}
+                        onClick={() => {
+                          const next = isExpanded ? null : `radar-${item.id}`;
+                          setExpandedId(next);
+                          if (next && !radarState[item.id]) loadRadarAnalysis(item);
+                        }}
+                      >
+                        {isExpanded ? '▾' : '▸'}
+                      </button>
+                      <span className="font-semibold">{item.ticker}</span>
+                      <span className="badge badge-blue" style={{fontSize:11}}>
+                        {item.instrumentType === 'future' ? 'Фьючерс' : item.instrumentType === 'currency' ? 'Валюта' : 'Акция'}
+                      </span>
+                      {item.note && <span className="text-muted" style={{fontSize:13}}>{item.note}</span>}
+                    </div>
+                    <div className="flex gap-2">
+                      <button className="btn btn-secondary btn-sm" onClick={() => openFromRadar(item)}>
+                        📓 Перенести в журнал
+                      </button>
+                      <button className="btn btn-ghost btn-sm" style={{color:'var(--red)'}} onClick={() => setConfirmDeleteRadar(item.id)} title="Убрать из радара">🗑</button>
+                    </div>
+                  </div>
+                  {isExpanded && (
+                    <div style={{marginTop:16, paddingTop:16, borderTop:'1px solid var(--border-subtle)'}}>
+                      <TechnicalAnalysisBlock
+                        state={radarState[item.id]}
+                        onRefresh={() => loadRadarAnalysis(item, true)}
+                        title="Технический анализ сейчас"
+                      />
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* Мини-модал добавления в радар */}
+      {addRadarOpen && (
+        <div className="modal-overlay" onClick={() => setAddRadarOpen(false)}>
+          <div className="modal" style={{maxWidth:400}} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">📡 Добавить в радар</h3>
+              <button className="modal-close" onClick={() => setAddRadarOpen(false)}>✕</button>
+            </div>
+            <div className="flex flex-col gap-3" style={{padding:'0 4px 8px'}}>
+              <div className="input-group">
+                <label className="input-label">Тикер *</label>
+                <input className="input" value={radarForm.ticker}
+                  onChange={e => {
+                    const ticker = e.target.value.toUpperCase();
+                    setRadarForm(f => ({ ...f, ticker, instrumentType: radarTypeTouched ? f.instrumentType : guessInstrumentType(ticker) }));
+                  }}
+                  placeholder="SBER" style={{textTransform:'uppercase'}} autoFocus />
+              </div>
+              <div className="input-group">
+                <label className="input-label">Тип инструмента <span className="text-muted" style={{fontWeight:400}}>(определяется автоматически по тикеру)</span></label>
+                <select className="input" value={radarForm.instrumentType}
+                  onChange={e => { setRadarTypeTouched(true); setRadarForm(f => ({ ...f, instrumentType: e.target.value })); }}>
+                  <option value="stock">Акция</option>
+                  <option value="future">Фьючерс</option>
+                  <option value="currency">Валюта</option>
+                </select>
+              </div>
+              <div className="input-group">
+                <label className="input-label">Заметка</label>
+                <input className="input" value={radarForm.note}
+                  onChange={e => setRadarForm(f => ({ ...f, note: e.target.value }))}
+                  placeholder="Например: жду пробой 280" />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setAddRadarOpen(false)}>Отмена</button>
+              <button className="btn btn-primary" onClick={handleAddRadar} disabled={!radarForm.ticker.trim()}>Добавить</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Подтверждение удаления из радара */}
+      {confirmDeleteRadar && (
+        <div className="modal-overlay" onClick={() => setConfirmDeleteRadar(null)}>
+          <div className="modal" style={{maxWidth:360}} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Убрать из радара?</h3>
+              <button className="modal-close" onClick={() => setConfirmDeleteRadar(null)}>✕</button>
+            </div>
+            <div style={{padding:'16px 0', color:'var(--text-muted)', fontSize:14, textAlign:'center'}}>
+              Тикер и заметка будут удалены из радара.
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setConfirmDeleteRadar(null)}>Отмена</button>
+              <button className="btn" onClick={handleDeleteRadar}
+                style={{background:'linear-gradient(135deg,#ef4444,#dc2626)', color:'#fff', border:'none'}}>
+                🗑 Убрать
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Мини-модал быстрого закрытия */}
       {closeModal && (

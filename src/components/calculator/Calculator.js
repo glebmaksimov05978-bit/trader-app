@@ -1,9 +1,16 @@
 // src/components/calculator/Calculator.js
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { TinkoffAPI, parseFutureInfo, parseShareInfo } from '../../services/tinkoff';
 import { calcTrade, formatCurrency, formatNumber } from '../../utils/calculator';
 import { addTrade } from '../../services/trades';
+import { fetchDailyCandles, availableTimeframes, DEFAULT_TIMEFRAME, TIMEFRAMES } from '../../services/marketData/candles';
+import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
+import { computePatternsAtEntry } from '../../services/analytics/patterns';
+import { computeMarketContextAtEntry } from '../../services/analytics/marketContext';
+import { evaluateStrategy } from '../../services/analytics/strategy';
+import TechnicalAnalysisBlock, { PATTERN_LABELS } from '../shared/TechnicalAnalysisBlock';
+import StrategyChecklist from '../shared/StrategyChecklist';
 import toast from 'react-hot-toast';
 import './Calculator.css';
 
@@ -71,6 +78,17 @@ export default function Calculator() {
   const [instrumentInfo, setInstrumentInfo] = useState(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
   const [tapi, setTapi] = useState(null);
+  const [taOpen, setTaOpen] = useState(false);
+  const [taState, setTaState] = useState({ loading: false, data: null, error: null });
+  const [taTimeframe, setTaTimeframe] = useState(DEFAULT_TIMEFRAME);
+  const [taLive, setTaLive] = useState(false);
+  const hasTinkoffToken = !!userProfile?.tinkoffToken;
+  const taTimeframeOptions = useMemo(() => availableTimeframes(hasTinkoffToken), [hasTinkoffToken]);
+  // Tracks which "forming" setups were on screen after the last poll, so the next poll
+  // can tell "confirmed" / "invalidated" apart from "nothing changed" — a detector run
+  // in isolation is stateless by design (see patterns.js), so this diffing has to live
+  // here, in the one place that actually watches the same ticker over time.
+  const formingKeysRef = useRef(new Set());
 
   useEffect(() => {
     if (userProfile?.tinkoffToken) setTapi(new TinkoffAPI(userProfile.tinkoffToken));
@@ -144,6 +162,25 @@ export default function Calculator() {
     };
   }, [result, manualContracts, effectiveContracts, form, instrumentType]);
 
+  // Re-evaluates the trader's own strategy checklist whenever the ticker analysis or the
+  // plan numbers change — plan conditions (R:R, risk %) come from the Calculator's own
+  // form, market conditions from the fetched candles. Neither half computes anything new
+  // here; this just feeds both into the same evaluator used everywhere else.
+  const strategyResult = useMemo(() => {
+    if (!userProfile?.strategy?.conditions?.length) return null;
+    if (!taState.data) return null;
+    return evaluateStrategy(userProfile.strategy, {
+      indicators: taState.data.indicators,
+      patterns: taState.data.patterns,
+      marketContext: taState.data.marketContext,
+      plan: {
+        rr: displayResult?.rr ?? null,
+        riskPercent: parseFloat(form.riskPercent) || null,
+        marginUsagePercent: displayResult?.marginUsagePercent ?? null,
+      },
+    });
+  }, [userProfile?.strategy, taState.data, displayResult, form.riskPercent]);
+
   // Умное направление
   const activeDirection = (() => {
     const sl = parseFloat(form.stopLoss);
@@ -192,6 +229,88 @@ export default function Calculator() {
       setLoadingPrice(false);
     }
   }, [tapi, form.ticker, instrumentType, priceSource, orderType]);
+
+  // Stale analysis for a different ticker (or timeframe) would be misleading — clear it
+  // as soon as the trader edits the ticker field or switches timeframe, so they never
+  // see SBER's daily figures while looking at GAZP on M15.
+  useEffect(() => {
+    setTaState({ loading: false, data: null, error: null });
+    setTaLive(false);
+    formingKeysRef.current = new Set();
+  }, [form.ticker, instrumentType, taTimeframe]);
+
+  // If the trader loses their token, or a timeframe becomes unavailable for some other
+  // reason, don't leave the selector pointed at a now-invalid choice.
+  useEffect(() => {
+    if (!taTimeframeOptions.some((tf) => tf.key === taTimeframe)) setTaTimeframe(DEFAULT_TIMEFRAME);
+  }, [taTimeframeOptions, taTimeframe]);
+
+  // `silent` is true for background live-polling ticks — those shouldn't flash the
+  // loading spinner or steal focus by (re)opening the panel; only the first, manual
+  // click does that. On-demand by default (no polling) still applies: this function
+  // itself never schedules its own next call, the "🔴 Live" effect below does that.
+  const loadAnalysis = async (silent = false) => {
+    if (!form.ticker) { if (!silent) toast.error('Введите тикер'); return; }
+    if (!silent) { setTaOpen(true); setTaState({ loading: true, data: null, error: null }); }
+    try {
+      const now = new Date();
+      const candles = await fetchDailyCandles({
+        ticker: form.ticker.toUpperCase(),
+        instrumentType,
+        toDate: now,
+        tinkoffToken: userProfile?.tinkoffToken,
+        timeframe: taTimeframe,
+      });
+      const indicators = computeIndicatorsAtEntry(candles, now);
+      const patterns = computePatternsAtEntry(candles, now, { timeframeMinutes: TIMEFRAMES[taTimeframe]?.minutes });
+      const marketContext = computeMarketContextAtEntry(candles, now);
+      if (!indicators) throw new Error('Нет исторических свечей по этому тикеру');
+      setTaState({ loading: false, data: { indicators, patterns, marketContext }, error: null });
+      diffFormingStatuses(patterns);
+    } catch (e) {
+      if (!silent) setTaState({ loading: false, data: null, error: e.message || 'Не удалось загрузить данные' });
+    }
+  };
+
+  // Compares this poll's forming candidates against the last poll's (by `levelPrice`,
+  // since a pattern's own price is the only stable identity across time) and toasts on
+  // the two transitions a trader actually cares about: a forming setup just confirmed,
+  // or it just fell apart. "Still forming, nothing new" produces no notification — that
+  // would be noise on every single poll.
+  const diffFormingStatuses = (patterns) => {
+    const candidates = patterns?.candidates || [];
+    const nowForming = new Set(candidates.filter((c) => c.status === 'forming' && c.levelPrice != null)
+      .map((c) => `${c.pattern}-${c.levelPrice.toFixed(2)}`));
+    const nowConfirmedKeys = new Set(candidates.filter((c) => c.status === 'confirmed' && c.levelPrice != null)
+      .map((c) => `${c.pattern}-${c.levelPrice.toFixed(2)}`));
+
+    for (const prevKey of formingKeysRef.current) {
+      if (nowForming.has(prevKey)) continue; // still forming, nothing to report
+      const [pattern] = prevKey.split('-');
+      const label = PATTERN_LABELS[pattern] || pattern;
+      if ([...nowConfirmedKeys].some((k) => k.startsWith(pattern))) {
+        toast.success(`✅ Сетап «${label}» подтвердился`);
+      } else {
+        toast(`❌ Сетап «${label}» отменился — цена ушла дальше`, { icon: '⚠️' });
+      }
+    }
+    formingKeysRef.current = nowForming;
+  };
+
+  // Live polling for the technical-analysis panel — separate from the price
+  // autorefresh below (that one's about the trade price, this one's about pattern
+  // status). Poll interval scales with the chosen timeframe: no point re-checking
+  // daily candles every 30 seconds, and M5 needs to be checked far more often than D1
+  // for "forming" status to mean anything. Only runs while this tab is open — a known,
+  // already-discussed limitation (real push notifications need a server, later).
+  useEffect(() => {
+    if (!taLive || !form.ticker) return;
+    const minutes = TIMEFRAMES[taTimeframe]?.minutes || 1440;
+    const intervalMs = Math.max(30000, Math.min(600000, minutes * 10000));
+    const interval = setInterval(() => loadAnalysis(true), intervalMs);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taLive, form.ticker, instrumentType, taTimeframe]);
 
   // Автообновление (только Тинькофф + рыночная)
   useEffect(() => {
@@ -366,6 +485,63 @@ export default function Calculator() {
                 {priceSource === 'tinkoff' && orderType === 'market' && (
                   <span className="text-xs" style={{color:'var(--green)'}}>🔄 авто 30с</span>
                 )}
+              </div>
+            )}
+            {/* Отдельная, менее нагруженная кнопка — технический анализ не относится
+                к загрузке цены, поэтому не толпится рядом с ней */}
+            <div style={{display:'flex', gap:6, marginTop:10, flexWrap:'wrap'}}>
+              {taTimeframeOptions.map((tf) => (
+                <button key={tf.key}
+                  onClick={() => setTaTimeframe(tf.key)}
+                  style={{
+                    padding:'4px 10px', borderRadius:8, fontSize:11, fontFamily:'inherit', cursor:'pointer',
+                    border: `1px solid ${taTimeframe === tf.key ? 'var(--accent-primary)' : 'var(--border-subtle)'}`,
+                    background: taTimeframe === tf.key ? 'rgba(79,70,229,0.12)' : 'transparent',
+                    color: taTimeframe === tf.key ? 'var(--accent-primary)' : 'var(--text-muted)',
+                  }}
+                >{tf.label}</button>
+              ))}
+              {!hasTinkoffToken && (
+                <span className="text-xs text-muted" style={{alignSelf:'center'}} title="М5 и М15 доступны только с токеном Т-Инвестиций (Настройки)">
+                  М5/М15 — нужен токен
+                </span>
+              )}
+            </div>
+            <div style={{display:'flex', gap:6, marginTop:6}}>
+              <button
+                onClick={() => loadAnalysis()}
+                disabled={taState.loading}
+                style={{
+                  flex:1, padding:'9px 14px',
+                  background:'transparent', border:'1px dashed var(--border-medium)',
+                  borderRadius:10, color:'var(--text-secondary)',
+                  fontFamily:'inherit', fontSize:13, cursor:'pointer',
+                  display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+                  transition:'all 0.15s',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent-primary)'; e.currentTarget.style.color = 'var(--accent-primary)'; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-medium)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
+              >
+                {taState.loading ? <div className="spinner" style={{width:13,height:13}}/> : '📊'} Технический анализ по тикеру
+              </button>
+              <button
+                onClick={() => setTaLive((v) => !v)}
+                disabled={!form.ticker}
+                title={taLive ? 'Остановить автообновление' : 'Включить автообновление панели (пока открыта эта вкладка браузера)'}
+                style={{
+                  padding:'9px 12px', borderRadius:10, cursor: form.ticker ? 'pointer' : 'not-allowed',
+                  border: `1px solid ${taLive ? 'var(--red)' : 'var(--border-medium)'}`,
+                  background: taLive ? 'rgba(239,68,68,0.12)' : 'transparent',
+                  color: taLive ? 'var(--red)' : 'var(--text-secondary)',
+                  fontFamily:'inherit', fontSize:13, fontWeight:600, whiteSpace:'nowrap',
+                }}
+              >
+                {taLive ? '🔴 Live' : '⚪ Live'}
+              </button>
+            </div>
+            {taLive && (
+              <div className="text-xs text-muted" style={{marginTop:6}}>
+                Автообновление включено — работает, пока эта вкладка браузера открыта.
               </div>
             )}
 
@@ -602,6 +778,36 @@ export default function Calculator() {
           )}
         </div>
       </div>
+
+      {/* Живая панель технического анализа — module 4, "живая панель" из архитектуры */}
+      {taOpen && (
+        <div className="card" style={{marginTop:16}}>
+          <div className="section-title">
+            <div className="section-title-icon">📊</div>
+            Технический анализ {form.ticker ? `— ${form.ticker.toUpperCase()}` : ''}
+          </div>
+          <TechnicalAnalysisBlock
+            state={taState}
+            onRefresh={() => loadAnalysis()}
+            title={`На данный момент (${TIMEFRAMES[taTimeframe]?.label || taTimeframe})`}
+            onUseAsStop={(price) => set('stopLoss', String(price))}
+            onUseAsTake={(price) => set('takeProfit', String(price))}
+          />
+        </div>
+      )}
+
+      {taOpen && strategyResult && (
+        <StrategyChecklist strategyName={userProfile?.strategy?.name} result={strategyResult} />
+      )}
+      {taOpen && taState.data && !userProfile?.strategy?.conditions?.length && (
+        <div className="card" style={{marginTop:16, textAlign:'center', padding:'20px'}}>
+          <div className="text-sm text-secondary">
+            Стратегия ещё не настроена — соберите чек-лист условий во вкладке{' '}
+            <a href="/capital" style={{color:'var(--accent-primary)'}}>Капитал → Моя стратегия</a>,
+            и здесь появится счётчик «N из M».
+          </div>
+        </div>
+      )}
 
       {/* Модалка Т-Банк */}
       {showTinkoffModal && displayResult && (

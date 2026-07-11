@@ -26,5 +26,21 @@ service cloud.firestore {
       allow read: if request.auth != null &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
+
+    // Import artifacts: unmatched closings / REPO legs kept for a future "rebuild journal" feature
+    match /importArtifacts/{artifactId} {
+      allow read, write: if request.auth != null &&
+        request.auth.uid == resource.data.uid;
+      allow create: if request.auth != null &&
+        request.auth.uid == request.resource.data.uid;
+    }
+
+    // Radar: watchlist of tickers with a setup forming, before they become real trades
+    match /radarItems/{itemId} {
+      allow read, write: if request.auth != null &&
+        request.auth.uid == resource.data.uid;
+      allow create: if request.auth != null &&
+        request.auth.uid == request.resource.data.uid;
+    }
   }
 }

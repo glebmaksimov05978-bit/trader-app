@@ -201,6 +201,8 @@ const EMPTY = {
   date: new Date().toISOString().split('T')[0],
   entryPrice: '',
   exitPrice: '',
+  stopLoss: '',
+  takeProfit: '',
   volume: '',
   pnl: '',
   commission: '',
@@ -208,6 +210,7 @@ const EMPTY = {
   notes: '',
   setup: '',
   emotion: '',
+  newsDay: false,
   minStep: '',
   minStepAmount: '',
   lot: '1',
@@ -232,6 +235,8 @@ export default function TradeModal({ trade, onSave, onClose, defaultDeposit }) {
         pnl: trade.pnl !== undefined && trade.pnl !== null ? String(trade.pnl) : '',
         entryPrice: trade.entryPrice !== undefined ? String(trade.entryPrice) : '',
         exitPrice: trade.exitPrice !== undefined && trade.exitPrice !== null ? String(trade.exitPrice) : '',
+        stopLoss: trade.stopLoss !== undefined && trade.stopLoss !== null ? String(trade.stopLoss) : '',
+        takeProfit: trade.takeProfit !== undefined && trade.takeProfit !== null ? String(trade.takeProfit) : '',
         volume: trade.volume !== undefined && trade.volume !== null ? String(trade.volume) : '',
         minStep: trade.minStep ? String(trade.minStep) : '',
         minStepAmount: trade.minStepAmount ? String(trade.minStepAmount) : '',
@@ -290,6 +295,8 @@ export default function TradeModal({ trade, onSave, onClose, defaultDeposit }) {
       date: form.date,
       entryPrice: parseFloat(form.entryPrice) || 0,
       exitPrice: form.exitPrice ? parseFloat(form.exitPrice) : null,
+      stopLoss: form.stopLoss ? parseFloat(form.stopLoss) : null,
+      takeProfit: form.takeProfit ? parseFloat(form.takeProfit) : null,
       volume: form.volume ? parseFloat(form.volume) : null,
       pnl: form.pnl !== '' ? parseFloat(form.pnl) : null,
       commission: form.commission ? parseFloat(form.commission) : null,
@@ -297,6 +304,7 @@ export default function TradeModal({ trade, onSave, onClose, defaultDeposit }) {
       notes: form.notes,
       setup: form.setup,
       emotion: form.emotion,
+      newsDay: !!form.newsDay,
       minStep: form.minStep ? parseFloat(form.minStep) : null,
       minStepAmount: form.minStepAmount ? parseFloat(form.minStepAmount) : null,
       lot: parseFloat(form.lot) || 1,
@@ -312,11 +320,17 @@ export default function TradeModal({ trade, onSave, onClose, defaultDeposit }) {
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <div className="modal-header">
-          <h2 className="modal-title">{trade ? 'Редактировать сделку' : 'Новая сделка'}</h2>
+          <h2 className="modal-title">{trade?.id ? 'Редактировать сделку' : 'Новая сделка'}</h2>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
         <div className="modal-body">
+          {Array.isArray(trade?.legs) && trade.legs.length > 1 && (
+            <div style={{padding:'10px 14px', background:'rgba(245,158,11,0.08)', border:'1px solid rgba(245,158,11,0.25)', borderRadius:12, fontSize:13, color:'var(--text-secondary)'}}>
+              ⚠️ Эта позиция собрана из {trade.legs.length} сделок брокера (импорт). Изменение цены/объёма/P&L здесь
+              не обновит историю шагов ниже в журнале — правьте с осторожностью.
+            </div>
+          )}
           <div className="grid-3">
             <div className="input-group">
               <label className="input-label">Тикер *</label>
@@ -332,6 +346,7 @@ export default function TradeModal({ trade, onSave, onClose, defaultDeposit }) {
               <label className="input-label">Статус</label>
               <select className="input" value={form.status} onChange={e => set('status', e.target.value)}>
                 <option value="open">Открыта</option>
+                {form.status === 'partial' && <option value="partial">Частично закрыта</option>}
                 <option value="closed">Закрыта</option>
               </select>
             </div>
@@ -360,6 +375,19 @@ export default function TradeModal({ trade, onSave, onClose, defaultDeposit }) {
               <label className="input-label">Объём (конт.)</label>
               <input className="input" type="number" value={form.volume}
                 onChange={e => set('volume', e.target.value)} placeholder="1" />
+            </div>
+          </div>
+
+          <div className="grid-2">
+            <div className="input-group">
+              <label className="input-label">Стоп-лосс (цена)</label>
+              <input className="input" type="number" value={form.stopLoss}
+                onChange={e => set('stopLoss', e.target.value)} placeholder="не задан" />
+            </div>
+            <div className="input-group">
+              <label className="input-label">Тейк-профит (цена)</label>
+              <input className="input" type="number" value={form.takeProfit}
+                onChange={e => set('takeProfit', e.target.value)} placeholder="не задан" />
             </div>
           </div>
 
@@ -413,6 +441,11 @@ export default function TradeModal({ trade, onSave, onClose, defaultDeposit }) {
               </select>
             </div>
           </div>
+
+          <label style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, color:'var(--text-secondary)'}}>
+            <input type="checkbox" checked={!!form.newsDay} onChange={e => set('newsDay', e.target.checked)} />
+            📰 День важных новостей (заседание ЦБ, отчётность эмитента и т.п.)
+          </label>
 
           <div className="input-group">
             <label className="input-label">Заметки / разбор</label>

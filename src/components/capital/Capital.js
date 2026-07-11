@@ -3,14 +3,23 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, calcStats } from '../../services/trades';
 import { formatCurrency, formatNumber, calcTrade } from '../../utils/calculator';
+import { CONDITION_CATALOG, defaultStrategy } from '../../services/analytics/strategy';
 import toast from 'react-hot-toast';
 import './Capital.css';
+
+const CATEGORY_LABELS = { market: '📈 Рыночные условия (считаются по тикеру)', plan: '📝 Условия плана (из Калькулятора)' };
 
 export default function Capital() {
   const { user, userProfile, updateUserProfile } = useAuth();
   const [trades, setTrades] = useState([]);
   const [stats, setStats] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [strategy, setStrategy] = useState(defaultStrategy());
+  const [savingStrategy, setSavingStrategy] = useState(false);
+
+  useEffect(() => {
+    if (userProfile?.strategy) setStrategy(userProfile.strategy);
+  }, [userProfile]);
 
   const [settings, setSettings] = useState({
     depositSize: userProfile?.depositSize ?? 0,
@@ -49,6 +58,35 @@ export default function Capital() {
   }, [user]);
 
   const set = (k, v) => setSettings(s => ({ ...s, [k]: v }));
+
+  const getCondition = (id) => strategy.conditions.find(c => c.id === id);
+  const toggleCondition = (id) => {
+    setStrategy(s => {
+      const existing = s.conditions.find(c => c.id === id);
+      if (existing) {
+        return { ...s, conditions: s.conditions.map(c => c.id === id ? { ...c, enabled: !c.enabled } : c) };
+      }
+      const def = CONDITION_CATALOG.find(c => c.id === id);
+      // Firestore rejects `undefined` field values outright — conditions without a
+      // parameter (e.g. "цена выше EMA200") must not get `param: undefined`, or the
+      // whole setDoc throws and the save silently fails.
+      return { ...s, conditions: [...s.conditions, { id, enabled: true, param: def?.defaultParam ?? null }] };
+    });
+  };
+  const setConditionParam = (id, param) => {
+    setStrategy(s => ({ ...s, conditions: s.conditions.map(c => c.id === id ? { ...c, param } : c) }));
+  };
+
+  const saveStrategy = async () => {
+    setSavingStrategy(true);
+    try {
+      await updateUserProfile({ strategy });
+      toast.success('Стратегия сохранена');
+    } catch (e) {
+      toast.error('Ошибка сохранения: ' + (e.message || 'неизвестная ошибка'));
+    }
+    setSavingStrategy(false);
+  };
 
   const saveSettings = async () => {
     setSaving(true);
@@ -318,6 +356,64 @@ export default function Capital() {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Моя стратегия — конструктор чек-листа. Считает движок из module 4/3, здесь
+          только выбор условий и порогов, никакой отдельной логики оценки. */}
+      <div className="card" style={{marginTop:24}}>
+        <div className="section-title">
+          <div className="section-title-icon">🎯</div>
+          Моя стратегия
+        </div>
+        <p className="text-sm text-secondary" style={{marginBottom:16}}>
+          Выберите условия, которые важны для вашей стратегии. Счётчик «N из M» появится в Калькуляторе
+          при анализе тикера и в виджете Радара на Дашборде. Условие без данных (например, мало истории
+          по тикеру) просто не учитывается в счёте — не считается ни выполненным, ни провальным.
+        </p>
+
+        <div className="input-group" style={{marginBottom:16, maxWidth:360}}>
+          <label className="input-label">Название стратегии</label>
+          <input className="input" value={strategy.name}
+            onChange={e => setStrategy(s => ({ ...s, name: e.target.value }))} placeholder="Моя стратегия" />
+        </div>
+
+        {['market', 'plan'].map(category => (
+          <div key={category} style={{marginBottom:20}}>
+            <div className="calc-section-title">{CATEGORY_LABELS[category]}</div>
+            <div className="flex flex-col gap-2">
+              {CONDITION_CATALOG.filter(c => c.category === category).map(def => {
+                const cond = getCondition(def.id);
+                const enabled = !!cond?.enabled;
+                return (
+                  <div key={def.id} style={{
+                    display:'flex', alignItems:'center', justifyContent:'space-between', gap:12,
+                    padding:'10px 14px', borderRadius:10,
+                    background: enabled ? 'rgba(79,70,229,0.08)' : 'var(--bg-surface-2)',
+                    border: `1px solid ${enabled ? 'rgba(79,70,229,0.3)' : 'var(--border-subtle)'}`,
+                  }}>
+                    <label style={{display:'flex', alignItems:'center', gap:10, cursor:'pointer', flex:1}}>
+                      <input type="checkbox" checked={enabled} onChange={() => toggleCondition(def.id)} />
+                      <span style={{fontSize:13, color: enabled ? 'var(--text-primary)' : 'var(--text-secondary)'}}>{def.label}</span>
+                    </label>
+                    {enabled && def.paramLabel && (
+                      <div style={{display:'flex', alignItems:'center', gap:6, flexShrink:0}}>
+                        <span className="text-xs text-muted">{def.paramLabel}</span>
+                        <input className="input" type="number" step="any"
+                          value={cond?.param ?? def.defaultParam}
+                          onChange={e => setConditionParam(def.id, parseFloat(e.target.value))}
+                          style={{width:70, padding:'4px 8px', fontSize:13}} />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+
+        <button className="btn btn-primary" onClick={saveStrategy} disabled={savingStrategy}>
+          {savingStrategy ? <><div className="spinner" style={{width:14,height:14}}/> Сохранение...</> : '💾 Сохранить стратегию'}
+        </button>
       </div>
     </div>
   );

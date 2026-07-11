@@ -458,6 +458,22 @@ input[type=number] { -moz-appearance: textfield; }
 @media (max-width: 640px) {
   .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; }
   .page { padding: 16px; }
+
+  .page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .page-header-actions {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .page-header-actions .btn {
+    width: 100%;
+    justify-content: center;
+  }
 }
 
 /* Badge */
