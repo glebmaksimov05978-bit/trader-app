@@ -225,15 +225,18 @@ export default function Journal() {
 
   const quickResult = closeModal && closePrice ? calcQuickPnl() : null;
 
-  // Auto-picks a timeframe matched to how long the trade was actually held (falls back
-  // to D1 for still-open trades with no close date yet) — a user's preferred timeframe
-  // in Settings wins over the auto-guess as the starting point, but the switcher lets
-  // them override it per trade either way (see tfOverride state above).
+  // Auto-picks a timeframe for the analysis panel. Priority: the timeframe the trader
+  // actually analysed on when opening the trade (saved by the Calculator) → the user's
+  // preferred timeframe from Settings → a guess from how long the trade was held. For
+  // still-open trades the "held" duration is time since open — before this fix they had
+  // no close date, got null duration and always landed on Д1, ignoring the trader's own
+  // choice at entry (real user report). The switcher still overrides everything.
   const defaultTimeframeFor = (trade) => {
+    if (trade.entryTimeframe) return trade.entryTimeframe;
     if (userProfile?.preferredTimeframe) return userProfile.preferredTimeframe;
     const opened = resolveOpenedAt(trade);
-    const closed = resolveClosedAt(trade);
-    const durationMinutes = opened && closed ? (closed.getTime() - opened.getTime()) / 60000 : null;
+    const closed = resolveClosedAt(trade) || new Date();
+    const durationMinutes = opened ? (closed.getTime() - opened.getTime()) / 60000 : null;
     return recommendTimeframe(durationMinutes, !!userProfile?.tinkoffToken);
   };
 
@@ -257,9 +260,12 @@ export default function Journal() {
     try {
       const openedAt = resolveOpenedAt(trade);
       if (!openedAt) throw new Error('Нет даты открытия сделки');
+      // Older Calculator trades were saved without instrumentType — guessing from the
+      // ticker code (same resolver the import uses) beats defaulting them all to
+      // 'stock', which made futures look up candles on the shares board and fail.
       const candles = await fetchDailyCandles({
         ticker: trade.ticker,
-        instrumentType: trade.instrumentType || 'stock',
+        instrumentType: trade.instrumentType || guessInstrumentType(trade.ticker),
         toDate: openedAt,
         tinkoffToken: userProfile?.tinkoffToken,
         timeframe,

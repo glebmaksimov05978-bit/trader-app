@@ -70,11 +70,14 @@ export default function Capital() {
       // Firestore rejects `undefined` field values outright — conditions without a
       // parameter (e.g. "цена выше EMA200") must not get `param: undefined`, or the
       // whole setDoc throws and the save silently fails.
-      return { ...s, conditions: [...s.conditions, { id, enabled: true, param: def?.defaultParam ?? null }] };
+      return { ...s, conditions: [...s.conditions, { id, enabled: true, param: def?.defaultParam ?? null, direction: 'both' }] };
     });
   };
   const setConditionParam = (id, param) => {
     setStrategy(s => ({ ...s, conditions: s.conditions.map(c => c.id === id ? { ...c, param } : c) }));
+  };
+  const setConditionDirection = (id, direction) => {
+    setStrategy(s => ({ ...s, conditions: s.conditions.map(c => c.id === id ? { ...c, direction } : c) }));
   };
 
   const saveStrategy = async () => {
@@ -403,6 +406,19 @@ export default function Capital() {
                           onChange={e => setConditionParam(def.id, parseFloat(e.target.value))}
                           style={{width:70, padding:'4px 8px', fontSize:13}} />
                       </div>
+                    )}
+                    {enabled && category === 'market' && (
+                      <select
+                        className="input"
+                        value={cond?.direction || 'both'}
+                        onChange={e => setConditionDirection(def.id, e.target.value)}
+                        title="Для сделок в какую сторону проверять это условие — противоположная сторона не считается проваленной, а просто пропускается"
+                        style={{width:'auto', padding:'4px 8px', fontSize:12, flexShrink:0}}
+                      >
+                        <option value="both">Лонг и шорт</option>
+                        <option value="long">Только лонг</option>
+                        <option value="short">Только шорт</option>
+                      </select>
                     )}
                   </div>
                 );

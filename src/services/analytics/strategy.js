@@ -10,6 +10,23 @@
 // needs isn't available yet (e.g. SMA/EMA200 on a freshly-listed ticker, or no plan
 // entered in the Calculator) — an honest "не хватает данных", not a silent fail.
 
+// Price-relative conditions compare against the trader's own planned entry price when
+// one exists (limit order in the Calculator) — comparing a limit-order plan against the
+// *current* price answers the wrong question entirely (real user report: "он смотрит не
+// ту цену по которой я хочу войти"). Falls back to the last close when there's no plan
+// (Journal snapshot, Radar, Dashboard widget).
+const refPrice = (ctx) => ctx.plan?.entryPrice ?? ctx.indicators?.close;
+
+// %B relative to the reference price: with a planned entry the stored percentB (which
+// was computed from the last close) is recomputed from the plan price against the same
+// band values, so the checklist judges the trader's actual intended entry.
+function bollingerPercentB(ctx, b) {
+  const price = ctx.plan?.entryPrice;
+  if (price == null) return b.percentB ?? null;
+  if (b.upper == null || b.lower == null || b.upper === b.lower) return b.percentB ?? null;
+  return (price - b.lower) / (b.upper - b.lower);
+}
+
 export const CONDITION_CATALOG = [
   // --- Market conditions: computed purely from the ticker, no plan needed -----------
   {
@@ -34,16 +51,22 @@ export const CONDITION_CATALOG = [
     id: 'price_above_ema200', category: 'market', label: 'Цена выше EMA200 (восходящий тренд)',
     evaluate: (ctx) => {
       const e = ctx.patterns?.emaLevels?.ema200;
-      if (!e) return { na: true };
-      return { passed: e.position === 'above', detail: `Цена ${e.position === 'above' ? 'выше' : 'ниже'} EMA200 на ${Math.abs(e.distancePct).toFixed(1)}%` };
+      const price = refPrice(ctx);
+      if (!e || e.value == null || price == null) return { na: true };
+      const above = price >= e.value;
+      const distPct = Math.abs(((price - e.value) / e.value) * 100);
+      return { passed: above, detail: `Цена ${above ? 'выше' : 'ниже'} EMA200 на ${distPct.toFixed(1)}%` };
     },
   },
   {
     id: 'price_below_ema200', category: 'market', label: 'Цена ниже EMA200 (нисходящий тренд)',
     evaluate: (ctx) => {
       const e = ctx.patterns?.emaLevels?.ema200;
-      if (!e) return { na: true };
-      return { passed: e.position === 'below', detail: `Цена ${e.position === 'above' ? 'выше' : 'ниже'} EMA200 на ${Math.abs(e.distancePct).toFixed(1)}%` };
+      const price = refPrice(ctx);
+      if (!e || e.value == null || price == null) return { na: true };
+      const above = price >= e.value;
+      const distPct = Math.abs(((price - e.value) / e.value) * 100);
+      return { passed: !above, detail: `Цена ${above ? 'выше' : 'ниже'} EMA200 на ${distPct.toFixed(1)}%` };
     },
   },
   {
@@ -78,7 +101,7 @@ export const CONDITION_CATALOG = [
     paramLabel: 'В пределах, %', defaultParam: 1,
     evaluate: (ctx, param) => {
       const levels = ctx.patterns?.supportResistance?.filter((l) => l.type === 'support');
-      const price = ctx.indicators?.close;
+      const price = refPrice(ctx);
       if (!levels?.length || price == null) return { na: true };
       const nearest = levels.reduce((best, l) => Math.abs(price - l.price) < Math.abs(price - best.price) ? l : best);
       const distPct = (Math.abs(price - nearest.price) / price) * 100;
@@ -90,7 +113,7 @@ export const CONDITION_CATALOG = [
     paramLabel: 'В пределах, %', defaultParam: 1,
     evaluate: (ctx, param) => {
       const levels = ctx.patterns?.supportResistance?.filter((l) => l.type === 'resistance');
-      const price = ctx.indicators?.close;
+      const price = refPrice(ctx);
       if (!levels?.length || price == null) return { na: true };
       const nearest = levels.reduce((best, l) => Math.abs(price - l.price) < Math.abs(price - best.price) ? l : best);
       const distPct = (Math.abs(price - nearest.price) / price) * 100;
@@ -98,21 +121,25 @@ export const CONDITION_CATALOG = [
     },
   },
   {
-    id: 'bollinger_lower', category: 'market', label: 'Цена у нижней полосы Боллинджера (%B ≤ X)',
-    paramLabel: '%B не выше', defaultParam: 0.1,
+    id: 'bollinger_lower', category: 'market', label: 'Цена у нижней полосы Боллинджера',
+    paramLabel: 'Позиция в полосах (0 = нижняя, 1 = верхняя) не выше', defaultParam: 0.1,
     evaluate: (ctx, param) => {
       const b = ctx.indicators?.bollinger;
       if (!b) return { na: true };
-      return { passed: b.percentB <= param, detail: `%B = ${b.percentB.toFixed(2)}` };
+      const pb = bollingerPercentB(ctx, b);
+      if (pb == null) return { na: true };
+      return { passed: pb <= param, detail: `Позиция цены в полосах: ${pb.toFixed(2)} (0 = нижняя, 1 = верхняя)` };
     },
   },
   {
-    id: 'bollinger_upper', category: 'market', label: 'Цена у верхней полосы Боллинджера (%B ≥ X)',
-    paramLabel: '%B не ниже', defaultParam: 0.9,
+    id: 'bollinger_upper', category: 'market', label: 'Цена у верхней полосы Боллинджера',
+    paramLabel: 'Позиция в полосах (0 = нижняя, 1 = верхняя) не ниже', defaultParam: 0.9,
     evaluate: (ctx, param) => {
       const b = ctx.indicators?.bollinger;
       if (!b) return { na: true };
-      return { passed: b.percentB >= param, detail: `%B = ${b.percentB.toFixed(2)}` };
+      const pb = bollingerPercentB(ctx, b);
+      if (pb == null) return { na: true };
+      return { passed: pb >= param, detail: `Позиция цены в полосах: ${pb.toFixed(2)} (0 = нижняя, 1 = верхняя)` };
     },
   },
   {
@@ -185,14 +212,29 @@ export function defaultStrategy() {
   return { name: 'Моя стратегия', conditions: [] };
 }
 
-// `strategy.conditions` = [{ id, enabled, param }] — only enabled ones count.
+// `strategy.conditions` = [{ id, enabled, param, direction }] — only enabled ones count.
+// `direction` ('long' | 'short' | 'both', default 'both') binds a condition to one side:
+// a trader who works both directions sets "RSI ниже 30" for longs and "RSI выше 70" for
+// shorts — without the binding, one of the two always reads as failed no matter how
+// good the setup is (real user report). A condition bound to the other side is excluded
+// from N/M (like na), not failed. When the trade's direction isn't known yet (no
+// stop-loss entered in the Calculator, or a Radar/Dashboard check with no plan at all),
+// direction-bound conditions still evaluate normally — better to show both sides than
+// to silently hide half the checklist.
 export function evaluateStrategy(strategy, ctx) {
   const active = (strategy?.conditions || []).filter((c) => c.enabled && CATALOG_BY_ID[c.id]);
   const results = active.map((c) => {
     const def = CATALOG_BY_ID[c.id];
     const param = c.param ?? def.defaultParam;
+    const condDirection = c.direction || 'both';
+    if (condDirection !== 'both' && ctx.direction && ctx.direction !== condDirection) {
+      return {
+        id: c.id, label: def.label, param, na: true, skippedByDirection: true,
+        detail: `Условие только для ${condDirection === 'long' ? 'лонга' : 'шорта'} — сделка в ${ctx.direction === 'long' ? 'лонг' : 'шорт'}`,
+      };
+    }
     const outcome = def.evaluate(ctx, param) || { na: true };
-    return { id: c.id, label: def.label, param, ...outcome };
+    return { id: c.id, label: def.label, param, direction: condDirection, ...outcome };
   });
   const evaluated = results.filter((r) => !r.na);
   const passed = evaluated.filter((r) => r.passed).length;

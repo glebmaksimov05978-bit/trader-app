@@ -55,6 +55,38 @@ export async function resolveFuturesSpecFromMoex(ticker) {
   }
 }
 
+// Human-readable identity of an instrument (full name + expiry for futures) from the
+// free MOEX securities lookup — works for stocks and futures, listed or expired. The
+// Calculator's MOEX source uses it to show the same "what exactly am I trading" badge
+// the Tinkoff source shows (real user report: MOEX mode felt blind without it).
+export async function fetchMoexSecurityInfo(ticker) {
+  try {
+    const resp = await fetch(`${ISS_BASE}/securities/${encodeURIComponent(ticker)}.json?iss.meta=off`);
+    if (!resp.ok) return null;
+    const json = await resp.json();
+    const cols = json.description?.columns || [];
+    const rows = json.description?.data || [];
+    if (!rows.length) return null;
+    const nameIdx = cols.indexOf('name');
+    const valueIdx = cols.indexOf('value');
+    const get = (key) => rows.find((r) => r[nameIdx] === key)?.[valueIdx] ?? null;
+    const type = get('TYPE');
+    // Perpetual futures carry a placeholder expiry of 2100-01-01 — showing
+    // "Экспирация: 01.01.2100" reads like a bug, so treat far-future dates as none.
+    const rawExpiry = get('LSTDELDATE') || get('LSTTRADE');
+    const expirationDate = rawExpiry && new Date(rawExpiry).getFullYear() < 2099 ? rawExpiry : null;
+    return {
+      ticker: get('SECID') || ticker,
+      name: get('CONTRACTNAME') || get('NAME') || get('SHORTNAME') || ticker,
+      shortName: get('SHORTNAME'),
+      expirationDate,
+      isShare: type ? !String(type).includes('futures') : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 // Full contract card (tick size, tick value, margin requirement, lot) for a ticker
 // that's currently traded — used by the Calculator's MOEX price source (no Tinkoff
 // token) so ГО/шаг цены don't have to be typed in by hand. Unlike

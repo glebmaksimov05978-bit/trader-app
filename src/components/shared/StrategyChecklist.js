@@ -33,7 +33,9 @@ export default function StrategyChecklist({ strategyName, result }) {
             <span style={{color: r.na ? 'var(--text-muted)' : r.passed ? 'var(--green)' : 'var(--red)', flexShrink:0}}>{r.na ? '➖' : r.passed ? '✅' : '❌'}</span>
             <div>
               <div style={{color:'var(--text-primary)'}}>{r.label}</div>
-              <div style={{color:'var(--text-muted)', fontSize:12}}>{r.na ? 'Нет данных — не учитывается в счётчике' : r.detail}</div>
+              <div style={{color:'var(--text-muted)', fontSize:12}}>
+                {r.skippedByDirection ? r.detail : r.na ? 'Нет данных — не учитывается в счётчике' : r.detail}
+              </div>
             </div>
           </div>
         ))}

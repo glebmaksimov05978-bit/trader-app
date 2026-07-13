@@ -8,7 +8,7 @@ import { fetchDailyCandles, availableTimeframes, DEFAULT_TIMEFRAME, TIMEFRAMES }
 import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { computeMarketContextAtEntry } from '../../services/analytics/marketContext';
-import { fetchActiveFutureCard } from '../../services/marketData/futuresSpecs';
+import { fetchActiveFutureCard, fetchMoexSecurityInfo } from '../../services/marketData/futuresSpecs';
 import { evaluateStrategy } from '../../services/analytics/strategy';
 import TechnicalAnalysisBlock, { PATTERN_LABELS } from '../shared/TechnicalAnalysisBlock';
 import StrategyChecklist from '../shared/StrategyChecklist';
@@ -47,19 +47,29 @@ function ResultRow({ label, value, color, large }) {
   );
 }
 
+// The Calculator unmounts on every route change — without a draft the trader loses a
+// half-filled trade plan just by glancing at the Journal (real user report). Session
+// storage (not local) is deliberate: a draft should survive navigation, not a browser
+// restart days later with stale prices.
+const CALC_DRAFT_KEY = 'traderpro-calculator-draft';
+function loadCalcDraft() {
+  try { return JSON.parse(sessionStorage.getItem(CALC_DRAFT_KEY)) || null; } catch { return null; }
+}
+
 export default function Calculator() {
   const { user, userProfile } = useAuth();
-  const [instrumentType, setInstrumentType] = useState('future');
-  const [priceSource, setPriceSource] = useState('tinkoff'); // 'tinkoff' | 'moex'
-  const [orderType, setOrderType] = useState('market'); // 'market' | 'limit'
-  const [manualContracts, setManualContracts] = useState('');
+  const draft = useRef(loadCalcDraft()).current;
+  const [instrumentType, setInstrumentType] = useState(draft?.instrumentType || 'future');
+  const [priceSource, setPriceSource] = useState(draft?.priceSource || 'tinkoff'); // 'tinkoff' | 'moex'
+  const [orderType, setOrderType] = useState(draft?.orderType || 'market'); // 'market' | 'limit'
+  const [manualContracts, setManualContracts] = useState(draft?.manualContracts || '');
   const [journalAnim, setJournalAnim] = useState(false);
   const [showJournalModal, setShowJournalModal] = useState(false);
   const [showTinkoffModal, setShowTinkoffModal] = useState(false);
   const [tinkoffCopied, setTinkoffCopied] = useState('');
   const [journalExtra, setJournalExtra] = useState({ setup: '', emotion: '', notes: '' });
   const [savingTrade, setSavingTrade] = useState(false);
-  const [forcedDir, setForcedDir] = useState(null);
+  const [forcedDir, setForcedDir] = useState(draft?.forcedDir || null);
   const [openedAt, setOpenedAt] = useState(() => toLocalDatetimeInput(new Date()));
 
   const [form, setForm] = useState({
@@ -74,7 +84,14 @@ export default function Calculator() {
     minStepAmount: '',
     initialMargin: '',
     commissionRate: '0.0006',
+    ...(draft?.form || {}),
   });
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(CALC_DRAFT_KEY, JSON.stringify({ form, instrumentType, priceSource, orderType, manualContracts, forcedDir }));
+    } catch { /* private mode/quota — черновик просто не сохранится */ }
+  }, [form, instrumentType, priceSource, orderType, manualContracts, forcedDir]);
   const [result, setResult] = useState(null);
   const [instrumentInfo, setInstrumentInfo] = useState(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
@@ -167,21 +184,6 @@ export default function Calculator() {
   // plan numbers change — plan conditions (R:R, risk %) come from the Calculator's own
   // form, market conditions from the fetched candles. Neither half computes anything new
   // here; this just feeds both into the same evaluator used everywhere else.
-  const strategyResult = useMemo(() => {
-    if (!userProfile?.strategy?.conditions?.length) return null;
-    if (!taState.data) return null;
-    return evaluateStrategy(userProfile.strategy, {
-      indicators: taState.data.indicators,
-      patterns: taState.data.patterns,
-      marketContext: taState.data.marketContext,
-      plan: {
-        rr: displayResult?.rr ?? null,
-        riskPercent: parseFloat(form.riskPercent) || null,
-        marginUsagePercent: displayResult?.marginUsagePercent ?? null,
-      },
-    });
-  }, [userProfile?.strategy, taState.data, displayResult, form.riskPercent]);
-
   // Умное направление
   const activeDirection = (() => {
     const sl = parseFloat(form.stopLoss);
@@ -190,22 +192,51 @@ export default function Calculator() {
     return forcedDir;
   })();
 
+  const strategyResult = useMemo(() => {
+    if (!userProfile?.strategy?.conditions?.length) return null;
+    if (!taState.data) return null;
+    return evaluateStrategy(userProfile.strategy, {
+      indicators: taState.data.indicators,
+      patterns: taState.data.patterns,
+      marketContext: taState.data.marketContext,
+      // The trader's planned entry (limit price) and direction — price-relative
+      // conditions judge the plan, not the current quote, and direction-bound
+      // conditions skip the opposite side. See evaluateStrategy.
+      direction: activeDirection,
+      plan: {
+        rr: displayResult?.rr ?? null,
+        riskPercent: parseFloat(form.riskPercent) || null,
+        marginUsagePercent: displayResult?.marginUsagePercent ?? null,
+        entryPrice: parseFloat(form.entryPrice) || null,
+      },
+    });
+  }, [userProfile?.strategy, taState.data, displayResult, form.riskPercent, form.entryPrice, activeDirection]);
+
   const rrColor = !displayResult ? '' : displayResult.rr >= 2 ? 'var(--green)' : displayResult.rr >= 1 ? 'var(--gold)' : 'var(--red)';
+
+  // Which ticker the current form numbers (SL/TP, contract specs) belong to — reloading
+  // the SAME ticker to refresh its price must not wipe the trader's stop/take, but
+  // loading a DIFFERENT one must (stale SL from the previous instrument is a footgun,
+  // real user report).
+  const loadedTickerRef = useRef(null);
 
   const loadInstrument = useCallback(async () => {
     if (!form.ticker) { toast.error('Введите тикер'); return; }
+    const ticker = form.ticker.toUpperCase();
+    const isNewTicker = loadedTickerRef.current && loadedTickerRef.current !== ticker;
 
     setLoadingPrice(true);
     try {
       if (priceSource === 'moex') {
-        // MOEX — цена, а для фьючерсов ещё и ГО/шаг цены/лот с бесплатного ISS API,
-        // раз инструмент сейчас торгуется (иначе полей нет — просим ввести вручную,
-        // как и раньше).
-        const price = await getMoexPrice(form.ticker.toUpperCase(), instrumentType);
+        // MOEX — цена, имя/экспирация контракта, а для фьючерсов ещё и ГО/шаг цены/лот
+        // с бесплатного ISS API (если контракт сейчас торгуется — иначе вручную).
+        const price = await getMoexPrice(ticker, instrumentType);
         if (!price) { toast.error('Инструмент не найден на MOEX'); return; }
+        fetchMoexSecurityInfo(ticker).then((info) => { if (info) setInstrumentInfo(info); });
         if (orderType === 'market') set('entryPrice', String(price));
+        if (isNewTicker) setForm(f => ({ ...f, stopLoss: '', takeProfit: '' }));
         if (instrumentType === 'future') {
-          const card = await fetchActiveFutureCard(form.ticker.toUpperCase());
+          const card = await fetchActiveFutureCard(ticker);
           if (card) {
             const fmtNum = (n) => n ? String(n).replace(',', '.') : '';
             setForm(f => ({
@@ -215,20 +246,21 @@ export default function Calculator() {
               minStepAmount: fmtNum(card.minPriceIncrementAmount) || '',
               initialMargin: fmtNum(card.initialMargin) || '',
             }));
-            toast.success(`${form.ticker.toUpperCase()}: ${price} ₽, ГО и шаг цены подтянуты с MOEX (задержка 15 мин)`);
+            toast.success(`${ticker}: ${price} ₽, ГО и шаг цены подтянуты с MOEX (задержка 15 мин)`);
           } else {
-            toast.success(`${form.ticker.toUpperCase()}: ${price} ₽ (MOEX, задержка 15 мин). ГО/шаг цены не найдены — введите вручную`);
+            toast.success(`${ticker}: ${price} ₽ (MOEX, задержка 15 мин). ГО/шаг цены не найдены — введите вручную`);
           }
         } else {
-          toast.success(`${form.ticker.toUpperCase()}: ${price} ₽ (MOEX, задержка 15 мин)`);
+          toast.success(`${ticker}: ${price} ₽ (MOEX, задержка 15 мин)`);
         }
+        loadedTickerRef.current = ticker;
       } else {
         // Тинькофф
         if (!tapi) { toast.error('Введите API-токен в настройках'); return; }
         const raw = instrumentType === 'stock'
-          ? await tapi.getShareByTicker(form.ticker.toUpperCase())
-          : await tapi.getFutureByTicker(form.ticker.toUpperCase());
-        if (!raw) { toast.error(`Инструмент ${form.ticker.toUpperCase()} не найден`); return; }
+          ? await tapi.getShareByTicker(ticker)
+          : await tapi.getFutureByTicker(ticker);
+        if (!raw) { toast.error(`Инструмент ${ticker} не найден`); return; }
         const info = instrumentType === 'stock' ? parseShareInfo(raw) : parseFutureInfo(raw);
         setInstrumentInfo(info);
         const price = await tapi.getLastPrice(info.figi);
@@ -236,12 +268,15 @@ export default function Calculator() {
         setForm(f => ({
           ...f,
           entryPrice: (orderType === 'market' && price) ? String(price) : f.entryPrice,
+          stopLoss: isNewTicker ? '' : f.stopLoss,
+          takeProfit: isNewTicker ? '' : f.takeProfit,
           lot: String(info.lot || 1),
           minStep: fmtNum(info.minPriceIncrement) || '1',
           minStepAmount: fmtNum(info.minPriceIncrementAmount) || '',
           initialMargin: fmtNum(info.initialMargin) || '',
         }));
         if (price) toast.success(`${info.ticker}: ${price} ₽`);
+        loadedTickerRef.current = ticker;
       }
     } catch (e) {
       toast.error('Ошибка: ' + e.message);
@@ -249,6 +284,28 @@ export default function Calculator() {
       setLoadingPrice(false);
     }
   }, [tapi, form.ticker, instrumentType, priceSource, orderType]);
+
+  // Switching the order type to "по рынку" implies "I want the market's price now" —
+  // before this, the stale limit price silently stayed in the field until the trader
+  // re-clicked «Загрузить» (real user report).
+  const prevOrderTypeRef = useRef(orderType);
+  useEffect(() => {
+    const prev = prevOrderTypeRef.current;
+    prevOrderTypeRef.current = orderType;
+    if (prev === orderType || orderType !== 'market') return;
+    if (!loadedTickerRef.current || loadedTickerRef.current !== (form.ticker || '').toUpperCase()) return;
+    (async () => {
+      try {
+        if (priceSource === 'moex') {
+          const price = await getMoexPrice(loadedTickerRef.current, instrumentType);
+          if (price) set('entryPrice', String(price));
+        } else if (tapi && instrumentInfo?.figi) {
+          const price = await tapi.getLastPrice(instrumentInfo.figi);
+          if (price) set('entryPrice', String(price));
+        }
+      } catch { /* цену обновим при следующем «Загрузить» */ }
+    })();
+  }, [orderType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Stale analysis for a different ticker (or timeframe) would be misleading — clear it
   // as soon as the trader edits the ticker field or switches timeframe, so they never
@@ -364,6 +421,14 @@ export default function Calculator() {
         takeProfit: parseFloat(form.takeProfit) || null,
         volume: effectiveContracts,
         lot: parseFloat(form.lot) || 1,
+        // Without instrumentType/isFuture the Journal treats every Calculator trade as a
+        // stock — futures then look up candles on the shares board and show "нет
+        // исторических свечей" (real user report). Contract specs ride along so closing
+        // the trade later can convert points to rubles without re-fetching them.
+        instrumentType,
+        isFuture: instrumentType === 'future',
+        minStep: parseFloat(form.minStep) || null,
+        minStepAmount: parseFloat(form.minStepAmount) || null,
         commission: displayResult.commission,
         depositSize: deposit,
         depositPercent: deposit > 0 ? Math.round((displayResult.riskAmount / deposit) * 100 * 10) / 10 : 0,
@@ -374,6 +439,9 @@ export default function Calculator() {
         notes: journalExtra.notes,
         source: 'calculator',
         orderType,
+        // The timeframe the trader was actually analysing on when they opened the trade —
+        // the Journal's auto-timeframe uses this over its duration-based guess.
+        entryTimeframe: taTimeframe || null,
       });
       toast.success('✅ Сделка открыта в журнале');
       setShowJournalModal(false);
