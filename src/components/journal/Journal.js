@@ -552,8 +552,12 @@ export default function Journal() {
                       <span className={`badge ${statusCls}`}>{statusLabel}</span>
                     </td>
                     <td>
-                      <div className="flex gap-2" style={{alignItems:'center'}}>
-                        {/* Кнопка "Закрыть сделку" — для открытых и частично закрытых */}
+                      {/* Stacked, not inline — an open trade's extra "Закрыть" button used to
+                          push ✏️/🗑 past the visible table width, and the horizontal-scroll
+                          affordance wasn't obvious, so the trash icon looked cut off (real
+                          user report). Fixed width instead of squeezing three controls onto
+                          one line. */}
+                      <div className="flex flex-col gap-1" style={{alignItems:'flex-start', minWidth:70}}>
                         {(trade.status === 'open' || trade.status === 'partial') && (
                           <button
                             className="btn btn-sm"
@@ -575,8 +579,10 @@ export default function Journal() {
                             ✅ Закрыть
                           </button>
                         )}
-                        <button className="btn btn-ghost btn-sm" onClick={() => openEdit(trade)} title="Редактировать">✏️</button>
-                        <button className="btn btn-ghost btn-sm" style={{color:'var(--red)'}} onClick={() => handleDelete(trade.id)} title="Удалить">🗑</button>
+                        <div className="flex gap-2">
+                          <button className="btn btn-ghost btn-sm" onClick={() => openEdit(trade)} title="Редактировать">✏️</button>
+                          <button className="btn btn-ghost btn-sm" style={{color:'var(--red)'}} onClick={() => handleDelete(trade.id)} title="Удалить">🗑</button>
+                        </div>
                       </div>
                     </td>
                   </tr>

@@ -25,7 +25,7 @@ const EMA_PERIODS = [9, 100, 200];
 // exist), but showing every 30%-match double top buries the handful that are actually
 // worth looking at. Filtered out of the default candidate list, not deleted from the
 // underlying detection — a future "show everything" toggle can still surface them.
-export const MIN_DISPLAY_CONFIDENCE = 40;
+export const MIN_DISPLAY_CONFIDENCE = 50;
 
 // Swing-based figures (double top/bottom, H&S, flags, triangles, wedges) need enough
 // bars for a swing point to mean anything — below M15 the zig-zag is mostly spread/bot

@@ -18,7 +18,7 @@ export const TIMEFRAMES = {
   M5:  { minutes: 5,    label: 'М5',  requiresToken: true,  moexInterval: null, tinkoffInterval: 'CANDLE_INTERVAL_5_MIN',  lookbackDays: 5 },
   M10: { minutes: 10,   label: 'М10', requiresToken: false, moexInterval: 10,   tinkoffInterval: null,                     lookbackDays: 9 },
   M15: { minutes: 15,   label: 'М15', requiresToken: true,  moexInterval: null, tinkoffInterval: 'CANDLE_INTERVAL_15_MIN', lookbackDays: 12 },
-  H1:  { minutes: 60,   label: 'Н1',  requiresToken: false, moexInterval: 60,   tinkoffInterval: 'CANDLE_INTERVAL_HOUR',   lookbackDays: 45 },
+  H1:  { minutes: 60,   label: 'Ч1',  requiresToken: false, moexInterval: 60,   tinkoffInterval: 'CANDLE_INTERVAL_HOUR',   lookbackDays: 45 },
   D1:  { minutes: 1440, label: 'Д1',  requiresToken: false, moexInterval: 24,   tinkoffInterval: 'CANDLE_INTERVAL_DAY',    lookbackDays: 320 },
 };
 

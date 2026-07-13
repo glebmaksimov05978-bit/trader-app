@@ -3,9 +3,37 @@
 // Shared by the Journal (trade "as of entry" frozen snapshot, Radar "as of now" live
 // snapshot) and the Calculator's live pre-trade panel — same indicators/patterns shape
 // everywhere, only `atDate` and caching strategy differ per caller.
-import React from 'react';
+import React, { useState } from 'react';
 import { formatNumber } from '../../utils/calculator';
 import RangeGauge from './RangeGauge';
+
+// Click-to-reveal explainer for indicator jargon (RSI, %B, Bollinger, ...) — a trader
+// asked for exactly this instead of us trying to reword formulas into plain language
+// every time: keep the label short, put the "what does this actually mean" text behind
+// a small ⓘ. Click toggles (not hover) so it works on touch too.
+export function InfoTip({ text }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span style={{position:'relative', display:'inline-flex'}}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        title="Пояснение"
+        style={{
+          background:'var(--bg-surface-3)', border:'none', borderRadius:'50%', width:14, height:14,
+          fontSize:10, lineHeight:'14px', color:'var(--text-muted)', cursor:'pointer', padding:0, flexShrink:0,
+        }}
+      >ⓘ</button>
+      {open && (
+        <span style={{
+          position:'absolute', top:18, left:0, zIndex:10, width:240, fontSize:11, fontWeight:400,
+          color:'var(--text-secondary)', background:'var(--bg-surface-2)', border:'1px solid var(--border-subtle)',
+          borderRadius:8, padding:'8px 10px', boxShadow:'0 4px 12px rgba(0,0,0,0.2)',
+        }}>{text}</span>
+      )}
+    </span>
+  );
+}
 
 export const PATTERN_LABELS = {
   double_top: 'Двойная вершина',
@@ -32,7 +60,7 @@ export const PATTERN_LABELS = {
   impulse_down_5wave: '5-волновая структура вниз (упрощённо)',
 };
 
-export const STATUS_LABELS = { confirmed: 'подтверждена', forming: 'формируется', invalidated: 'отменилась' };
+export const STATUS_LABELS = { confirmed: 'сформирована', forming: 'формируется', invalidated: 'отменилась' };
 
 // Color-by-confidence instead of a separate icon system — the number already carries
 // the meaning, no need for extra visual clutter next to it (agreed with the trader,
@@ -44,35 +72,14 @@ function confidenceColor(pct) {
   return 'var(--red)';
 }
 
-// A level (S/R or Fibonacci) with optional "use this price" buttons — only rendered
-// when the caller passes onUseAsStop/onUseAsTake, i.e. only in the Calculator, where
-// stop/take fields actually exist. Journal and Radar don't pass these, so the buttons
-// simply don't appear there. The trader can still always type the number by hand
-// afterward — this only prefills, it never locks the field.
-function LevelBadge({ price, children, className, onUseAsStop, onUseAsTake }) {
-  if (!onUseAsStop && !onUseAsTake) {
-    return <span className={className} style={{fontSize:11}}>{children}</span>;
-  }
-  return (
-    <span className={className} style={{fontSize:11, display:'inline-flex', alignItems:'center', gap:4, paddingRight:4}}>
-      {children}
-      {onUseAsStop && (
-        <button onClick={() => onUseAsStop(price)} title="Подставить в стоп-лосс"
-          style={{background:'rgba(239,68,68,0.15)', border:'none', borderRadius:5, color:'var(--red)', fontSize:10, padding:'1px 5px', cursor:'pointer', fontFamily:'inherit'}}>
-          →SL
-        </button>
-      )}
-      {onUseAsTake && (
-        <button onClick={() => onUseAsTake(price)} title="Подставить в тейк-профит"
-          style={{background:'rgba(16,185,129,0.15)', border:'none', borderRadius:5, color:'var(--green)', fontSize:10, padding:'1px 5px', cursor:'pointer', fontFamily:'inherit'}}>
-          →TP
-        </button>
-      )}
-    </span>
-  );
+// Used to also render →SL/→TP quick-fill buttons in the Calculator — removed (real
+// user report: too many small buttons on an already dense panel, hard on the eyes).
+// The trader still types stop/take by hand; this level list is read-only everywhere now.
+function LevelBadge({ price, children, className }) {
+  return <span className={className} style={{fontSize:11}}>{children}</span>;
 }
 
-export default function TechnicalAnalysisBlock({ state, onRefresh, title, onUseAsStop, onUseAsTake }) {
+export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
   return (
     <>
       <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:8}}>
@@ -94,14 +101,22 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title, onUseA
         return (
           <>
             <div className="grid-4" style={{gap:8, maxWidth:640, marginBottom:14}}>
-              <div className="stat-row"><span className="stat-row-label">RSI (14)</span>
+              <div className="stat-row"><span className="stat-row-label" style={{display:'inline-flex', alignItems:'center', gap:4}}>RSI
+                <InfoTip text="Индекс относительной силы (0-100). Ниже 30 — актив перепродан (упал сильно и быстро), выше 70 — перекуплен (вырос сильно и быстро). Не сигнал сам по себе, а одна из подсказок для решения." /></span>
                 <span className="stat-row-value">{indicators?.rsi14 != null ? formatNumber(indicators.rsi14, 1) : 'нет данных'}</span></div>
-              <div className="stat-row"><span className="stat-row-label">MACD гистограмма</span>
+              <div className="stat-row"><span className="stat-row-label" style={{display:'inline-flex', alignItems:'center', gap:4}}>MACD
+                <InfoTip text="Разница между двумя скользящими средними. Положительное значение — импульс вверх, отрицательное — вниз. Чем дальше от нуля, тем сильнее импульс." /></span>
                 <span className="stat-row-value">{indicators?.macdHistogram != null ? formatNumber(indicators.macdHistogram, 2) : 'нет данных'}</span></div>
               <div className="stat-row"><span className="stat-row-label">До SMA200</span>
                 <span className="stat-row-value">{indicators?.sma200Distance != null ? `${indicators.sma200Distance >= 0 ? '+' : ''}${formatNumber(indicators.sma200Distance, 1)}%` : 'нет данных (мало истории)'}</span></div>
-              <div className="stat-row"><span className="stat-row-label">Объём к среднему</span>
-                <span className="stat-row-value">{indicators?.volumeRatio != null ? `${formatNumber(indicators.volumeRatio, 2)}×` : 'нет данных'}</span></div>
+              <div className="stat-row"><span className="stat-row-label">Объём торгов</span>
+                <span className="stat-row-value">
+                  {indicators?.volumeRatio != null
+                    ? (indicators.volumeRatio >= 1
+                      ? `в ${formatNumber(indicators.volumeRatio, 1)} раза выше обычного`
+                      : `на ${Math.round((1 - indicators.volumeRatio) * 100)}% ниже обычного`)
+                    : 'нет данных'}
+                </span></div>
             </div>
 
             {marketContext && (marketContext.trend || marketContext.volatility) && (
@@ -136,17 +151,18 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title, onUseA
 
             {indicators?.bollinger && (
               <>
-                <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:6}}>
-                  Полосы Боллинджера (20, 2σ) — цена {indicators.bollinger.position === 'above_upper' ? 'выше верхней полосы' : indicators.bollinger.position === 'below_lower' ? 'ниже нижней полосы' : 'внутри полос'} (%B = {formatNumber(indicators.bollinger.percentB, 2)})
+                <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:6, display:'flex', alignItems:'center', gap:6}}>
+                  Полосы Боллинджера — цена {indicators.bollinger.position === 'above_upper' ? 'выше верхней полосы' : indicators.bollinger.position === 'below_lower' ? 'ниже нижней полосы' : 'внутри полос'}
+                  <InfoTip text="Коридор обычного разброса цены. Верхняя и нижняя линии — на 2 стандартных отклонения от средней. Цена у верхней границы — рынок разогнан вверх сильнее обычного; у нижней — вниз." />
                 </div>
                 <div style={{display:'flex', flexWrap:'wrap', gap:8, marginBottom:14}}>
-                  <LevelBadge price={indicators.bollinger.upper} onUseAsStop={onUseAsStop} onUseAsTake={onUseAsTake} className="badge badge-red">
+                  <LevelBadge price={indicators.bollinger.upper} className="badge badge-red">
                     ▲ верхняя {formatNumber(indicators.bollinger.upper, 2)}
                   </LevelBadge>
-                  <LevelBadge price={indicators.bollinger.mid} onUseAsStop={onUseAsStop} onUseAsTake={onUseAsTake} className="badge">
-                    ─ средняя (SMA20) {formatNumber(indicators.bollinger.mid, 2)}
+                  <LevelBadge price={indicators.bollinger.mid} className="badge">
+                    ─ средняя {formatNumber(indicators.bollinger.mid, 2)}
                   </LevelBadge>
-                  <LevelBadge price={indicators.bollinger.lower} onUseAsStop={onUseAsStop} onUseAsTake={onUseAsTake} className="badge badge-green">
+                  <LevelBadge price={indicators.bollinger.lower} className="badge badge-green">
                     ▼ нижняя {formatNumber(indicators.bollinger.lower, 2)}
                   </LevelBadge>
                 </div>
@@ -163,7 +179,7 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title, onUseA
                       <div className="stat-row" key={p}>
                         <span className="stat-row-label">EMA{p}</span>
                         <span className="stat-row-value" style={{color: e ? (e.position === 'above' ? 'var(--green)' : 'var(--red)') : undefined}}>
-                          {e ? `${e.position === 'above' ? 'выше' : 'ниже'} на ${Math.abs(e.distancePct).toFixed(1)}% (${e.slope === 'rising' ? '↑' : e.slope === 'falling' ? '↓' : '→'})` : 'нет данных'}
+                          {e ? `Цена ${e.position === 'above' ? 'выше' : 'ниже'} EMA${p} на ${Math.abs(e.distancePct).toFixed(1)}% (${e.slope === 'rising' ? '↑ растёт' : e.slope === 'falling' ? '↓ падает' : '→ плоская'})` : 'нет данных'}
                         </span>
                       </div>
                     );
@@ -172,12 +188,14 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title, onUseA
 
                 {patterns.supportResistance?.length > 0 && (
                   <>
-                    <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:6}}>Уровни поддержки/сопротивления (по свингам)</div>
+                    <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:6}}>
+                      Уровни поддержки/сопротивления (по свингам) — 🔴 сопротивление (цена упиралась сверху) · 🟢 поддержка (цена отталкивалась снизу)
+                    </div>
                     <div style={{display:'flex', flexWrap:'wrap', gap:8, marginBottom:14}}>
                       {patterns.supportResistance.map((lvl, i) => (
-                        <LevelBadge key={i} price={lvl.price} onUseAsStop={onUseAsStop} onUseAsTake={onUseAsTake}
+                        <LevelBadge key={i} price={lvl.price}
                           className={`badge ${lvl.type === 'resistance' ? 'badge-red' : 'badge-green'}`}>
-                          {lvl.type === 'resistance' ? '▲' : '▼'} {formatNumber(lvl.price, 2)} ({lvl.touchCount} каc.)
+                          {lvl.type === 'resistance' ? '🔴' : '🟢'} {formatNumber(lvl.price, 2)} ({lvl.touchCount} каc.)
                         </LevelBadge>
                       ))}
                     </div>
@@ -191,7 +209,7 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title, onUseA
                     </div>
                     <div style={{display:'flex', flexWrap:'wrap', gap:8, marginBottom:6}}>
                       {patterns.fibonacci.levels.map((lvl, i) => (
-                        <LevelBadge key={i} price={lvl.price} onUseAsStop={onUseAsStop} onUseAsTake={onUseAsTake}
+                        <LevelBadge key={i} price={lvl.price}
                           className={`badge ${lvl.isNearest ? 'badge-gold' : ''}`}>
                           {(lvl.ratio * 100).toFixed(1)}% — {formatNumber(lvl.price, 2)}{lvl.isNearest ? ' ← цена здесь' : ''}
                         </LevelBadge>

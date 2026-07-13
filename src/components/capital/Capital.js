@@ -396,7 +396,14 @@ export default function Capital() {
                   }}>
                     <label style={{display:'flex', alignItems:'center', gap:10, cursor:'pointer', flex:1}}>
                       <input type="checkbox" checked={enabled} onChange={() => toggleCondition(def.id)} />
-                      <span style={{fontSize:13, color: enabled ? 'var(--text-primary)' : 'var(--text-secondary)'}}>{def.label}</span>
+                      <span style={{fontSize:13, color: enabled ? 'var(--text-primary)' : 'var(--text-secondary)'}}>
+                        {def.label}
+                        {def.impliedDirection && (
+                          <span className="text-xs text-muted" style={{marginLeft:6}}>
+                            ({def.impliedDirection === 'long' ? 'только лонг' : 'только шорт'})
+                          </span>
+                        )}
+                      </span>
                     </label>
                     {enabled && def.paramLabel && (
                       <div style={{display:'flex', alignItems:'center', gap:6, flexShrink:0}}>
@@ -407,7 +414,12 @@ export default function Capital() {
                           style={{width:70, padding:'4px 8px', fontSize:13}} />
                       </div>
                     )}
-                    {enabled && category === 'market' && (
+                    {/* Only the genuinely ambiguous conditions get a manual selector —
+                        RSI/MACD/EMA200 have a hardcoded impliedDirection above instead
+                        (no legitimate use trades them the other way round), while
+                        support/resistance and Bollinger-band conditions really do split
+                        by trading style (reversal vs breakout), so those stay a choice. */}
+                    {enabled && category === 'market' && !def.impliedDirection && (
                       <select
                         className="input"
                         value={cond?.direction || 'both'}

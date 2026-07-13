@@ -29,9 +29,19 @@ function bollingerPercentB(ctx, b) {
 
 export const CONDITION_CATALOG = [
   // --- Market conditions: computed purely from the ticker, no plan needed -----------
+  //
+  // `impliedDirection` hardcodes long/short for conditions where the trading convention
+  // is essentially universal — oversold RSI is a long signal, overbought is short, same
+  // for MACD momentum and price-vs-EMA200 trend. A trader who works both directions no
+  // longer has to set this by hand and no selector clutters the builder for these (real
+  // user feedback: "лучше... чтобы они понимали"). Conditions left WITHOUT one
+  // (near_support/near_resistance, the two Bollinger conditions below) genuinely split by
+  // trading style — a reversal trader buys support/the lower band, a breakout trader
+  // buys through resistance/the upper band expecting continuation — so those keep the
+  // manual "лонг/шорт/оба" selector in Capital.js instead of a hardcoded guess.
   {
     id: 'rsi_below', category: 'market', label: 'RSI ниже X (перепроданность)',
-    paramLabel: 'RSI ниже', defaultParam: 35,
+    paramLabel: 'RSI ниже', defaultParam: 35, impliedDirection: 'long',
     evaluate: (ctx, param) => {
       const v = ctx.indicators?.rsi14;
       if (v == null) return { na: true };
@@ -40,7 +50,7 @@ export const CONDITION_CATALOG = [
   },
   {
     id: 'rsi_above', category: 'market', label: 'RSI выше X (перекупленность)',
-    paramLabel: 'RSI выше', defaultParam: 65,
+    paramLabel: 'RSI выше', defaultParam: 65, impliedDirection: 'short',
     evaluate: (ctx, param) => {
       const v = ctx.indicators?.rsi14;
       if (v == null) return { na: true };
@@ -49,6 +59,7 @@ export const CONDITION_CATALOG = [
   },
   {
     id: 'price_above_ema200', category: 'market', label: 'Цена выше EMA200 (восходящий тренд)',
+    impliedDirection: 'long',
     evaluate: (ctx) => {
       const e = ctx.patterns?.emaLevels?.ema200;
       const price = refPrice(ctx);
@@ -60,6 +71,7 @@ export const CONDITION_CATALOG = [
   },
   {
     id: 'price_below_ema200', category: 'market', label: 'Цена ниже EMA200 (нисходящий тренд)',
+    impliedDirection: 'short',
     evaluate: (ctx) => {
       const e = ctx.patterns?.emaLevels?.ema200;
       const price = refPrice(ctx);
@@ -71,6 +83,7 @@ export const CONDITION_CATALOG = [
   },
   {
     id: 'macd_positive', category: 'market', label: 'MACD-гистограмма положительная',
+    impliedDirection: 'long',
     evaluate: (ctx) => {
       const v = ctx.indicators?.macdHistogram;
       if (v == null) return { na: true };
@@ -79,6 +92,7 @@ export const CONDITION_CATALOG = [
   },
   {
     id: 'macd_negative', category: 'market', label: 'MACD-гистограмма отрицательная',
+    impliedDirection: 'short',
     evaluate: (ctx) => {
       const v = ctx.indicators?.macdHistogram;
       if (v == null) return { na: true };
@@ -213,20 +227,20 @@ export function defaultStrategy() {
 }
 
 // `strategy.conditions` = [{ id, enabled, param, direction }] — only enabled ones count.
-// `direction` ('long' | 'short' | 'both', default 'both') binds a condition to one side:
-// a trader who works both directions sets "RSI ниже 30" for longs and "RSI выше 70" for
-// shorts — without the binding, one of the two always reads as failed no matter how
-// good the setup is (real user report). A condition bound to the other side is excluded
-// from N/M (like na), not failed. When the trade's direction isn't known yet (no
-// stop-loss entered in the Calculator, or a Radar/Dashboard check with no plan at all),
-// direction-bound conditions still evaluate normally — better to show both sides than
-// to silently hide half the checklist.
+// Direction binding decides which side of a trade a condition applies to. Some
+// conditions (see `impliedDirection` in the catalog) have it hardcoded — the trader
+// can't set those, the catalog's own value always wins. The rest default to
+// `direction` ('long' | 'short' | 'both') the trader picked in Capital.js. A condition
+// bound to the other side is excluded from N/M (like na), not failed. When the trade's
+// direction isn't known yet (no stop-loss entered in the Calculator, or a Radar/
+// Dashboard check with no plan at all), direction-bound conditions still evaluate
+// normally — better to show both sides than to silently hide half the checklist.
 export function evaluateStrategy(strategy, ctx) {
   const active = (strategy?.conditions || []).filter((c) => c.enabled && CATALOG_BY_ID[c.id]);
   const results = active.map((c) => {
     const def = CATALOG_BY_ID[c.id];
     const param = c.param ?? def.defaultParam;
-    const condDirection = c.direction || 'both';
+    const condDirection = def.impliedDirection || c.direction || 'both';
     if (condDirection !== 'both' && ctx.direction && ctx.direction !== condDirection) {
       return {
         id: c.id, label: def.label, param, na: true, skippedByDirection: true,

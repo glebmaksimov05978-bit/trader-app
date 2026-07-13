@@ -309,12 +309,24 @@ export default function Calculator() {
 
   // Stale analysis for a different ticker (or timeframe) would be misleading — clear it
   // as soon as the trader edits the ticker field or switches timeframe, so they never
-  // see SBER's daily figures while looking at GAZP on M15.
+  // see SBER's daily figures while looking at GAZP on M15. Closing the panel too (not
+  // just wiping its data) matters: leaving `taOpen` true with `taState.data` null used
+  // to render an empty card with nothing in it — a blank patch of screen the trader
+  // couldn't explain (real user report).
   useEffect(() => {
     setTaState({ loading: false, data: null, error: null });
     setTaLive(false);
+    setTaOpen(false);
     formingKeysRef.current = new Set();
   }, [form.ticker, instrumentType, taTimeframe]);
+
+  // Scrolls the analysis panel into view the moment it opens — before this, clicking
+  // «Технический анализ» with the panel below the fold gave no visible feedback at all,
+  // so a trader who couldn't see it assumed the click did nothing (real user report).
+  const taPanelRef = useRef(null);
+  useEffect(() => {
+    if (taOpen) taPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [taOpen]);
 
   // If the trader loses their token, or a timeframe becomes unavailable for some other
   // reason, don't leave the selector pointed at a now-invalid choice.
@@ -523,13 +535,12 @@ export default function Calculator() {
           <button key={val}
             className={val === priceSource ? 'btn btn-secondary' : 'btn btn-ghost'}
             style={{fontSize:13, border: val === priceSource ? '1px solid var(--accent-primary)' : undefined, color: val === priceSource ? 'var(--accent-primary)' : undefined}}
-            onClick={() => {
-              setPriceSource(val);
-              if (val === 'moex') {
-                setOrderType('limit');
-                set('entryPrice', '');
-              }
-            }}
+            // Switching source used to wipe the entry price and force a limit order —
+            // meant to avoid a stale Tinkoff quote bleeding into a MOEX calc, but it
+            // broke the whole plan the trader had just built (real user report: "расчёт
+            // слетает"). Just switch the source; «Загрузить» already refreshes the price
+            // from wherever's now selected, same as changing the ticker does.
+            onClick={() => setPriceSource(val)}
           >{label}</button>
         ))}
       </div>
@@ -869,7 +880,7 @@ export default function Calculator() {
 
       {/* Живая панель технического анализа — module 4, "живая панель" из архитектуры */}
       {taOpen && (
-        <div className="card" style={{marginTop:16}}>
+        <div ref={taPanelRef} className="card" style={{marginTop:16}}>
           <div className="section-title">
             <div className="section-title-icon">📊</div>
             Технический анализ {form.ticker ? `— ${form.ticker.toUpperCase()}` : ''}
@@ -878,8 +889,6 @@ export default function Calculator() {
             state={taState}
             onRefresh={() => loadAnalysis()}
             title={`На данный момент (${TIMEFRAMES[taTimeframe]?.label || taTimeframe})`}
-            onUseAsStop={(price) => set('stopLoss', String(price))}
-            onUseAsTake={(price) => set('takeProfit', String(price))}
           />
         </div>
       )}
