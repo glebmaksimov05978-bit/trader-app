@@ -52,6 +52,9 @@ fs.writeFileSync(path.join(tmpDir, 'tinkoff.js'), `
 export class TinkoffAPI {}
 export function parseFutureInfo() { return null; }
 `);
+fs.writeFileSync(path.join(tmpDir, 'futuresSpecs.js'), `
+export async function resolveFuturesSpecFromMoex() { return null; }
+`);
 
 const pdfjsLegacyDir = path.join(repoRoot, 'node_modules', 'pdfjs-dist', 'legacy', 'build');
 const pdfjsLib = await import(pathToFileURL(path.join(pdfjsLegacyDir, 'pdf.mjs')).href);
@@ -67,6 +70,7 @@ const { matchTransactionsToTrades } = await import(esmify('fifoMatcher.js'));
 const { filterAlreadyImportedTransactions } = await import(esmify('importTrades.js', [
   ["from '../trades.js'", "from './trades.js'"],
   ["from '../tinkoff.js'", "from './tinkoff.js'"],
+  ["from '../marketData/futuresSpecs.js'", "from './futuresSpecs.js'"],
 ]));
 
 class NodeFile {

@@ -26,6 +26,27 @@ function durationMinutesOf(t) {
 
 const avg = (arr) => (arr.length ? arr.reduce((s, v) => s + v, 0) / arr.length : 0);
 
+// Median, not mean: one 5-day position among twenty intraday trades drags the mean to
+// "2 days" and makes the trader think the numbers are broken (real user report). The
+// median is what "your typical trade" actually means.
+const median = (arr) => {
+  if (!arr.length) return 0;
+  const s = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+};
+
+// "2864 мин" is unreadable; nobody converts minutes to days in their head.
+function fmtDuration(mins) {
+  if (mins < 90) return `${Math.round(mins)} мин`;
+  if (mins < 48 * 60) {
+    const h = mins / 60;
+    return `${h < 10 ? h.toFixed(1).replace('.', ',') : Math.round(h)} ч`;
+  }
+  const d = mins / 1440;
+  return `${d < 10 ? d.toFixed(1).replace('.', ',') : Math.round(d)} дн`;
+}
+
 // --- Detector 1: holding asymmetry (cut winners short, sit on losers) --------------
 
 export function detectHoldingAsymmetry(trades) {
@@ -37,34 +58,63 @@ export function detectHoldingAsymmetry(trades) {
   const sampleSize = eligible.length;
 
   if (!wins.length || !losses.length) {
-    return { id: 'holding_asymmetry', sampleSize, confidence: 'hypothesis', avgWinMinutes: 0, avgLossMinutes: 0, ratio: 0, costRub: 0, triggered: false };
+    return {
+      id: 'holding_asymmetry', title: 'Удержание прибыли и убытка', sampleSize,
+      confidence: 'hypothesis', avgWinMinutes: 0, avgLossMinutes: 0, ratio: 0, costRub: 0, triggered: false,
+      detail: 'Пока нет и прибыльных, и убыточных закрытых сделок одновременно — сравнивать нечего.',
+    };
   }
 
-  const avgWinMinutes = avg(wins.map((x) => x.dur));
-  const avgLossMinutes = avg(losses.map((x) => x.dur));
-  const ratio = avgWinMinutes > 0 ? avgLossMinutes / avgWinMinutes : 0;
+  const medWinMinutes = median(wins.map((x) => x.dur));
+  const medLossMinutes = median(losses.map((x) => x.dur));
+  const ratio = medWinMinutes > 0 ? medLossMinutes / medWinMinutes : 0;
 
-  // Money proxy: losses held past your own average winning hold-time — the cost of
+  // Money proxy: losses held past your own typical winning hold-time — the cost of
   // "hoping it comes back" instead of cutting at the pace you cut winners.
-  const draggedLosses = losses.filter((x) => x.dur > avgWinMinutes);
+  const draggedLosses = losses.filter((x) => x.dur > medWinMinutes);
   const costRub = Math.abs(draggedLosses.reduce((s, x) => s + x.t.pnl, 0));
 
   const confidence = sampleSize >= MIN_SAMPLE ? 'confirmed' : 'hypothesis';
-  const triggered = confidence === 'confirmed' && ratio >= 1.3;
+  const isBadPattern = ratio >= 1.3;
+  const triggered = confidence === 'confirmed' && isBadPattern;
 
   const example = draggedLosses.sort((a, b) => a.t.pnl - b.t.pnl)[0]?.t || null;
 
   return {
     id: 'holding_asymmetry',
-    title: 'Прибыль режете, убыток пересиживаете',
+    // Accusatory title only when the habit is actually present — a headline that
+    // contradicts its own body text ("всё в порядке") reads like a bug (user feedback).
+    title: isBadPattern ? 'Прибыль режете, убыток пересиживаете' : 'Удержание прибыли и убытка: в порядке',
     sampleSize, confidence, triggered,
-    avgWinMinutes, avgLossMinutes, ratio, costRub, example,
-    detail: `Прибыльную сделку вы в среднем закрываете за ${Math.round(avgWinMinutes)} мин, `
-      + `а убыточную держите ${Math.round(avgLossMinutes)} мин — в ${ratio.toFixed(1)} раза дольше.`,
+    avgWinMinutes: medWinMinutes, avgLossMinutes: medLossMinutes, ratio, costRub, example,
+    detail: isBadPattern
+      ? `Типичную прибыльную сделку вы закрываете за ${fmtDuration(medWinMinutes)}, `
+        + `а убыточную держите ${fmtDuration(medLossMinutes)} — в ${ratio.toFixed(1).replace('.', ',')} раза дольше (по медиане, выбросы не искажают).`
+      : `Типичная прибыльная сделка держится ${fmtDuration(medWinMinutes)}, убыточная — ${fmtDuration(medLossMinutes)}: `
+        + `убытки вы закрываете не дольше прибылей, это здоровый паттерн.`,
   };
 }
 
 // --- Detector 2: commission tax on fussing (churn) ----------------------------------
+
+function pluralTrades(n) {
+  return n % 10 === 1 && n % 100 !== 11 ? 'ку' : (n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 10 || n % 100 >= 20) ? 'ки' : 'ок');
+}
+
+// Sums commission on opening legs beyond the first per position — i.e. the "докупка"
+// legs a trader adds after the initial entry (averaging in, scaling in). Each such leg
+// carries its own real commission (from the actual leg record, not an estimate), so
+// this is an honest empirical figure, not a projection. Framed carefully in the detail
+// text below: whether consolidating into one order would truly have saved this exact
+// amount depends on the broker's fee model (works cleanly if there's a per-order
+// minimum fee; doesn't if commission is pure percentage-of-value, since splitting one
+// order into pieces trades the same total value either way).
+function extraEntryCommission(trade) {
+  const opens = (trade.legs || []).filter((l) => l.type === 'open');
+  if (opens.length < 2) return { count: 0, commission: 0 };
+  const extra = opens.slice(1);
+  return { count: extra.length, commission: extra.reduce((s, l) => s + (l.commission || 0), 0) };
+}
 
 export function detectCommissionTax(trades) {
   const eligible = trades.filter(hasRealizedPnl);
@@ -77,7 +127,8 @@ export function detectCommissionTax(trades) {
   const share = grossTurnoverAbs > 0 ? totalCommission / grossTurnoverAbs : 0;
 
   const confidence = sampleSize >= MIN_SAMPLE ? 'confirmed' : 'hypothesis';
-  const triggered = confidence === 'confirmed' && share >= 0.05;
+  const isHigh = share >= 0.05;
+  const triggered = confidence === 'confirmed' && isHigh;
 
   const byInstrument = {};
   for (const t of eligible) {
@@ -85,14 +136,38 @@ export function detectCommissionTax(trades) {
     byInstrument[key] = (byInstrument[key] || 0) + (t.commission || 0);
   }
 
+  const avgPerTrade = sampleSize ? totalCommission / sampleSize : 0;
+
+  const extras = eligible.map(extraEntryCommission);
+  const extraEntriesCount = extras.reduce((s, x) => s + x.count, 0);
+  const extraEntriesCommission = extras.reduce((s, x) => s + x.commission, 0);
+  const extraShareOfCommission = totalCommission > 0 ? extraEntriesCommission / totalCommission : 0;
+
+  const positionsWithExtras = extras.filter((x) => x.count > 0).length;
+
   return {
     id: 'commission_tax',
-    title: 'Комиссии съедают результат',
+    title: isHigh ? 'Комиссии съедают результат' : 'Комиссии: в разумных пределах',
     sampleSize, confidence, triggered,
     totalCommission, share, byInstrument,
+    extraEntriesCount, extraEntriesCommission, positionsWithExtras,
     costRub: totalCommission,
-    detail: `Комиссии составили ${Math.round(share * 100)}% от вашего валового оборота P&L `
-      + `(${Math.round(totalCommission).toLocaleString('ru-RU')} ₽ уплачено брокеру).`,
+    // Commissions are unavoidable — the point isn't "you paid the broker", it's how big
+    // the toll is relative to what the trades themselves move, and where it comes from
+    // (many small trades = many commissions). Give the trader that context.
+    detail: `За ${sampleSize} сдел${pluralTrades(sampleSize)} `
+      + `брокеру уплачено ${Math.round(totalCommission).toLocaleString('ru-RU')} ₽ (в среднем ${Math.round(avgPerTrade).toLocaleString('ru-RU')} ₽ на сделку) — `
+      + `это ${Math.round(share * 100)}% от суммы всех ваших прибылей и убытков. `
+      + (isHigh
+        ? 'Чем больше мелких сделок и докупок, тем больше комиссий — часть результата уходит брокеру ещё до рынка. '
+        : 'Без комиссий торговать невозможно, и ваш уровень не выглядит завышенным. ')
+      + (extraEntriesCount > 0
+        ? `Из них ${extraEntriesCount} докуп${extraEntriesCount === 1 ? 'ка' : 'ок'} внутри ${positionsWithExtras} позици${positionsWithExtras === 1 ? 'и' : 'й'} — `
+          + `на них ушло ${Math.round(extraEntriesCommission).toLocaleString('ru-RU')} ₽ комиссии `
+          + `(${Math.round(extraShareOfCommission * 100)}% от всей суммы). Если бы у брокера была минимальная комиссия за сделку, `
+          + `вход одним ордером вместо нескольких докупок мог бы сэкономить эту часть — но если комиссия чисто процентная `
+          + `от суммы сделки, экономии тут, скорее всего, нет: заплатили бы столько же за тот же объём в одном ордере.`
+        : ''),
   };
 }
 
@@ -153,13 +228,19 @@ export function detectAveragingAgainstPosition(trades) {
 
   const example = losingAveraged.sort((a, b) => a.t.pnl - b.t.pnl)[0]?.t || null;
 
+  const hasPattern = averaged.length > 0;
+  const lossShare = averaged.length ? Math.round((losingAveraged.length / averaged.length) * 100) : 0;
+
   return {
     id: 'averaging_against',
-    title: 'Усредняетесь против позиции',
+    title: hasPattern ? 'Усредняетесь против позиции' : 'Усреднение против позиции: не замечено',
     sampleSize, confidence, triggered,
     averagedCount: averaged.length, losingAveragedCount: losingAveraged.length, costRub, example,
-    detail: `В ${averaged.length} позициях вы докупали по цене хуже своей средней — `
-      + `${losingAveraged.length} из них закрылись в минус.`,
+    detail: hasPattern
+      ? `В ${averaged.length} позициях вы докупали по цене хуже своей средней — ${lossShare}% из них `
+        + `закрылись в минус${costRub > 0 ? `, суммарный убыток этих позиций ${Math.round(costRub).toLocaleString('ru-RU')} ₽` : ''}. `
+        + `Докупка против движения увеличивает объём именно там, где рынок идёт не в вашу сторону.`
+      : 'Докупок по цене хуже своей средней не найдено.',
   };
 }
 
@@ -191,18 +272,33 @@ export function detectRevengeTrading(trades) {
   const costRub = Math.abs(revenge.filter((x) => x.t.pnl < 0).reduce((s, x) => s + x.t.pnl, 0));
 
   const confidence = sampleSize >= MIN_SAMPLE ? 'confirmed' : 'hypothesis';
-  const triggered = confidence === 'confirmed' && revenge.length >= 5
-    && revengeLossRate >= overallLossRate + 0.15;
+  const isWorse = revenge.length > 0 && revengeLossRate >= overallLossRate + 0.15;
+  const triggered = confidence === 'confirmed' && revenge.length >= 5 && isWorse;
 
   const example = revenge.filter((x) => x.t.pnl < 0).sort((a, b) => a.t.pnl - b.t.pnl)[0]?.t || null;
 
+  // Three genuinely different findings deserve three different sentences: no re-entries
+  // after a loss at all / re-entries exist but aren't worse / re-entries lose more often.
+  // The old single template ("0% против 79%") read as gibberish when the pattern was
+  // actually absent (real user report).
+  let detail;
+  if (!revenge.length) {
+    detail = `Ни одной сделки, открытой в первые ${REVENGE_WINDOW_MIN} мин после убыточной, не найдено — эмоциональных перезаходов нет.`;
+  } else if (!isWorse) {
+    detail = `После убытка вы заходили в рынок в течение ${REVENGE_WINDOW_MIN} мин ${revenge.length} раз, `
+      + `но эти сделки не хуже обычных (убыточных ${Math.round(revengeLossRate * 100)}% против ${Math.round(overallLossRate * 100)}% в среднем) — на отыгрыш не похоже.`;
+  } else {
+    detail = `После убытка вы заходили в рынок в течение ${REVENGE_WINDOW_MIN} мин ${revenge.length} раз — `
+      + `и такие сделки убыточны в ${Math.round(revengeLossRate * 100)}% случаев против ${Math.round(overallLossRate * 100)}% у остальных. `
+      + `Похоже на попытку отыграться на эмоциях${costRub > 0 ? `, это стоило ${Math.round(costRub).toLocaleString('ru-RU')} ₽` : ''}.`;
+  }
+
   return {
     id: 'revenge_trading',
-    title: 'Отыгрываетесь сразу после убытка',
+    title: isWorse ? 'Отыгрываетесь сразу после убытка' : 'Отыгрыш после убытка: не замечен',
     sampleSize, confidence, triggered,
     revengeCount: revenge.length, revengeLossRate, overallLossRate, costRub, example,
-    detail: `Сделки, открытые в течение ${REVENGE_WINDOW_MIN} мин после убытка, закрываются в минус `
-      + `в ${Math.round(revengeLossRate * 100)}% случаев против обычных ${Math.round(overallLossRate * 100)}%.`,
+    detail,
   };
 }
 
@@ -269,10 +365,14 @@ export function detectDailyLimitBreach(trades, profile = {}) {
 
   return {
     id: 'daily_limit_breach',
-    title: 'Торгуете после дневного лимита',
+    title: overAll.length ? 'Торгуете после дневного лимита' : 'Дневной лимит: не нарушался',
     sampleSize, confidence, triggered,
     overLimitCount: overLimitTrades.length, overStreakCount: overStreakTrades.length, costRub, example,
-    detail: detailParts.length ? detailParts.join('; ') + '.' : 'Дневной лимит не задан или не нарушался.',
+    detail: detailParts.length
+      ? detailParts.join('; ') + '.'
+      : (dailyLossLimitRub == null
+        ? `Дневной лимит убытка в рублях не задан (укажите депозит в «Капитале», чтобы он считался) — но и ${MAX_CONSECUTIVE_LOSSES} убытков подряд за день с продолжением торговли не было.`
+        : 'После достижения дневного лимита убытка вы не продолжали торговать.'),
   };
 }
 
@@ -298,13 +398,13 @@ export function detectExpiredFutures(trades) {
 
   return {
     id: 'expired_futures',
-    title: 'Пересиживаете фьючерс до экспирации',
+    title: expired.length ? 'Пересиживаете фьючерс до экспирации' : 'Экспирация фьючерсов: под контролем',
     sampleSize, confidence, triggered,
     expiredCount: expired.length, costRub, example,
     detail: expired.length
       ? `${expired.length} ваш${expired.length === 1 ? 'а позиция дожила' : 'и позиции дожили'} до экспирации без закрытия — `
         + `биржа закрыла их принудительно по расчётной цене, без вашего участия.`
-      : 'Ни одна фьючерсная позиция не доживала до экспирации незакрытой.',
+      : 'Все фьючерсные позиции вы закрывали сами до экспирации — так и нужно.',
   };
 }
 
@@ -386,7 +486,7 @@ export function detectTimeMap(trades) {
 
   return {
     id: 'time_map',
-    title: 'Есть невыгодное время для торговли',
+    title: candidates.length ? 'Есть невыгодное время для торговли' : 'Невыгодное время торговли: не выявлено',
     sampleSize, confidence, triggered,
     worstHour, worstDay, worstFirst30, costRub, example,
     detail: detailParts.length ? detailParts.join('; ') + '.' : `Пока недостаточно сделок в каком-то одном часе/дне (нужно от ${MIN_SAMPLE} на срез).`,
@@ -442,7 +542,7 @@ export function detectMarketContextLosses(trades) {
 
   return {
     id: 'market_context_losses',
-    title: 'Есть невыгодный рыночный режим для вас',
+    title: candidates.length ? 'Есть невыгодный рыночный режим для вас' : 'Невыгодный рыночный режим: не выявлен',
     sampleSize, confidence, triggered,
     worstTrend, worstVol, costRub, example,
     detail: detailParts.length

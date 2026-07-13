@@ -8,6 +8,7 @@ import { fetchDailyCandles, availableTimeframes, DEFAULT_TIMEFRAME, TIMEFRAMES }
 import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { computeMarketContextAtEntry } from '../../services/analytics/marketContext';
+import { fetchActiveFutureCard } from '../../services/marketData/futuresSpecs';
 import { evaluateStrategy } from '../../services/analytics/strategy';
 import TechnicalAnalysisBlock, { PATTERN_LABELS } from '../shared/TechnicalAnalysisBlock';
 import StrategyChecklist from '../shared/StrategyChecklist';
@@ -197,11 +198,30 @@ export default function Calculator() {
     setLoadingPrice(true);
     try {
       if (priceSource === 'moex') {
-        // MOEX — только цена, параметры вручную
+        // MOEX — цена, а для фьючерсов ещё и ГО/шаг цены/лот с бесплатного ISS API,
+        // раз инструмент сейчас торгуется (иначе полей нет — просим ввести вручную,
+        // как и раньше).
         const price = await getMoexPrice(form.ticker.toUpperCase(), instrumentType);
         if (!price) { toast.error('Инструмент не найден на MOEX'); return; }
         if (orderType === 'market') set('entryPrice', String(price));
-        toast.success(`${form.ticker.toUpperCase()}: ${price} ₽ (MOEX, задержка 15 мин)`);
+        if (instrumentType === 'future') {
+          const card = await fetchActiveFutureCard(form.ticker.toUpperCase());
+          if (card) {
+            const fmtNum = (n) => n ? String(n).replace(',', '.') : '';
+            setForm(f => ({
+              ...f,
+              lot: String(card.lot || 1),
+              minStep: fmtNum(card.minPriceIncrement) || '1',
+              minStepAmount: fmtNum(card.minPriceIncrementAmount) || '',
+              initialMargin: fmtNum(card.initialMargin) || '',
+            }));
+            toast.success(`${form.ticker.toUpperCase()}: ${price} ₽, ГО и шаг цены подтянуты с MOEX (задержка 15 мин)`);
+          } else {
+            toast.success(`${form.ticker.toUpperCase()}: ${price} ₽ (MOEX, задержка 15 мин). ГО/шаг цены не найдены — введите вручную`);
+          }
+        } else {
+          toast.success(`${form.ticker.toUpperCase()}: ${price} ₽ (MOEX, задержка 15 мин)`);
+        }
       } else {
         // Тинькофф
         if (!tapi) { toast.error('Введите API-токен в настройках'); return; }
@@ -448,7 +468,7 @@ export default function Calculator() {
 
       {priceSource === 'moex' && (
         <div style={{background:'rgba(245,158,11,0.1)',border:'1px solid rgba(245,158,11,0.3)',borderRadius:10,padding:'8px 14px',marginBottom:16,fontSize:12,color:'var(--gold)'}}>
-          ⚠️ MOEX: данные с задержкой ~15 минут. Параметры контракта (ГО, шаг цены) вводятся вручную. Работает без токена Тинькофф.
+          ⚠️ MOEX: данные с задержкой ~15 минут. Работает без токена Тинькофф. Для фьючерсов ГО и шаг цены подтягиваются автоматически (если контракт сейчас торгуется), иначе — вводятся вручную.
         </div>
       )}
 

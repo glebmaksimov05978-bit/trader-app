@@ -1,6 +1,7 @@
 // src/components/settings/Settings.js
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { availableTimeframes } from '../../services/marketData/candles';
 import toast from 'react-hot-toast';
 
 export default function Settings() {
@@ -12,6 +13,7 @@ export default function Settings() {
     maxRiskPerTrade: '',
     dailyLossLimit: '',
     askJournalExtra: true,
+    preferredTimeframe: '', // '' = авто по длительности сделки
   });
   const [saving, setSaving] = useState(false);
   const [showToken, setShowToken] = useState(false);
@@ -26,6 +28,7 @@ export default function Settings() {
         depositSize: String(userProfile.depositSize ?? 0),
         maxRiskPerTrade: String(userProfile.maxRiskPerTrade || 1),
         dailyLossLimit: String(userProfile.dailyLossLimit || 3),
+        preferredTimeframe: userProfile.preferredTimeframe || '',
       }));
       // askExtra инициализируем только один раз
       if (askExtra === null) {
@@ -46,6 +49,7 @@ export default function Settings() {
         maxRiskPerTrade: parseFloat(form.maxRiskPerTrade),
         dailyLossLimit: parseFloat(form.dailyLossLimit),
         askJournalExtra: askExtra === true,
+        preferredTimeframe: form.preferredTimeframe || null,
       });
       toast.success('Настройки сохранены');
     } catch {
@@ -133,6 +137,19 @@ export default function Settings() {
                 <span className="input-prefix-text">%</span>
                 <input className="input" type="number" step="0.5" value={form.dailyLossLimit}
                   onChange={e => set('dailyLossLimit', e.target.value)}/>
+              </div>
+            </div>
+            <div className="input-group">
+              <label className="input-label">Приоритетный таймфрейм анализа</label>
+              <select className="input" value={form.preferredTimeframe} onChange={e => set('preferredTimeframe', e.target.value)}>
+                <option value="">Автоматически (по длительности сделки)</option>
+                {availableTimeframes(!!form.tinkoffToken).map(tf => (
+                  <option key={tf.key} value={tf.key}>{tf.label}</option>
+                ))}
+              </select>
+              <div className="input-hint">
+                Технический анализ в Журнале/Радаре/Калькуляторе по умолчанию будет открываться на этом
+                таймфрейме. Можно всегда переключить вручную у конкретной сделки — это только стартовый выбор.
               </div>
             </div>
           </div>

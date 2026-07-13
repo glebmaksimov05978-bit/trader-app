@@ -31,6 +31,21 @@ export function availableTimeframes(hasToken) {
     .map(([key, tf]) => ({ key, ...tf }));
 }
 
+// Picks a timeframe that roughly matches how long a trade was actually held — showing
+// daily-candle S/R and Bollinger bands for a trade held 20 minutes puts levels a whole
+// market's worth of history away from the entry price, which is unreadable without a
+// chart (real user report: "я торгую на одном таймфрейме, а информация на другом").
+// Buckets are deliberately coarse (order-of-magnitude, not precise) — this picks a
+// *starting point* for the analysis panel, not a claim about the trader's exact style;
+// the caller always lets them override it by hand afterward.
+export function recommendTimeframe(durationMinutes, hasToken) {
+  if (durationMinutes == null || !Number.isFinite(durationMinutes)) return DEFAULT_TIMEFRAME;
+  if (durationMinutes <= 90) return hasToken ? 'M5' : 'M10';
+  if (durationMinutes <= 8 * 60) return hasToken ? 'M15' : 'H1';
+  if (durationMinutes <= 3 * 1440) return 'H1';
+  return 'D1';
+}
+
 // MOEX ISS groups securities by engine+market — this mapping is a simplification and
 // won't resolve every exotic instrument (e.g. some FORTS futures codes differ between
 // Tinkoff's ticker and MOEX's SECID), but covers the common stock/future/currency cases.

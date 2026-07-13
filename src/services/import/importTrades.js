@@ -2,6 +2,7 @@
 import { newTradeRef, tradeRefById, tradeHistoryRef, commitTradeBatch } from '../trades.js';
 import { matchTransactionsToTrades } from './fifoMatcher.js';
 import { TinkoffAPI, parseFutureInfo } from '../tinkoff.js';
+import { resolveFuturesSpecFromMoex } from '../marketData/futuresSpecs.js';
 
 const OBJECTIVE_FIELDS = [
   'entryPrice', 'exitPrice', 'volume', 'remainingVolume', 'commission', 'openCommissionPerUnit',
@@ -68,27 +69,36 @@ export function classifyForPreview(matchedTrades, existingTrades) {
   });
 }
 
-// Futures P&L needs each instrument's point value, fetched async from the Tinkoff API —
-// fifoMatcher.js can't do that itself (it's synchronous), so it hands off raw
-// price-point differences (`pnlPoints`) for this step to rescale into rubles.
+function pnlFromSpec(trade, priceStep, stepCost) {
+  const pnl = trade.pnlPoints * (stepCost / priceStep) - trade.commission;
+  return { ...trade, pnl: Math.round(pnl * 100) / 100, pnlNeedsSpecs: false };
+}
+
+// Futures P&L needs each instrument's point value. Tinkoff's API is the primary source
+// (fifoMatcher.js can't fetch it itself, it's synchronous, so it hands off raw
+// price-point differences via `pnlPoints` for this step to rescale into rubles) — but
+// some contracts (mini futures like MXI, not API-tradeable) resolve fine there without
+// their tick value. MOEX ISS free reference data covers those, see futuresSpecs.js.
 async function resolveFuturesPnl(trade, tapi) {
   if (trade.status === 'open' && trade.remainingVolume === trade.volume) {
     return { ...trade, pnl: null }; // nothing closed yet, nothing realized
   }
-  if (!tapi) return { ...trade, pnl: null, pnlNeedsSpecs: true };
-  try {
-    const raw = await tapi.getFutureByTicker(trade.ticker);
-    const info = parseFutureInfo(raw);
-    if (!info?.minPriceIncrement || !info?.minPriceIncrementAmount) {
-      return { ...trade, pnl: null, pnlNeedsSpecs: true };
+  if (tapi) {
+    try {
+      const raw = await tapi.getFutureByTicker(trade.ticker);
+      const info = parseFutureInfo(raw);
+      if (info?.minPriceIncrement && info?.minPriceIncrementAmount) {
+        return pnlFromSpec(trade, info.minPriceIncrement, info.minPriceIncrementAmount);
+      }
+    } catch {
+      // fall through to the MOEX fallback below
     }
-    const priceStep = info.minPriceIncrement;
-    const stepCost = info.minPriceIncrementAmount;
-    const pnl = trade.pnlPoints * (stepCost / priceStep) - trade.commission;
-    return { ...trade, pnl: Math.round(pnl * 100) / 100, pnlNeedsSpecs: false };
-  } catch {
-    return { ...trade, pnl: null, pnlNeedsSpecs: true };
   }
+  const moexSpec = await resolveFuturesSpecFromMoex(trade.ticker);
+  if (moexSpec) {
+    return pnlFromSpec(trade, moexSpec.minPriceIncrement, moexSpec.minPriceIncrementAmount);
+  }
+  return { ...trade, pnl: null, pnlNeedsSpecs: true };
 }
 
 // Stocks' realized P&L is already computed in rubles by fifoMatcher.js as legs are

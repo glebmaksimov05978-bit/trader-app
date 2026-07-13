@@ -3,7 +3,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, addTrade, updateTrade, deleteTrade, calcStats, resolveOpenedAt, resolveClosedAt } from '../../services/trades';
 import { formatCurrency, formatNumber } from '../../utils/calculator';
-import { fetchDailyCandles } from '../../services/marketData/candles';
+import { fetchDailyCandles, availableTimeframes, recommendTimeframe } from '../../services/marketData/candles';
 import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { computeMarketContextAtEntry } from '../../services/analytics/marketContext';
@@ -37,6 +37,12 @@ export default function Journal() {
   const [expandedId, setExpandedId] = useState(null);
   // tradeId -> { loading, data, error }
   const [indicatorsState, setIndicatorsState] = useState({});
+  // tradeId -> ключ таймфрейма ('M5'|'M10'|...), выбранный вручную для этой сделки —
+  // до первого клика на переключателе используется рекомендация по длительности сделки
+  const [tfOverride, setTfOverride] = useState({});
+  // tradeId -> текст, который трейдер вводит в поле "стоимость шага цены, ₽"
+  const [manualStepInput, setManualStepInput] = useState({});
+  const [savingManualSpec, setSavingManualSpec] = useState(null); // tradeId в процессе сохранения
   // "Сделки" | "Радар" — watchlist of tickers with a setup forming, kept separate from
   // the trades table because a radar item isn't a position yet.
   const [view, setView] = useState('trades');
@@ -66,6 +72,31 @@ export default function Journal() {
   }, [user]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Manual fallback for futures whose tick value neither Tinkoff nor the free MOEX
+  // lookup could resolve (see resolveFuturesPnl/resolveFuturesSpecFromMoex) — asking
+  // for "rubles per 1 point" rather than separate tick-size/tick-value fields matches
+  // how traders already think about a contract ("сколько я зарабатываю на пункт"),
+  // and it's the exact multiplier the stored pnlPoints needs to become rubles.
+  const saveManualSpec = useCallback(async (trade) => {
+    const raw = manualStepInput[trade.id];
+    const rubPerPoint = parseFloat(String(raw).replace(',', '.'));
+    if (!rubPerPoint || rubPerPoint <= 0) {
+      toast.error('Введите положительное число рублей за пункт');
+      return;
+    }
+    setSavingManualSpec(trade.id);
+    try {
+      const pnl = Math.round((trade.pnlPoints * rubPerPoint - (trade.commission || 0)) * 100) / 100;
+      await updateTrade(trade.id, { pnl, pnlNeedsSpecs: false, manualRubPerPoint: rubPerPoint });
+      toast.success('P&L пересчитан');
+      await load();
+    } catch (e) {
+      toast.error('Ошибка сохранения: ' + e.message);
+    } finally {
+      setSavingManualSpec(null);
+    }
+  }, [manualStepInput, load]);
 
   const loadRadar = useCallback(async () => {
     if (!user) return;
@@ -194,15 +225,31 @@ export default function Journal() {
 
   const quickResult = closeModal && closePrice ? calcQuickPnl() : null;
 
-  // Fetches candles once per trade, derives both indicators and pattern candidates from
-  // the same series, and persists them to technicalAnalysis so re-opening the row later
-  // doesn't re-hit the market data API. `force` bypasses the Firestore cache — used by
-  // the "Обновить" button. Trades cached from before pattern detection existed only have
-  // `.indicators` — loading such a trade shows indicators immediately but re-fetches to
-  // fill in `.patternCandidates`/`.levels` (cheap, happens once).
-  const loadIndicators = async (trade, force = false) => {
+  // Auto-picks a timeframe matched to how long the trade was actually held (falls back
+  // to D1 for still-open trades with no close date yet) — a user's preferred timeframe
+  // in Settings wins over the auto-guess as the starting point, but the switcher lets
+  // them override it per trade either way (see tfOverride state above).
+  const defaultTimeframeFor = (trade) => {
+    if (userProfile?.preferredTimeframe) return userProfile.preferredTimeframe;
+    const opened = resolveOpenedAt(trade);
+    const closed = resolveClosedAt(trade);
+    const durationMinutes = opened && closed ? (closed.getTime() - opened.getTime()) / 60000 : null;
+    return recommendTimeframe(durationMinutes, !!userProfile?.tinkoffToken);
+  };
+
+  const timeframeFor = (trade) => tfOverride[trade.id] || defaultTimeframeFor(trade);
+
+  // Fetches candles once per trade+timeframe, derives both indicators and pattern
+  // candidates from the same series, and persists them to technicalAnalysis so
+  // re-opening the row later doesn't re-hit the market data API. `force` bypasses the
+  // Firestore cache — used by the "Обновить" button and by switching timeframe (a
+  // cached snapshot on a different timeframe is stale for the newly selected one).
+  // `timeframeArg` lets a just-changed timeframe take effect immediately instead of
+  // waiting on the tfOverride state update to land (setState is async/batched).
+  const loadIndicators = async (trade, force = false, timeframeArg = null) => {
+    const timeframe = timeframeArg || timeframeFor(trade);
     const cached = trade.technicalAnalysis;
-    if (!force && cached?.indicators && cached?.patterns) {
+    if (!force && cached?.indicators && cached?.patterns && cached?.timeframe === timeframe) {
       setIndicatorsState((s) => ({ ...s, [trade.id]: { loading: false, data: cached, error: null } }));
       return;
     }
@@ -215,17 +262,23 @@ export default function Journal() {
         instrumentType: trade.instrumentType || 'stock',
         toDate: openedAt,
         tinkoffToken: userProfile?.tinkoffToken,
+        timeframe,
       });
       const indicators = computeIndicatorsAtEntry(candles, openedAt);
       const patterns = computePatternsAtEntry(candles, openedAt);
       const marketContext = computeMarketContextAtEntry(candles, openedAt);
       if (!indicators) throw new Error('Нет исторических свечей по этому тикеру');
-      const result = { indicators, patterns, marketContext };
+      const result = { indicators, patterns, marketContext, timeframe };
       setIndicatorsState((s) => ({ ...s, [trade.id]: { loading: false, data: result, error: null } }));
       await updateTrade(trade.id, { technicalAnalysis: { ...(trade.technicalAnalysis || {}), ...result } });
     } catch (e) {
       setIndicatorsState((s) => ({ ...s, [trade.id]: { loading: false, data: null, error: e.message || 'Не удалось загрузить данные' } }));
     }
+  };
+
+  const changeTimeframe = (trade, tf) => {
+    setTfOverride((s) => ({ ...s, [trade.id]: tf }));
+    loadIndicators(trade, true, tf);
   };
 
   // Same computation as loadIndicators, but anchored to "now" instead of a trade's
@@ -475,6 +528,8 @@ export default function Journal() {
                         <span style={{color: trade.pnl >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 600}}>
                           {trade.pnl >= 0 ? '+' : ''}{formatCurrency(Math.round(trade.pnl))}
                         </span>
+                      ) : trade.pnlNeedsSpecs ? (
+                        <span className="text-muted" title="Биржа не дала параметры контракта — раскройте сделку, чтобы ввести вручную">⚠️ —</span>
                       ) : <span className="text-muted">—</span>}
                     </td>
                     <td>
@@ -550,7 +605,58 @@ export default function Journal() {
                           </>
                         )}
 
+                        {trade.pnlNeedsSpecs && (
+                          <div style={{
+                            background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)',
+                            borderRadius: 10, padding: '10px 14px', marginBottom: 16,
+                          }}>
+                            <div style={{fontSize: 13, color: 'var(--gold)', marginBottom: 8}}>
+                              ⚠️ Не удалось определить P&L автоматически — биржа не публикует параметры этого
+                              контракта (обычно так с мини-фьючерсами или уже неторгуемыми сериями). Введите
+                              стоимость 1 пункта цены в рублях (можно посмотреть на странице контракта на
+                              Мосбирже) — и мы посчитаем сами.
+                            </div>
+                            <div className="flex gap-2" style={{alignItems: 'center'}}>
+                              <input
+                                className="input"
+                                type="number"
+                                step="0.01"
+                                placeholder="₽ за 1 пункт цены"
+                                style={{maxWidth: 200}}
+                                value={manualStepInput[trade.id] || ''}
+                                onChange={(e) => setManualStepInput((s) => ({ ...s, [trade.id]: e.target.value }))}
+                              />
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                disabled={savingManualSpec === trade.id}
+                                onClick={() => saveManualSpec(trade)}
+                              >
+                                {savingManualSpec === trade.id ? 'Считаю…' : 'Посчитать P&L'}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
                         {/* Технический анализ на момент входа — module 4 */}
+                        <div className="flex gap-2" style={{alignItems: 'center', marginBottom: 8, flexWrap: 'wrap'}}>
+                          <span style={{fontSize: 11, color: 'var(--text-muted)'}}>Таймфрейм:</span>
+                          {availableTimeframes(!!userProfile?.tinkoffToken).map((tf) => {
+                            const active = timeframeFor(trade) === tf.key;
+                            return (
+                              <button
+                                key={tf.key}
+                                className={active ? 'btn btn-secondary btn-sm' : 'btn btn-ghost btn-sm'}
+                                style={{fontSize: 11, padding: '2px 8px'}}
+                                onClick={() => changeTimeframe(trade, tf.key)}
+                              >
+                                {tf.label}
+                              </button>
+                            );
+                          })}
+                          {!tfOverride[trade.id] && (
+                            <span style={{fontSize: 11, color: 'var(--text-muted)'}}>(подобран по длительности сделки)</span>
+                          )}
+                        </div>
                         <TechnicalAnalysisBlock
                           state={indicatorsState[trade.id]}
                           onRefresh={() => loadIndicators(trade, true)}
