@@ -555,18 +555,20 @@ export default function Journal() {
                       {/* Stacked, not inline — an open trade's extra "Закрыть" button used to
                           push ✏️/🗑 past the visible table width, and the horizontal-scroll
                           affordance wasn't obvious, so the trash icon looked cut off (real
-                          user report). Fixed width instead of squeezing three controls onto
-                          one line. */}
-                      <div className="flex flex-col gap-1" style={{alignItems:'flex-start', minWidth:70}}>
+                          user report). Both rows share the same width and vertical padding
+                          now too — they used to be visibly different sizes (real user
+                          follow-up report), which read as sloppy even after the overflow fix. */}
+                      <div className="flex flex-col gap-1" style={{width:92}}>
                         {(trade.status === 'open' || trade.status === 'partial') && (
                           <button
                             className="btn btn-sm"
                             style={{
+                              width: '100%',
                               background: 'linear-gradient(135deg, #10b981, #059669)',
                               color: '#fff',
                               border: 'none',
                               borderRadius: 8,
-                              padding: '4px 10px',
+                              padding: '6px 0',
                               fontSize: 11,
                               fontWeight: 600,
                               cursor: 'pointer',
@@ -579,9 +581,9 @@ export default function Journal() {
                             ✅ Закрыть
                           </button>
                         )}
-                        <div className="flex gap-2">
-                          <button className="btn btn-ghost btn-sm" onClick={() => openEdit(trade)} title="Редактировать">✏️</button>
-                          <button className="btn btn-ghost btn-sm" style={{color:'var(--red)'}} onClick={() => handleDelete(trade.id)} title="Удалить">🗑</button>
+                        <div className="flex gap-2" style={{width:'100%'}}>
+                          <button className="btn btn-ghost btn-sm" style={{flex:1, padding:'6px 0'}} onClick={() => openEdit(trade)} title="Редактировать">✏️</button>
+                          <button className="btn btn-ghost btn-sm" style={{flex:1, padding:'6px 0', color:'var(--red)'}} onClick={() => handleDelete(trade.id)} title="Удалить">🗑</button>
                         </div>
                       </div>
                     </td>

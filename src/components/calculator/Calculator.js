@@ -320,13 +320,29 @@ export default function Calculator() {
     formingKeysRef.current = new Set();
   }, [form.ticker, instrumentType, taTimeframe]);
 
-  // Scrolls the analysis panel into view the moment it opens — before this, clicking
-  // «Технический анализ» with the panel below the fold gave no visible feedback at all,
-  // so a trader who couldn't see it assumed the click did nothing (real user report).
+  // Scrolls the analysis panel into view — twice. The first scroll fires the instant
+  // the panel opens (still just a loading spinner) so a click gives immediate feedback;
+  // without it a trader whose screen didn't move assumed the click did nothing (real
+  // user report). But the panel grows a lot once data arrives (RSI/MACD/levels/pattern
+  // list), and that growth happens WHILE the first scroll's smooth animation is still
+  // running — the animation targets a spot that's since drifted, so it lands with the
+  // "Технический анализ" heading near the BOTTOM of the screen instead of the top (real
+  // follow-up report). The second scroll, once loading finishes and the DOM has already
+  // reached its final height, corrects that.
   const taPanelRef = useRef(null);
   useEffect(() => {
-    if (taOpen) taPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (taOpen) taPanelRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' });
   }, [taOpen]);
+  useEffect(() => {
+    // Instant ('auto'), not 'smooth' — an animated scroll takes a few hundred ms, and
+    // the panel keeps growing under it as indicators/patterns render in, so the
+    // animation's target drifts mid-flight and it lands wherever it happened to be
+    // interrupted (real user report: heading ended up near the bottom of the screen).
+    // A snap has nothing to interrupt, so it always lands exactly on the final layout.
+    if (taOpen && !taState.loading && taState.data) {
+      taPanelRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' });
+    }
+  }, [taOpen, taState.loading, taState.data]);
 
   // If the trader loses their token, or a timeframe becomes unavailable for some other
   // reason, don't leave the selector pointed at a now-invalid choice.

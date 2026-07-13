@@ -72,6 +72,21 @@ function confidenceColor(pct) {
   return 'var(--red)';
 }
 
+// Label above value, left-aligned — used instead of the shared .stat-row (label/value
+// pinned to opposite ends of the row) inside narrow grid cells, where that layout put
+// visible daylight between a value and its own label (real user report).
+function MiniStat({ label, value, tip }) {
+  return (
+    <div>
+      <div style={{fontSize:12, color:'var(--text-muted)', display:'flex', alignItems:'center', gap:4, marginBottom:2}}>
+        {label}
+        {tip && <InfoTip text={tip} />}
+      </div>
+      <div style={{fontSize:14, fontWeight:600, color:'var(--text-primary)'}}>{value}</div>
+    </div>
+  );
+}
+
 // Used to also render →SL/→TP quick-fill buttons in the Calculator — removed (real
 // user report: too many small buttons on an already dense panel, hard on the eyes).
 // The trader still types stop/take by hand; this level list is read-only everywhere now.
@@ -101,22 +116,23 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
         return (
           <>
             <div className="grid-4" style={{gap:8, maxWidth:640, marginBottom:14}}>
-              <div className="stat-row"><span className="stat-row-label" style={{display:'inline-flex', alignItems:'center', gap:4}}>RSI
-                <InfoTip text="Индекс относительной силы (0-100). Ниже 30 — актив перепродан (упал сильно и быстро), выше 70 — перекуплен (вырос сильно и быстро). Не сигнал сам по себе, а одна из подсказок для решения." /></span>
-                <span className="stat-row-value">{indicators?.rsi14 != null ? formatNumber(indicators.rsi14, 1) : 'нет данных'}</span></div>
-              <div className="stat-row"><span className="stat-row-label" style={{display:'inline-flex', alignItems:'center', gap:4}}>MACD
-                <InfoTip text="Разница между двумя скользящими средними. Положительное значение — импульс вверх, отрицательное — вниз. Чем дальше от нуля, тем сильнее импульс." /></span>
-                <span className="stat-row-value">{indicators?.macdHistogram != null ? formatNumber(indicators.macdHistogram, 2) : 'нет данных'}</span></div>
-              <div className="stat-row"><span className="stat-row-label">До SMA200</span>
-                <span className="stat-row-value">{indicators?.sma200Distance != null ? `${indicators.sma200Distance >= 0 ? '+' : ''}${formatNumber(indicators.sma200Distance, 1)}%` : 'нет данных (мало истории)'}</span></div>
-              <div className="stat-row"><span className="stat-row-label">Объём торгов</span>
-                <span className="stat-row-value">
-                  {indicators?.volumeRatio != null
-                    ? (indicators.volumeRatio >= 1
-                      ? `в ${formatNumber(indicators.volumeRatio, 1)} раза выше обычного`
-                      : `на ${Math.round((1 - indicators.volumeRatio) * 100)}% ниже обычного`)
-                    : 'нет данных'}
-                </span></div>
+              {/* Stacked (label above value), not the shared .stat-row's left/right
+                  space-between layout — in a 4-column grid that layout pins the value to
+                  the far right of a narrow cell, away from its own label, which read as
+                  misaligned (real user report, twice). RSI/MACD lost their ⓘ — the user
+                  said those two are self-explanatory and the icon was clutter; the
+                  Объём tip stays because *how this app defines* "obычный" genuinely
+                  isn't obvious (which candles, how many) without it. */}
+              <MiniStat label="RSI" value={indicators?.rsi14 != null ? formatNumber(indicators.rsi14, 1) : 'нет данных'} />
+              <MiniStat label="MACD" value={indicators?.macdHistogram != null ? formatNumber(indicators.macdHistogram, 2) : 'нет данных'} />
+              <MiniStat label="До SMA200" value={indicators?.sma200Distance != null ? `${indicators.sma200Distance >= 0 ? '+' : ''}${formatNumber(indicators.sma200Distance, 1)}%` : 'нет данных (мало истории)'} />
+              <MiniStat label="Объём"
+                tip="Сравнение объёма сделок в этой свече со средним объёмом за 20 предыдущих свечей того же таймфрейма (на дневном графике — 20 дней, на часовом — 20 часовых баров)."
+                value={indicators?.volumeRatio != null
+                  ? (indicators.volumeRatio >= 1
+                    ? `в ${formatNumber(indicators.volumeRatio, 1)} раза выше обычного`
+                    : `на ${Math.round((1 - indicators.volumeRatio) * 100)}% ниже обычного`)
+                  : 'нет данных'} />
             </div>
 
             {marketContext && (marketContext.trend || marketContext.volatility) && (
@@ -176,11 +192,14 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
                   {[9, 100, 200].map((p) => {
                     const e = patterns.emaLevels?.[`ema${p}`];
                     return (
-                      <div className="stat-row" key={p}>
-                        <span className="stat-row-label">EMA{p}</span>
-                        <span className="stat-row-value" style={{color: e ? (e.position === 'above' ? 'var(--green)' : 'var(--red)') : undefined}}>
-                          {e ? `Цена ${e.position === 'above' ? 'выше' : 'ниже'} EMA${p} на ${Math.abs(e.distancePct).toFixed(1)}% (${e.slope === 'rising' ? '↑ растёт' : e.slope === 'falling' ? '↓ падает' : '→ плоская'})` : 'нет данных'}
-                        </span>
+                      <div key={p}>
+                        <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:2}}>EMA{p}</div>
+                        <div style={{fontSize:13, fontWeight:600, color: e ? (e.position === 'above' ? 'var(--green)' : 'var(--red)') : undefined}}>
+                          {/* EMA{p} already named in the label right above — repeating it
+                              in the value too was the "текст прилип, больше чем сама
+                              надпись" clutter (real user report). */}
+                          {e ? `Цена ${e.position === 'above' ? 'выше' : 'ниже'} на ${Math.abs(e.distancePct).toFixed(1)}% (${e.slope === 'rising' ? '↑ растёт' : e.slope === 'falling' ? '↓ падает' : '→ плоская'})` : 'нет данных'}
+                        </div>
                       </div>
                     );
                   })}
