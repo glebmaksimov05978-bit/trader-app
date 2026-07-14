@@ -30,18 +30,16 @@ function bollingerPercentB(ctx, b) {
 export const CONDITION_CATALOG = [
   // --- Market conditions: computed purely from the ticker, no plan needed -----------
   //
-  // `impliedDirection` hardcodes long/short for conditions where the trading convention
-  // is essentially universal — oversold RSI is a long signal, overbought is short, same
-  // for MACD momentum and price-vs-EMA200 trend. A trader who works both directions no
-  // longer has to set this by hand and no selector clutters the builder for these (real
-  // user feedback: "лучше... чтобы они понимали"). Conditions left WITHOUT one
-  // (near_support/near_resistance, the two Bollinger conditions below) genuinely split by
-  // trading style — a reversal trader buys support/the lower band, a breakout trader
-  // buys through resistance/the upper band expecting continuation — so those keep the
-  // manual "лонг/шорт/оба" selector in Capital.js instead of a hardcoded guess.
+  // Every market condition gets the manual "лонг/шорт/оба" selector in Capital.js —
+  // even RSI/MACD/EMA200, whose mean-reversion convention is common but not universal
+  // (a momentum trader reads a stubbornly overbought RSI as trend strength — a long
+  // signal, not a short one). Trying to guess a "right" hardcoded direction per
+  // condition would just be wrong for that trader; a manual selector, defaulting to
+  // 'both', costs nothing and never boxes anyone out. See evaluateStrategy for how an
+  // opposite-direction condition gets quietly collapsed instead of shown as a failure.
   {
     id: 'rsi_below', category: 'market', label: 'RSI ниже X (перепроданность)',
-    paramLabel: 'RSI ниже', defaultParam: 35, impliedDirection: 'long',
+    paramLabel: 'RSI ниже', defaultParam: 35,
     evaluate: (ctx, param) => {
       const v = ctx.indicators?.rsi14;
       if (v == null) return { na: true };
@@ -50,7 +48,7 @@ export const CONDITION_CATALOG = [
   },
   {
     id: 'rsi_above', category: 'market', label: 'RSI выше X (перекупленность)',
-    paramLabel: 'RSI выше', defaultParam: 65, impliedDirection: 'short',
+    paramLabel: 'RSI выше', defaultParam: 65,
     evaluate: (ctx, param) => {
       const v = ctx.indicators?.rsi14;
       if (v == null) return { na: true };
@@ -59,7 +57,6 @@ export const CONDITION_CATALOG = [
   },
   {
     id: 'price_above_ema200', category: 'market', label: 'Цена выше EMA200 (восходящий тренд)',
-    impliedDirection: 'long',
     evaluate: (ctx) => {
       const e = ctx.patterns?.emaLevels?.ema200;
       const price = refPrice(ctx);
@@ -71,7 +68,6 @@ export const CONDITION_CATALOG = [
   },
   {
     id: 'price_below_ema200', category: 'market', label: 'Цена ниже EMA200 (нисходящий тренд)',
-    impliedDirection: 'short',
     evaluate: (ctx) => {
       const e = ctx.patterns?.emaLevels?.ema200;
       const price = refPrice(ctx);
@@ -83,7 +79,6 @@ export const CONDITION_CATALOG = [
   },
   {
     id: 'macd_positive', category: 'market', label: 'MACD-гистограмма положительная',
-    impliedDirection: 'long',
     evaluate: (ctx) => {
       const v = ctx.indicators?.macdHistogram;
       if (v == null) return { na: true };
@@ -92,7 +87,6 @@ export const CONDITION_CATALOG = [
   },
   {
     id: 'macd_negative', category: 'market', label: 'MACD-гистограмма отрицательная',
-    impliedDirection: 'short',
     evaluate: (ctx) => {
       const v = ctx.indicators?.macdHistogram;
       if (v == null) return { na: true };
@@ -240,15 +234,20 @@ export function evaluateStrategy(strategy, ctx) {
   const results = active.map((c) => {
     const def = CATALOG_BY_ID[c.id];
     const param = c.param ?? def.defaultParam;
+    // The catalog's label is a template ("RSI выше X") — X is a placeholder, not a
+    // literal letter the trader should ever see. Substituting the trader's own
+    // configured number turns "RSI выше X — не соблюдается" into "RSI выше 65 — не
+    // соблюдается" (real user report: seeing the raw template read as broken).
+    const label = param != null ? def.label.replace('X', param) : def.label;
     const condDirection = def.impliedDirection || c.direction || 'both';
     if (condDirection !== 'both' && ctx.direction && ctx.direction !== condDirection) {
       return {
-        id: c.id, label: def.label, param, na: true, skippedByDirection: true,
+        id: c.id, label, param, na: true, skippedByDirection: true,
         detail: `Условие только для ${condDirection === 'long' ? 'лонга' : 'шорта'} — сделка в ${ctx.direction === 'long' ? 'лонг' : 'шорт'}`,
       };
     }
     const outcome = def.evaluate(ctx, param) || { na: true };
-    return { id: c.id, label: def.label, param, direction: condDirection, ...outcome };
+    return { id: c.id, label, param, direction: condDirection, ...outcome };
   });
   const evaluated = results.filter((r) => !r.na);
   const passed = evaluated.filter((r) => r.passed).length;

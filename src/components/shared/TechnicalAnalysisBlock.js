@@ -72,17 +72,19 @@ function confidenceColor(pct) {
   return 'var(--red)';
 }
 
-// Label above value, left-aligned — used instead of the shared .stat-row (label/value
-// pinned to opposite ends of the row) inside narrow grid cells, where that layout put
-// visible daylight between a value and its own label (real user report).
+// Label (bold, bright — easy to spot among the surrounding text) then value on the same
+// line with a small fixed gap. Not the shared .stat-row's space-between, which in a
+// narrow grid cell shoved the value hard against the right edge, away from its label
+// (real user report) — but the trader also didn't want the label/value fully stacked
+// either, just closer together than the original. This is the middle ground.
 function MiniStat({ label, value, tip }) {
   return (
-    <div>
-      <div style={{fontSize:12, color:'var(--text-muted)', display:'flex', alignItems:'center', gap:4, marginBottom:2}}>
+    <div style={{display:'flex', alignItems:'baseline', gap:10, flexWrap:'wrap'}}>
+      <span style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', display:'inline-flex', alignItems:'center', gap:4, flexShrink:0}}>
         {label}
         {tip && <InfoTip text={tip} />}
-      </div>
-      <div style={{fontSize:14, fontWeight:600, color:'var(--text-primary)'}}>{value}</div>
+      </span>
+      <span style={{fontSize:14, fontWeight:600, color:'var(--text-secondary)'}}>{value}</span>
     </div>
   );
 }
@@ -115,17 +117,12 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
         const { indicators, patterns, marketContext } = state.data;
         return (
           <>
-            <div className="grid-4" style={{gap:8, maxWidth:640, marginBottom:14}}>
-              {/* Stacked (label above value), not the shared .stat-row's left/right
-                  space-between layout — in a 4-column grid that layout pins the value to
-                  the far right of a narrow cell, away from its own label, which read as
-                  misaligned (real user report, twice). RSI/MACD lost their ⓘ — the user
-                  said those two are self-explanatory and the icon was clutter; the
-                  Объём tip stays because *how this app defines* "obычный" genuinely
-                  isn't obvious (which candles, how many) without it. */}
+            {/* "До SMA200" dropped — it duplicated the EMA200 row below closely enough
+                (both "distance to a long-term 200-period average") that the trader read
+                them as the same number shown twice, not two different indicators. */}
+            <div className="flex flex-col gap-2" style={{maxWidth:420, marginBottom:14}}>
               <MiniStat label="RSI" value={indicators?.rsi14 != null ? formatNumber(indicators.rsi14, 1) : 'нет данных'} />
               <MiniStat label="MACD" value={indicators?.macdHistogram != null ? formatNumber(indicators.macdHistogram, 2) : 'нет данных'} />
-              <MiniStat label="До SMA200" value={indicators?.sma200Distance != null ? `${indicators.sma200Distance >= 0 ? '+' : ''}${formatNumber(indicators.sma200Distance, 1)}%` : 'нет данных (мало истории)'} />
               <MiniStat label="Объём"
                 tip="Сравнение объёма сделок в этой свече со средним объёмом за 20 предыдущих свечей того же таймфрейма (на дневном графике — 20 дней, на часовом — 20 часовых баров)."
                 value={indicators?.volumeRatio != null
@@ -193,7 +190,7 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
                     const e = patterns.emaLevels?.[`ema${p}`];
                     return (
                       <div key={p}>
-                        <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:2}}>EMA{p}</div>
+                        <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:2}}>EMA{p}</div>
                         <div style={{fontSize:13, fontWeight:600, color: e ? (e.position === 'above' ? 'var(--green)' : 'var(--red)') : undefined}}>
                           {/* EMA{p} already named in the label right above — repeating it
                               in the value too was the "текст прилип, больше чем сама

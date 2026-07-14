@@ -383,6 +383,15 @@ export default function Capital() {
         {['market', 'plan'].map(category => (
           <div key={category} style={{marginBottom:20}}>
             <div className="calc-section-title">{CATEGORY_LABELS[category]}</div>
+            {category === 'market' && (
+              <div className="text-xs text-muted" style={{marginBottom:10}}>
+                У каждого условия можно выбрать «Только лонг» или «Только шорт» справа — тогда для сделки в
+                другую сторону оно не будет считаться проваленным, а просто не покажется в основном списке.
+                Если ничего не выбрать — условие проверяется для обеих сторон (например, если вы намеренно
+                торгуете перекупленность RSI в лонг, а не по обычной логике — просто выберите «Только лонг»
+                у этого условия).
+              </div>
+            )}
             <div className="flex flex-col gap-2">
               {CONDITION_CATALOG.filter(c => c.category === category).map(def => {
                 const cond = getCondition(def.id);
@@ -398,11 +407,6 @@ export default function Capital() {
                       <input type="checkbox" checked={enabled} onChange={() => toggleCondition(def.id)} />
                       <span style={{fontSize:13, color: enabled ? 'var(--text-primary)' : 'var(--text-secondary)'}}>
                         {def.label}
-                        {def.impliedDirection && (
-                          <span className="text-xs text-muted" style={{marginLeft:6}}>
-                            ({def.impliedDirection === 'long' ? 'только лонг' : 'только шорт'})
-                          </span>
-                        )}
                       </span>
                     </label>
                     {enabled && def.paramLabel && (
@@ -414,12 +418,7 @@ export default function Capital() {
                           style={{width:70, padding:'4px 8px', fontSize:13}} />
                       </div>
                     )}
-                    {/* Only the genuinely ambiguous conditions get a manual selector —
-                        RSI/MACD/EMA200 have a hardcoded impliedDirection above instead
-                        (no legitimate use trades them the other way round), while
-                        support/resistance and Bollinger-band conditions really do split
-                        by trading style (reversal vs breakout), so those stay a choice. */}
-                    {enabled && category === 'market' && !def.impliedDirection && (
+                    {enabled && category === 'market' && (
                       <select
                         className="input"
                         value={cond?.direction || 'both'}

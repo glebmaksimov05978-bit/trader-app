@@ -559,6 +559,12 @@ export default function Journal() {
                           now too — they used to be visibly different sizes (real user
                           follow-up report), which read as sloppy even after the overflow fix. */}
                       <div className="flex flex-col gap-1" style={{width:92}}>
+                        <div className="flex gap-2" style={{width:'100%'}}>
+                          <button className="btn btn-ghost btn-sm" style={{flex:1, padding:'6px 0'}} onClick={() => openEdit(trade)} title="Редактировать">✏️</button>
+                          <button className="btn btn-ghost btn-sm" style={{flex:1, padding:'6px 0', color:'var(--red)'}} onClick={() => handleDelete(trade.id)} title="Удалить">🗑</button>
+                        </div>
+                        {/* Below ✏️/🗑, not above — user report: the extra button should
+                            sit under the pair, not push it down. */}
                         {(trade.status === 'open' || trade.status === 'partial') && (
                           <button
                             className="btn btn-sm"
@@ -581,10 +587,6 @@ export default function Journal() {
                             ✅ Закрыть
                           </button>
                         )}
-                        <div className="flex gap-2" style={{width:'100%'}}>
-                          <button className="btn btn-ghost btn-sm" style={{flex:1, padding:'6px 0'}} onClick={() => openEdit(trade)} title="Редактировать">✏️</button>
-                          <button className="btn btn-ghost btn-sm" style={{flex:1, padding:'6px 0', color:'var(--red)'}} onClick={() => handleDelete(trade.id)} title="Удалить">🗑</button>
-                        </div>
                       </div>
                     </td>
                   </tr>

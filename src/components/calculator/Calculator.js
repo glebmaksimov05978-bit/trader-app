@@ -320,27 +320,23 @@ export default function Calculator() {
     formingKeysRef.current = new Set();
   }, [form.ticker, instrumentType, taTimeframe]);
 
-  // Scrolls the analysis panel into view — twice. The first scroll fires the instant
-  // the panel opens (still just a loading spinner) so a click gives immediate feedback;
-  // without it a trader whose screen didn't move assumed the click did nothing (real
-  // user report). But the panel grows a lot once data arrives (RSI/MACD/levels/pattern
-  // list), and that growth happens WHILE the first scroll's smooth animation is still
-  // running — the animation targets a spot that's since drifted, so it lands with the
+  // Scrolls the analysis panel into view — twice, for two different reasons. The first
+  // scroll fires instantly (no animation) the moment the panel opens, while it's still
+  // just a loading spinner — a snap, not smooth, because the panel is about to grow a
+  // lot once data arrives (RSI/MACD/levels/pattern list), and an animation still
+  // running while that growth happens targets a spot that's since drifted, landing the
   // "Технический анализ" heading near the BOTTOM of the screen instead of the top (real
-  // follow-up report). The second scroll, once loading finishes and the DOM has already
-  // reached its final height, corrects that.
+  // user report). The second scroll fires once loading finishes and the DOM has already
+  // reached its final height — nothing will move under it anymore, so THIS one can be
+  // the smooth, pleasant-looking scroll (also a real user request) without the timing
+  // bug: it's animating toward a target that's no longer moving.
   const taPanelRef = useRef(null);
   useEffect(() => {
     if (taOpen) taPanelRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' });
   }, [taOpen]);
   useEffect(() => {
-    // Instant ('auto'), not 'smooth' — an animated scroll takes a few hundred ms, and
-    // the panel keeps growing under it as indicators/patterns render in, so the
-    // animation's target drifts mid-flight and it lands wherever it happened to be
-    // interrupted (real user report: heading ended up near the bottom of the screen).
-    // A snap has nothing to interrupt, so it always lands exactly on the final layout.
     if (taOpen && !taState.loading && taState.data) {
-      taPanelRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' });
+      taPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [taOpen, taState.loading, taState.data]);
 

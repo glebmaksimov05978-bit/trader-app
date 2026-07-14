@@ -177,6 +177,14 @@ function detectFormingDoubleTopBottom(swings, visibleCandles, swingLookback, mat
 
   const readyInBars = Math.max(1, swingLookback - tail.barsAgo);
   const confidence = Math.round(Math.max(20, 55 - diffPct * 10));
+  const firstLabel = lastSwing.type === 'high' ? 'пик' : 'провал';
+  // "рядом с уровнем 2155.00" used to read as if 2155 were the forming second point —
+  // it's actually the FIRST (already-confirmed) swing's own price, which the still-
+  // forming tail is matching against (real user report: "непонятно где он нашёл первое
+  // дно"). Spelling out both points and the first one's date removes the ambiguity.
+  const firstDate = lastSwing.date instanceof Date
+    ? lastSwing.date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
+    : null;
 
   return [{
     pattern: lastSwing.type === 'high' ? 'double_top' : 'double_bottom',
@@ -184,8 +192,8 @@ function detectFormingDoubleTopBottom(swings, visibleCandles, swingLookback, mat
     confidence,
     readyInBars,
     levelPrice: lastSwing.price, // stable identity for cross-poll diffing (confirmed/invalidated) by the caller
-    detail: `Похоже на второй ${lastSwing.type === 'high' ? 'пик' : 'провал'} рядом с уровнем `
-      + `${lastSwing.price.toFixed(2)} — подтверждение примерно через ${readyInBars} `
+    detail: `Первый ${firstLabel} был на ${lastSwing.price.toFixed(2)}${firstDate ? ` (${firstDate})` : ''} — `
+      + `сейчас цена делает второй рядом, на ${tail.price.toFixed(2)}. Подтверждение примерно через ${readyInBars} `
       + `${readyInBars === 1 ? 'свечу' : readyInBars < 5 ? 'свечи' : 'свечей'}, если цена не пойдёт дальше.`,
   }];
 }
