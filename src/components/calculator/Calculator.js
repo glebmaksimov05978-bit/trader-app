@@ -336,19 +336,23 @@ export default function Calculator() {
     formingKeysRef.current = new Set();
   }, [form.ticker, instrumentType, taTimeframe]);
 
-  // Scrolls the analysis panel into view — twice, for two different reasons. The first
-  // scroll fires instantly (no animation) the moment the panel opens, while it's still
-  // just a loading spinner — a snap, not smooth, because the panel is about to grow a
-  // lot once data arrives (RSI/MACD/levels/pattern list), and an animation still
-  // running while that growth happens targets a spot that's since drifted, landing the
-  // "Технический анализ" heading near the BOTTOM of the screen instead of the top (real
-  // user report). The second scroll fires once loading finishes and the DOM has already
-  // reached its final height — nothing will move under it anymore, so THIS one can be
-  // the smooth, pleasant-looking scroll (also a real user request) without the timing
-  // bug: it's animating toward a target that's no longer moving.
+  // Scrolls the analysis panel into view. Two effects, because the panel can open in
+  // two different states: with the background prefetch above, the common case now is
+  // that taState.data is ALREADY there the instant taOpen flips true (real user
+  // report: this made the open feel abrupt instead of smooth) — nothing is going to
+  // grow under the animation, so this can just be one clean smooth scroll straight to
+  // the final position. If prefetch hasn't finished yet (data still null), the panel
+  // opens on a loading spinner first — animating toward that tiny card while it's
+  // about to grow a lot once data arrives would target a spot that's since drifted
+  // and land wrong (the original bug this two-effect split fixed), so THAT case snaps
+  // instantly to the spinner and lets the second effect do the smooth correction once
+  // loading finishes and the DOM has reached its final height.
   const taPanelRef = useRef(null);
   useEffect(() => {
-    if (taOpen) taPanelRef.current?.scrollIntoView({ behavior: 'auto', block: 'start' });
+    if (!taOpen) return;
+    const alreadyLoaded = !taState.loading && !!taState.data;
+    taPanelRef.current?.scrollIntoView({ behavior: alreadyLoaded ? 'smooth' : 'auto', block: 'start' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taOpen]);
   useEffect(() => {
     if (taOpen && !taState.loading && taState.data) {
