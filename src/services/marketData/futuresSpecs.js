@@ -71,10 +71,9 @@ export async function fetchMoexSecurityInfo(ticker) {
     const valueIdx = cols.indexOf('value');
     const get = (key) => rows.find((r) => r[nameIdx] === key)?.[valueIdx] ?? null;
     const type = get('TYPE');
-    // Perpetual futures carry a placeholder far-future expiry (MOEX: 2100-01-01,
-    // Tinkoff: similar) — filtering it out is done centrally in Calculator.js
-    // (isRealExpiration), not here, since the Tinkoff source hands back the same
-    // kind of placeholder and needs the identical treatment.
+    // Perpetual futures carry a formal far-future expiry (2100-01-01) — MOEX
+    // publishes it openly on the exchange itself, so it's passed through as-is
+    // rather than hidden; Calculator.js formats it without a timezone-shift bug.
     const expirationDate = get('LSTDELDATE') || get('LSTTRADE');
     return {
       ticker: get('SECID') || ticker,

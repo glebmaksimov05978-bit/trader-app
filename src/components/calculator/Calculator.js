@@ -15,18 +15,6 @@ import StrategyChecklist from '../shared/StrategyChecklist';
 import toast from 'react-hot-toast';
 import './Calculator.css';
 
-// Perpetual futures (MOEX index futures like IMOEXF) don't expire, but both data
-// sources report one anyway — a placeholder ~74 years out (MOEX: 2100-01-01, Tinkoff:
-// similar) instead of a real absence-of-value. Showing "Экспирация: 01.01.2100" (or,
-// in a browser west of Greenwich where the date-only ISO string shifts a day back once
-// parsed as local time, "31.12.2099" — caught live) reads like the app is confused, so
-// anything more than ~20 years out is treated as "no real expiration" from either source.
-function isRealExpiration(iso) {
-  if (!iso) return false;
-  const year = parseInt(String(iso).slice(0, 4), 10);
-  return Number.isFinite(year) && year < new Date().getFullYear() + 20;
-}
-
 // MOEX API — бесплатные цены без токена
 async function getMoexPrice(ticker, type) {
   try {
@@ -656,14 +644,17 @@ export default function Calculator() {
                 <span className="text-sm text-secondary">{instrumentInfo.name}</span>
                 {instrumentInfo.isShare
                   ? <span className="text-xs text-muted">📈 Акция MOEX</span>
-                  : isRealExpiration(instrumentInfo.expirationDate) && (
+                  : instrumentInfo.expirationDate && (
                     <span className="text-xs text-muted">
                       {/* Not new Date(...).toLocaleDateString() — a date-only ISO string
                           parses as UTC midnight, and any browser west of Greenwich shows
-                          the day before once shifted to local time (caught live: a
-                          non-expiring MOEX date meant to be filtered out slipped through
-                          and displayed one day early). Reading the YYYY-MM-DD digits
-                          directly sidesteps timezone conversion entirely. */}
+                          the day before once shifted to local time (caught live: showed
+                          "31.12.2099" instead of the exchange's actual "01.01.2100").
+                          Reading the YYYY-MM-DD digits directly sidesteps timezone
+                          conversion entirely — shown as-is, including for perpetual
+                          futures, since MOEX itself publishes this date openly (user
+                          call: don't hide exchange-published data, even if it reads
+                          as a formality for a contract that never really expires). */}
                       Экспирация: {(() => {
                         const m = String(instrumentInfo.expirationDate).match(/^(\d{4})-(\d{2})-(\d{2})/);
                         return m ? `${m[3]}.${m[2]}.${m[1]}` : new Date(instrumentInfo.expirationDate).toLocaleDateString('ru-RU');
