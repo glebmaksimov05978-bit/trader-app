@@ -201,12 +201,28 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
             </>
           )}
 
-          {preview && (
+          {preview && preview.classified.length === 0 && (
+            <div style={{textAlign:'center', padding:'32px 16px'}}>
+              <div style={{fontSize:32, marginBottom:8}}>✅</div>
+              <div style={{fontSize:15, fontWeight:600, marginBottom:6}}>Все сделки из этого отчёта уже загружены</div>
+              <div style={{fontSize:13, color:'var(--text-muted)'}}>
+                Новых сделок в файле не найдено — либо вы уже импортировали этот период, либо сделок в нём не было.
+              </div>
+            </div>
+          )}
+
+          {preview && preview.classified.length > 0 && (
             <>
               <div className="flex gap-2" style={{marginBottom:12, flexWrap:'wrap'}}>
-                <span className="badge badge-blue">Раздел 1.2 неисполненных: {preview.unexecutedCount}</span>
-                <span className="badge badge-gray">Раздел 1.3 отменённых: {preview.cancelledCount}</span>
-                <span className="badge badge-purple">РЕПО-операций: {preview.repoCount}</span>
+                <span className="badge badge-blue" title="Заявки, которые вы выставили, но которые не исполнились до конца периода отчёта — не настоящие сделки, в журнал не попадают">
+                  Раздел 1.2 неисполненных: {preview.unexecutedCount}
+                </span>
+                <span className="badge badge-gray" title="Заявки, которые вы сами отменили до исполнения — не настоящие сделки, в журнал не попадают">
+                  Раздел 1.3 отменённых: {preview.cancelledCount}
+                </span>
+                <span className="badge badge-purple" title="РЕПО — займ у брокера под залог бумаг, не спекулятивная сделка. В журнал не попадают, но сохраняются отдельно на будущее">
+                  РЕПО-операций: {preview.repoCount}
+                </span>
                 {preview.unmatchedCount > 0 && (
                   <span className="badge badge-red">Не сопоставлено: {preview.unmatchedCount}</span>
                 )}
@@ -302,11 +318,17 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
         </div>
 
         <div className="modal-footer">
-          <button className="btn btn-ghost" onClick={onClose}>Отмена</button>
-          {preview && (
-            <button className="btn btn-primary" onClick={handleImport} disabled={importing}>
-              {importing ? <><div className="spinner" style={{width:14,height:14}}/> Импортируем...</> : `Импортировать (${Object.values(checked).filter(Boolean).length})`}
-            </button>
+          {preview && preview.classified.length === 0 ? (
+            <button className="btn btn-primary" onClick={onClose}>Закрыть</button>
+          ) : (
+            <>
+              <button className="btn btn-ghost" onClick={onClose}>Отмена</button>
+              {preview && (
+                <button className="btn btn-primary" onClick={handleImport} disabled={importing}>
+                  {importing ? <><div className="spinner" style={{width:14,height:14}}/> Импортируем...</> : `Импортировать (${Object.values(checked).filter(Boolean).length})`}
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>

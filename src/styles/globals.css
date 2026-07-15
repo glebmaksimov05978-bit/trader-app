@@ -440,6 +440,26 @@ select.input {
   cursor: pointer;
 }
 
+/* input[type=file]'s "Choose file" button is a native OS-themed control that .input's
+   background doesn't reach — it stayed a stark white/grey rectangle even on the app's
+   dark theme (real user report). Restyled to match the rest of the button language. */
+input[type=file].input::-webkit-file-upload-button,
+input[type=file].input::file-selector-button {
+  background: var(--bg-surface-3);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  margin-right: 12px;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+input[type=file].input::-webkit-file-upload-button:hover,
+input[type=file].input::file-selector-button:hover {
+  background: var(--bg-surface-2);
+}
+
 /* Hide number input spinners globally */
 input[type=number]::-webkit-inner-spin-button,
 input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }

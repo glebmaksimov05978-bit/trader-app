@@ -126,7 +126,7 @@ export default function Dashboard() {
           <div className="kpi-value" style={{color:'var(--blue)'}}>
             {stats ? `${stats.winrate.toFixed(1)}%` : '—'}
           </div>
-          <div className="kpi-sub">Profit Factor: {stats ? formatNumber(stats.profitFactor, 2) : '—'}</div>
+          <div className="kpi-sub">Профит-фактор: {stats ? formatNumber(stats.profitFactor, 2) : '—'}</div>
         </div>
 
         <div className={`kpi-card ${(stats?.maxDrawdown || 0) > deposit * 0.1 ? 'red' : 'purple'}`}>
@@ -213,35 +213,6 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* P&L by instrument type */}
-        <div className="card">
-          <div className="section-title">
-            <div className="section-title-icon">🧩</div>
-            P&amp;L по типам инструментов
-          </div>
-          {instrumentPnl.length > 0 ? (
-            <div>
-              {instrumentPnl.map((g) => (
-                <div className="stat-row" key={g.instrumentType}>
-                  <span className="stat-row-label">
-                    {INSTRUMENT_LABELS[g.instrumentType] || g.instrumentType}
-                    <span style={{color:'var(--text-muted)', fontSize:12, marginLeft:6}}>
-                      {g.count} сделок, винрейт {g.winrate.toFixed(0)}%
-                    </span>
-                  </span>
-                  <span className={`stat-row-value ${g.totalPnl >= 0 ? 'text-green' : 'text-red'}`}>
-                    {g.totalPnl >= 0 ? '+' : ''}{formatCurrency(Math.round(g.totalPnl))}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="empty-state" style={{padding:'40px 20px'}}>
-              <div className="empty-state-icon">🧩</div>
-              <div className="empty-state-title">Нет сделок</div>
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Radar widget — quick strategy-checklist read on watched tickers, computed live
@@ -369,35 +340,37 @@ export default function Dashboard() {
             <div className="stat-row"><span className="stat-row-label">Общий убыток</span><span className="stat-row-value text-red">{formatCurrency(Math.round(stats.grossLoss))}</span></div>
           </div>
 
+          {/* Was "Риск-контроль" here — dropped, it just duplicated the risk settings
+              already editable in Капитал (real user report: felt like a copy, not new
+              information). P&L by instrument type moved down here from the charts row
+              instead, next to the stats it belongs with. */}
           <div className="card">
             <div className="section-title">
-              <div className="section-title-icon">⚠️</div>
-              Риск-контроль
+              <div className="section-title-icon">🧩</div>
+              P&amp;L по типам инструментов
             </div>
-            <div className="stat-row">
-              <span className="stat-row-label">Дневной лимит убытка</span>
-              <span className="stat-row-value">{userProfile?.dailyLossLimit || 3}%</span>
-            </div>
-            <div className="stat-row">
-              <span className="stat-row-label">Риск на сделку</span>
-              <span className="stat-row-value">{userProfile?.maxRiskPerTrade || 1}%</span>
-            </div>
-            <div className="stat-row">
-              <span className="stat-row-label">Депозит</span>
-              <span className="stat-row-value">{formatCurrency(deposit)}</span>
-            </div>
-            <div className="stat-row">
-              <span className="stat-row-label">Дневной лимит убытка (₽)</span>
-              <span className="stat-row-value text-red">
-                -{formatCurrency(Math.round(deposit * (userProfile?.dailyLossLimit || 3) / 100))}
-              </span>
-            </div>
-            <div className="stat-row">
-              <span className="stat-row-label">Макс. риск на сделку (₽)</span>
-              <span className="stat-row-value">
-                {formatCurrency(Math.round(deposit * (userProfile?.maxRiskPerTrade || 1) / 100))}
-              </span>
-            </div>
+            {instrumentPnl.length > 0 ? (
+              <div>
+                {instrumentPnl.map((g) => (
+                  <div className="stat-row" key={g.instrumentType}>
+                    <span className="stat-row-label">
+                      {INSTRUMENT_LABELS[g.instrumentType] || g.instrumentType}
+                      <span style={{color:'var(--text-muted)', fontSize:12, marginLeft:6}}>
+                        {g.count} сделок, винрейт {g.winrate.toFixed(0)}%
+                      </span>
+                    </span>
+                    <span className={`stat-row-value ${g.totalPnl >= 0 ? 'text-green' : 'text-red'}`}>
+                      {g.totalPnl >= 0 ? '+' : ''}{formatCurrency(Math.round(g.totalPnl))}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="empty-state" style={{padding:'40px 20px'}}>
+                <div className="empty-state-icon">🧩</div>
+                <div className="empty-state-title">Нет сделок</div>
+              </div>
+            )}
           </div>
         </div>
       )}

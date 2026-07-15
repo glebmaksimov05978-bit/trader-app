@@ -52,8 +52,11 @@ export default function Settings() {
         preferredTimeframe: form.preferredTimeframe || null,
       });
       toast.success('Настройки сохранены');
-    } catch {
-      toast.error('Ошибка сохранения');
+    } catch (e) {
+      // Swallowing the real reason here is exactly what made a past failed save (empty
+      // strategy write) impossible to diagnose without a temporary console.log — always
+      // surface e.message (see project-testing-conventions memory).
+      toast.error('Ошибка сохранения: ' + (e.message || 'неизвестная ошибка'));
     }
     setSaving(false);
   };
@@ -77,6 +80,12 @@ export default function Settings() {
               <input className="input" value={form.displayName}
                 onChange={e => set('displayName', e.target.value)} placeholder="Имя трейдера"/>
             </div>
+            {/* A single "Сохранить все настройки" button at the very bottom of a long
+                page was easy to miss — the trader looked for a save control right next
+                to the field they'd just edited and didn't find one (real user report). */}
+            <button className="btn btn-secondary btn-sm" onClick={save} disabled={saving} style={{alignSelf:'flex-start'}}>
+              {saving ? <><div className="spinner" style={{width:12,height:12}}/> Сохранение...</> : '💾 Сохранить имя'}
+            </button>
           </div>
         </div>
 

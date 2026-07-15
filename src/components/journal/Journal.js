@@ -432,7 +432,7 @@ export default function Journal() {
           <div className="kpi-card blue">
             <div className="kpi-label">Винрейт</div>
             <div className="kpi-value" style={{color:'var(--blue)'}}>{stats.winrate.toFixed(1)}%</div>
-            <div className="kpi-sub">{stats.wins}W / {stats.losses}L</div>
+            <div className="kpi-sub">{stats.wins} прибыльных / {stats.losses} убыточных</div>
           </div>
           <div className={`kpi-card ${stats.totalPnl >= 0 ? 'green' : 'red'}`}>
             <div className="kpi-label">Итого P&L</div>
@@ -442,7 +442,7 @@ export default function Journal() {
             <div className="kpi-sub">Матожидание: {formatCurrency(Math.round(stats.expectancy))}</div>
           </div>
           <div className="kpi-card gold">
-            <div className="kpi-label">Profit Factor</div>
+            <div className="kpi-label">Профит-фактор</div>
             <div className="kpi-value" style={{color:'var(--gold)'}}>{formatNumber(stats.profitFactor, 2)}</div>
             <div className="kpi-sub">Макс. серия побед: {stats.maxWinStreak}</div>
           </div>

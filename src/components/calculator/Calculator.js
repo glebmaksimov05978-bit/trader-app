@@ -872,7 +872,7 @@ export default function Calculator() {
 
                 {/* RR */}
                 <div className={`calc-metric-card ${!displayResult.rrValid && displayResult.rr !== 0 ? 'red' : displayResult.rr >= 2 ? 'green' : displayResult.rr >= 1 ? 'gold' : 'red'}`}>
-                  <div className="calc-metric-label">RISK/REWARD</div>
+                  <div className="calc-metric-label">РИСК / ПРИБЫЛЬ</div>
                   <div style={{fontSize:28,fontWeight:800,color:rrColor}}>{displayResult.rr > 0 ? `1:${formatNumber(displayResult.rr, 1)}` : '—'}</div>
                   {!displayResult.rrValid && displayResult.rr !== 0 ? <div style={{fontSize:11,color:'var(--red)'}}>⚠️ TP не там!</div>
                     : displayResult.rr >= 2 ? <div style={{fontSize:11,color:'var(--green)'}}>✅ Отличный</div>
