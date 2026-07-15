@@ -15,6 +15,18 @@ import StrategyChecklist from '../shared/StrategyChecklist';
 import toast from 'react-hot-toast';
 import './Calculator.css';
 
+// Perpetual futures (MOEX index futures like IMOEXF) don't expire, but both data
+// sources report one anyway — a placeholder ~74 years out (MOEX: 2100-01-01, Tinkoff:
+// similar) instead of a real absence-of-value. Showing "Экспирация: 01.01.2100" (or,
+// in a browser west of Greenwich where the date-only ISO string shifts a day back once
+// parsed as local time, "31.12.2099" — caught live) reads like the app is confused, so
+// anything more than ~20 years out is treated as "no real expiration" from either source.
+function isRealExpiration(iso) {
+  if (!iso) return false;
+  const year = parseInt(String(iso).slice(0, 4), 10);
+  return Number.isFinite(year) && year < new Date().getFullYear() + 20;
+}
+
 // MOEX API — бесплатные цены без токена
 async function getMoexPrice(ticker, type) {
   try {
@@ -217,8 +229,10 @@ export default function Calculator() {
   // Which ticker the current form numbers (SL/TP, contract specs) belong to — reloading
   // the SAME ticker to refresh its price must not wipe the trader's stop/take, but
   // loading a DIFFERENT one must (stale SL from the previous instrument is a footgun,
-  // real user report).
+  // real user report). Mirrored into state (not just the ref) so the analysis-prefetch
+  // effect below can depend on "a ticker just resolved" — refs don't trigger effects.
   const loadedTickerRef = useRef(null);
+  const [resolvedTicker, setResolvedTicker] = useState(null);
 
   const loadInstrument = useCallback(async () => {
     if (!form.ticker) { toast.error('Введите тикер'); return; }
@@ -254,6 +268,7 @@ export default function Calculator() {
           toast.success(`${ticker}: ${price} ₽ (MOEX, задержка 15 мин)`);
         }
         loadedTickerRef.current = ticker;
+        setResolvedTicker(ticker);
       } else {
         // Тинькофф
         if (!tapi) { toast.error('Введите API-токен в настройках'); return; }
@@ -277,6 +292,7 @@ export default function Calculator() {
         }));
         if (price) toast.success(`${info.ticker}: ${price} ₽`);
         loadedTickerRef.current = ticker;
+        setResolvedTicker(ticker);
       }
     } catch (e) {
       toast.error('Ошибка: ' + e.message);
@@ -346,12 +362,27 @@ export default function Calculator() {
     if (!taTimeframeOptions.some((tf) => tf.key === taTimeframe)) setTaTimeframe(DEFAULT_TIMEFRAME);
   }, [taTimeframeOptions, taTimeframe]);
 
-  // `silent` is true for background live-polling ticks — those shouldn't flash the
-  // loading spinner or steal focus by (re)opening the panel; only the first, manual
-  // click does that. On-demand by default (no polling) still applies: this function
-  // itself never schedules its own next call, the "🔴 Live" effect below does that.
+  // Identity of the candles this taState currently holds — lets a later call tell
+  // "I already have this exact ticker+timeframe+instrument loaded" from "this is
+  // stale, go fetch." Without it, opening the panel the first time on a given
+  // timeframe always showed a loading flash before snapping (jarring — real user
+  // report, caught on slow-motion video); the background prefetch below fills this
+  // in ahead of time so the click usually finds it already warm.
+  const loadedAnalysisKeyRef = useRef(null);
+  const analysisKey = `${(form.ticker || '').toUpperCase()}|${instrumentType}|${taTimeframe}`;
+
+  // `silent` is true for background prefetching and live-polling ticks — those
+  // shouldn't flash the loading spinner or steal focus by (re)opening the panel;
+  // only the first, manual click does that.
   const loadAnalysis = async (silent = false) => {
     if (!form.ticker) { if (!silent) toast.error('Введите тикер'); return; }
+    const key = analysisKey;
+    if (loadedAnalysisKeyRef.current === key && taState.data && !taState.loading) {
+      // Already have exactly this — a manual click just opens/scrolls to it instead
+      // of re-fetching and flashing "Загружаем свечи..." for data already on screen.
+      if (!silent) setTaOpen(true);
+      return;
+    }
     if (!silent) { setTaOpen(true); setTaState({ loading: true, data: null, error: null }); }
     try {
       const now = new Date();
@@ -367,11 +398,29 @@ export default function Calculator() {
       const marketContext = computeMarketContextAtEntry(candles, now);
       if (!indicators) throw new Error('Нет исторических свечей по этому тикеру');
       setTaState({ loading: false, data: { indicators, patterns, marketContext }, error: null });
+      loadedAnalysisKeyRef.current = key;
       diffFormingStatuses(patterns);
     } catch (e) {
       if (!silent) setTaState({ loading: false, data: null, error: e.message || 'Не удалось загрузить данные' });
     }
   };
+
+  // Quietly fetches the currently-selected timeframe's analysis as soon as a ticker
+  // resolves (loadInstrument success — tracked via resolvedTicker state, not just the
+  // ref, so this effect can react to it) or the timeframe selector changes — so by the
+  // time the trader actually clicks «Технический анализ», it's already warm and opens
+  // in one smooth motion instead of loading-then-jumping (real user report, caught on
+  // slow-motion video: first open on a given timeframe was visibly janky, second was
+  // smooth — because the second one hit the browser's own cache indirectly; this makes
+  // the FIRST open behave like the second). Only the ONE currently-selected timeframe,
+  // not all five — prefetching every timeframe up front would fire off 4 API calls
+  // nobody asked for on every ticker load.
+  useEffect(() => {
+    if (resolvedTicker && resolvedTicker === (form.ticker || '').toUpperCase()) {
+      loadAnalysis(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resolvedTicker, taTimeframe]);
 
   // Compares this poll's forming candidates against the last poll's (by `levelPrice`,
   // since a pattern's own price is the only stable identity across time) and toasts on
@@ -470,6 +519,22 @@ export default function Calculator() {
       toast.success('✅ Сделка открыта в журнале');
       setShowJournalModal(false);
       setJournalExtra({ setup: '', emotion: '', notes: '' });
+      // The draft is meant to survive navigating away mid-plan (Журнал and back) — not
+      // to outlive the plan actually being acted on. Leaving yesterday's ticker/SL/TP
+      // sitting in the form after it's already a real trade in the journal read as the
+      // app forgetting to clean up after itself (real user report).
+      try { sessionStorage.removeItem(CALC_DRAFT_KEY); } catch { /* ignore */ }
+      setForm(f => ({
+        ...f, ticker: '', entryPrice: '', stopLoss: '', takeProfit: '',
+        initialMargin: '', minStep: '1', minStepAmount: '', lot: '1',
+      }));
+      setInstrumentInfo(null);
+      setForcedDir(null);
+      setManualContracts('');
+      loadedTickerRef.current = null;
+      setResolvedTicker(null);
+      setTaOpen(false);
+      setTaState({ loading: false, data: null, error: null });
     } catch (e) {
       toast.error('Ошибка сохранения: ' + e.message);
     } finally {
@@ -587,9 +652,18 @@ export default function Calculator() {
                 <span className="text-sm text-secondary">{instrumentInfo.name}</span>
                 {instrumentInfo.isShare
                   ? <span className="text-xs text-muted">📈 Акция MOEX</span>
-                  : instrumentInfo.expirationDate && (
+                  : isRealExpiration(instrumentInfo.expirationDate) && (
                     <span className="text-xs text-muted">
-                      Экспирация: {new Date(instrumentInfo.expirationDate).toLocaleDateString('ru-RU')}
+                      {/* Not new Date(...).toLocaleDateString() — a date-only ISO string
+                          parses as UTC midnight, and any browser west of Greenwich shows
+                          the day before once shifted to local time (caught live: a
+                          non-expiring MOEX date meant to be filtered out slipped through
+                          and displayed one day early). Reading the YYYY-MM-DD digits
+                          directly sidesteps timezone conversion entirely. */}
+                      Экспирация: {(() => {
+                        const m = String(instrumentInfo.expirationDate).match(/^(\d{4})-(\d{2})-(\d{2})/);
+                        return m ? `${m[3]}.${m[2]}.${m[1]}` : new Date(instrumentInfo.expirationDate).toLocaleDateString('ru-RU');
+                      })()}
                     </span>
                   )
                 }

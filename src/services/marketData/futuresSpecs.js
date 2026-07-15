@@ -71,10 +71,11 @@ export async function fetchMoexSecurityInfo(ticker) {
     const valueIdx = cols.indexOf('value');
     const get = (key) => rows.find((r) => r[nameIdx] === key)?.[valueIdx] ?? null;
     const type = get('TYPE');
-    // Perpetual futures carry a placeholder expiry of 2100-01-01 — showing
-    // "Экспирация: 01.01.2100" reads like a bug, so treat far-future dates as none.
-    const rawExpiry = get('LSTDELDATE') || get('LSTTRADE');
-    const expirationDate = rawExpiry && new Date(rawExpiry).getFullYear() < 2099 ? rawExpiry : null;
+    // Perpetual futures carry a placeholder far-future expiry (MOEX: 2100-01-01,
+    // Tinkoff: similar) — filtering it out is done centrally in Calculator.js
+    // (isRealExpiration), not here, since the Tinkoff source hands back the same
+    // kind of placeholder and needs the identical treatment.
+    const expirationDate = get('LSTDELDATE') || get('LSTTRADE');
     return {
       ticker: get('SECID') || ticker,
       name: get('CONTRACTNAME') || get('NAME') || get('SHORTNAME') || ticker,
