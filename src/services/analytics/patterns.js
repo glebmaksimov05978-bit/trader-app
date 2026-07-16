@@ -113,6 +113,53 @@ export function findSupportResistance(swings, currentPrice, toleranceRatio = 0.0
     .sort((a, b) => Math.abs(a.price - currentPrice) - Math.abs(b.price - currentPrice));
 }
 
+// Weights for "which level is the strongest right now" — a static S/R level earns 1
+// point per touch (each touch is the SAME detection method repeating, so it's a weak
+// signal on its own), plus bonus points when an independently-computed level (EMA,
+// Fibonacci) sits within `tolerancePct` of it — agreement between methods that don't
+// share math is worth more than one more touch of the same swing detector. Weights
+// follow common trading convention (longer-period MAs and the "golden" Fibonacci
+// ratios are widely treated as more significant), not a statistically proven ranking —
+// same as everything else in this app, meant to be revisited once real outcome data
+// exists to check it against.
+const LEVEL_STRENGTH_WEIGHTS = {
+  ema9: 1, ema100: 2, ema200: 3,
+  fibGolden: 2,  // 38.2% / 50% / 61.8% — the most-watched Fibonacci ratios
+  fibOuter: 1,   // 23.6% / 78.6% — considered the weaker Fibonacci levels
+  bollinger: 1,
+};
+
+// Marks the single support/resistance level (if any) with the highest combined score —
+// touches plus confluence with EMA/Fibonacci/Bollinger — as `isStrongest`. Everything
+// stays visible either way; this only adds a ranking on top of what's already shown,
+// never hides or merges the independent calculations (see findSupportResistance,
+// computeEmaLevelsAtIndex, computeFibonacciLevels — all still computed separately).
+export function markStrongestLevel(levels, emaLevels, fibonacci, bollinger, tolerancePct = 0.3) {
+  if (!levels?.length) return levels;
+  const near = (a, b) => a != null && b != null && (Math.abs(a - b) / b) * 100 <= tolerancePct;
+
+  const scored = levels.map((lvl) => {
+    let score = lvl.touchCount;
+    if (near(emaLevels?.ema9?.value, lvl.price)) score += LEVEL_STRENGTH_WEIGHTS.ema9;
+    if (near(emaLevels?.ema100?.value, lvl.price)) score += LEVEL_STRENGTH_WEIGHTS.ema100;
+    if (near(emaLevels?.ema200?.value, lvl.price)) score += LEVEL_STRENGTH_WEIGHTS.ema200;
+    for (const f of fibonacci?.levels || []) {
+      if (!near(f.price, lvl.price)) continue;
+      score += (f.ratio === 0.236 || f.ratio === 0.786) ? LEVEL_STRENGTH_WEIGHTS.fibOuter : LEVEL_STRENGTH_WEIGHTS.fibGolden;
+    }
+    if (near(bollinger?.upper, lvl.price) || near(bollinger?.lower, lvl.price)) score += LEVEL_STRENGTH_WEIGHTS.bollinger;
+    return { ...lvl, strengthScore: score };
+  });
+
+  // Only worth flagging if it stands out — tied-for-first among several levels isn't
+  // "the strongest," it's just noise from a coarse scoring scheme. Touches alone are a
+  // perfectly valid way to win (a level with far more touches than anything else IS
+  // the strongest one), same as winning purely on confluence with no extra touches.
+  const maxScore = Math.max(...scored.map((l) => l.strengthScore));
+  const leaders = scored.filter((l) => l.strengthScore === maxScore);
+  return scored.map((l) => ({ ...l, isStrongest: leaders.length === 1 && l.strengthScore === maxScore }));
+}
+
 // --- Fibonacci retracement levels, from the most recent confirmed swing leg ---------
 
 const FIB_RATIOS = [0.236, 0.382, 0.5, 0.618, 0.786];

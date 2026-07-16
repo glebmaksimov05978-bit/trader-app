@@ -22,11 +22,18 @@ function ResultRow({ r }) {
   );
 }
 
-export default function StrategyChecklist({ strategyName, result }) {
+export default function StrategyChecklist({ strategyName, result, readinessThreshold }) {
   if (!result || result.total === 0) return null;
   const { total, passed, results } = result;
   const pct = Math.round((passed / total) * 100);
   const color = pct >= 80 ? 'var(--green)' : pct >= 50 ? 'var(--gold)' : 'var(--red)';
+  // Turns "N из M" (which the trader has to interpret themselves every time) into one
+  // verdict against the threshold set on the strategy — only shown when a threshold is
+  // actually configured (templates set one; a from-scratch strategy has none until the
+  // trader picks one in Capital, and silently comparing against nothing would be worse
+  // than not showing a verdict at all).
+  const hasThreshold = readinessThreshold != null && Number.isFinite(readinessThreshold);
+  const ready = hasThreshold && pct >= readinessThreshold;
 
   // Conditions for the trade's actual direction stay in the main list, sorted so a
   // passed condition reads first — the trader's own configured criteria as the primary
@@ -55,6 +62,18 @@ export default function StrategyChecklist({ strategyName, result }) {
       <div style={{height:6, background:'var(--bg-surface-3)', borderRadius:4, overflow:'hidden', marginBottom:14}}>
         <div style={{height:'100%', width:`${pct}%`, background:color, transition:'width 0.2s'}} />
       </div>
+      {hasThreshold && (
+        <div style={{
+          display:'flex', alignItems:'center', gap:8, padding:'8px 12px', borderRadius:8, marginBottom:14,
+          background: ready ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
+          border: `1px solid ${ready ? 'rgba(16,185,129,0.3)' : 'rgba(245,158,11,0.3)'}`,
+        }}>
+          <span style={{fontSize:16}}>{ready ? '✅' : '⏳'}</span>
+          <span style={{fontSize:13, color: ready ? 'var(--green)' : 'var(--gold)'}}>
+            {ready ? 'Готово к входу по вашей стратегии' : `Рано — выполнено ${pct}%, нужно от ${readinessThreshold}%`}
+          </span>
+        </div>
+      )}
       <div className="flex flex-col gap-2">
         {sortedRelevant.map((r) => <ResultRow key={r.id} r={r} />)}
       </div>

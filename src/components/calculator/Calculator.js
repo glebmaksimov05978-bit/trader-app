@@ -507,6 +507,15 @@ export default function Calculator() {
         // The timeframe the trader was actually analysing on when they opened the trade —
         // the Journal's auto-timeframe uses this over its duration-based guess.
         entryTimeframe: taTimeframe || null,
+        // How well the trade matched the trader's own strategy at the moment they hit
+        // "В журнал" — the checklist itself (StrategyChecklist) already computes this
+        // live but never persisted it anywhere, so there was no way to later ask "did
+        // trades with a higher match rate actually do better for me." Recorded as a
+        // plain snapshot (passed/total/%), not tied to which strategy version made it —
+        // if the strategy changes later this still reflects what was true at entry.
+        strategyMatchAtEntry: strategyResult?.total
+          ? { passed: strategyResult.passed, total: strategyResult.total, percent: Math.round((strategyResult.passed / strategyResult.total) * 100) }
+          : null,
       });
       toast.success('✅ Сделка открыта в журнале');
       setShowJournalModal(false);
@@ -975,7 +984,7 @@ export default function Calculator() {
       )}
 
       {taOpen && strategyResult && (
-        <StrategyChecklist strategyName={userProfile?.strategy?.name} result={strategyResult} />
+        <StrategyChecklist strategyName={userProfile?.strategy?.name} result={strategyResult} readinessThreshold={userProfile?.strategy?.readinessThreshold} />
       )}
       {taOpen && taState.data && !userProfile?.strategy?.conditions?.length && (
         <div className="card" style={{marginTop:16, textAlign:'center', padding:'20px'}}>

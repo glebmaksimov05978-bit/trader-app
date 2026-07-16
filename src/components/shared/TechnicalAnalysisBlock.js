@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import { formatNumber } from '../../utils/calculator';
 import RangeGauge from './RangeGauge';
+import { markStrongestLevel } from '../../services/analytics/patterns';
 
 // Click-to-reveal explainer for indicator jargon (RSI, %B, Bollinger, ...) — a trader
 // asked for exactly this instead of us trying to reword formulas into plain language
@@ -92,8 +93,8 @@ function MiniStat({ label, value, tip }) {
 // Used to also render →SL/→TP quick-fill buttons in the Calculator — removed (real
 // user report: too many small buttons on an already dense panel, hard on the eyes).
 // The trader still types stop/take by hand; this level list is read-only everywhere now.
-function LevelBadge({ price, children, className }) {
-  return <span className={className} style={{fontSize:11}}>{children}</span>;
+function LevelBadge({ price, children, className, style }) {
+  return <span className={className} style={{fontSize:11, ...style}}>{children}</span>;
 }
 
 export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
@@ -202,21 +203,31 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
                   })}
                 </div>
 
-                {patterns.supportResistance?.length > 0 && (
-                  <>
-                    <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:6}}>
-                      Уровни поддержки/сопротивления (по свингам) — 🔴 сопротивление (цена упиралась сверху) · 🟢 поддержка (цена отталкивалась снизу)
-                    </div>
-                    <div style={{display:'flex', flexWrap:'wrap', gap:8, marginBottom:14}}>
-                      {patterns.supportResistance.map((lvl, i) => (
-                        <LevelBadge key={i} price={lvl.price}
-                          className={`badge ${lvl.type === 'resistance' ? 'badge-red' : 'badge-green'}`}>
-                          {lvl.type === 'resistance' ? '🔴' : '🟢'} {formatNumber(lvl.price, 2)} ({lvl.touchCount} каc.)
-                        </LevelBadge>
-                      ))}
-                    </div>
-                  </>
-                )}
+                {patterns.supportResistance?.length > 0 && (() => {
+                  // Ranked here, not baked into computePatternsAtEntry — Боллинджер
+                  // lives in `indicators`, computed by a separate module, and only the
+                  // two are ever available together at this render layer without
+                  // threading a new parameter through every caller (Calculator/Journal/
+                  // Radar) that calls both compute functions independently.
+                  const ranked = markStrongestLevel(patterns.supportResistance, patterns.emaLevels, patterns.fibonacci, indicators?.bollinger);
+                  return (
+                    <>
+                      <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:6}}>
+                        Уровни поддержки/сопротивления (по свингам) — 🔴 сопротивление (цена упиралась сверху) · 🟢 поддержка (цена отталкивалась снизу)
+                      </div>
+                      <div style={{display:'flex', flexWrap:'wrap', gap:8, marginBottom:14}}>
+                        {ranked.map((lvl, i) => (
+                          <LevelBadge key={i} price={lvl.price}
+                            className={`badge ${lvl.type === 'resistance' ? 'badge-red' : 'badge-green'}`}
+                            style={lvl.isStrongest ? {border:'1px solid var(--gold)', boxShadow:'0 0 0 1px var(--gold)'} : undefined}>
+                            {lvl.type === 'resistance' ? '🔴' : '🟢'} {formatNumber(lvl.price, 2)} ({lvl.touchCount} каc.)
+                            {lvl.isStrongest && <span style={{color:'var(--gold)', marginLeft:4}}>★ самый сильный</span>}
+                          </LevelBadge>
+                        ))}
+                      </div>
+                    </>
+                  );
+                })()}
 
                 {patterns.fibonacci && (
                   <>

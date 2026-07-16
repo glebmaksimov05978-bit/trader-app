@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, calcStats } from '../../services/trades';
 import { formatCurrency, formatNumber, calcTrade } from '../../utils/calculator';
-import { CONDITION_CATALOG, defaultStrategy } from '../../services/analytics/strategy';
+import { CONDITION_CATALOG, defaultStrategy, STRATEGY_TEMPLATES } from '../../services/analytics/strategy';
 import toast from 'react-hot-toast';
 import './Capital.css';
 
@@ -16,6 +16,7 @@ export default function Capital() {
   const [saving, setSaving] = useState(false);
   const [strategy, setStrategy] = useState(defaultStrategy());
   const [savingStrategy, setSavingStrategy] = useState(false);
+  const [confirmTemplate, setConfirmTemplate] = useState(null); // template pending overwrite confirmation
 
   useEffect(() => {
     if (userProfile?.strategy) setStrategy(userProfile.strategy);
@@ -78,6 +79,19 @@ export default function Capital() {
   };
   const setConditionDirection = (id, direction) => {
     setStrategy(s => ({ ...s, conditions: s.conditions.map(c => c.id === id ? { ...c, direction } : c) }));
+  };
+  const setReadinessThreshold = (v) => setStrategy(s => ({ ...s, readinessThreshold: v }));
+
+  const applyTemplate = (tpl) => {
+    setStrategy({ name: tpl.label, conditions: tpl.conditions.map(c => ({ ...c })), readinessThreshold: tpl.readinessThreshold });
+  };
+  // window.confirm blocks the whole tab on a native OS dialog — inconsistent with the
+  // rest of the app's own themed modals, and (caught live, testing) hangs anything
+  // driving the browser programmatically. Same custom-confirm pattern as Journal.js's
+  // delete-trade dialog.
+  const loadTemplate = (tpl) => {
+    if (strategy.conditions.length > 0) { setConfirmTemplate(tpl); return; }
+    applyTemplate(tpl);
   };
 
   const saveStrategy = async () => {
@@ -374,10 +388,33 @@ export default function Capital() {
           по тикеру) просто не учитывается в счёте — не считается ни выполненным, ни провальным.
         </p>
 
-        <div className="input-group" style={{marginBottom:16, maxWidth:360}}>
-          <label className="input-label">Название стратегии</label>
-          <input className="input" value={strategy.name}
-            onChange={e => setStrategy(s => ({ ...s, name: e.target.value }))} placeholder="Моя стратегия" />
+        <div style={{marginBottom:20}}>
+          <div className="text-xs text-muted" style={{marginBottom:8}}>
+            Шаблоны — стартовый черновик, не проверенная временем формула. Загрузите один, дальше правьте
+            под себя как обычно; со временем раздел «3 привычки недели» покажет, помогает ли выбранный
+            порог готовности на ваших реальных сделках.
+          </div>
+          <div className="flex gap-2" style={{flexWrap:'wrap'}}>
+            {STRATEGY_TEMPLATES.map(tpl => (
+              <button key={tpl.id} className="btn btn-secondary btn-sm" title={tpl.description} onClick={() => loadTemplate(tpl)}>
+                {tpl.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="calc-grid-2" style={{marginBottom:16, maxWidth:520}}>
+          <div className="input-group">
+            <label className="input-label">Название стратегии</label>
+            <input className="input" value={strategy.name}
+              onChange={e => setStrategy(s => ({ ...s, name: e.target.value }))} placeholder="Моя стратегия" />
+          </div>
+          <div className="input-group">
+            <label className="input-label">Порог готовности к входу, %</label>
+            <input className="input" type="number" min="0" max="100" step="5"
+              value={strategy.readinessThreshold ?? ''} placeholder="не задан"
+              onChange={e => setReadinessThreshold(e.target.value === '' ? null : parseFloat(e.target.value))} />
+          </div>
         </div>
 
         {['market', 'plan'].map(category => (
@@ -442,6 +479,27 @@ export default function Capital() {
           {savingStrategy ? <><div className="spinner" style={{width:14,height:14}}/> Сохранение...</> : '💾 Сохранить стратегию'}
         </button>
       </div>
+
+      {confirmTemplate && (
+        <div className="modal-overlay" onClick={() => setConfirmTemplate(null)}>
+          <div className="modal" style={{maxWidth:380}} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Заменить настройки шаблоном?</h3>
+              <button className="modal-close" onClick={() => setConfirmTemplate(null)}>✕</button>
+            </div>
+            <div style={{padding:'16px 0', color:'var(--text-muted)', fontSize:14, lineHeight:1.6}}>
+              Текущие условия стратегии заменятся на шаблон «{confirmTemplate.label}». Не сохранено — можно
+              будет вернуть, просто не сохраняя. После загрузки всё так же можно редактировать.
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setConfirmTemplate(null)}>Отмена</button>
+              <button className="btn btn-primary" onClick={() => { applyTemplate(confirmTemplate); setConfirmTemplate(null); }}>
+                Заменить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

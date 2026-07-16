@@ -621,6 +621,14 @@ export default function Journal() {
                           </>
                         )}
 
+                        {trade.strategyMatchAtEntry && (
+                          <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:12}}>
+                            Совпадение со стратегией на входе: <strong style={{color:'var(--text-primary)'}}>
+                              {trade.strategyMatchAtEntry.passed} из {trade.strategyMatchAtEntry.total} ({trade.strategyMatchAtEntry.percent}%)
+                            </strong>
+                          </div>
+                        )}
+
                         {trade.pnlNeedsSpecs && (
                           <div style={{
                             background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)',

@@ -220,6 +220,57 @@ export function defaultStrategy() {
   return { name: 'Моя стратегия', conditions: [] };
 }
 
+// Starting drafts, not tuned presets — the numbers (and even which conditions belong
+// in which tier) are a reasonable first guess based on how these styles are commonly
+// described, not backtested against real outcomes (nobody has that data yet). Every
+// field stays fully editable after loading a template; `readinessThreshold` is what
+// the checklist verdict ("Готово к входу" vs "Рано — N%") compares the live match
+// percentage against, and is meant to be nudged over time once a trader's own journal
+// shows whether trades above/below their threshold actually did better.
+export const STRATEGY_TEMPLATES = [
+  {
+    id: 'conservative',
+    label: 'Консервативная — по тренду',
+    description: 'Вход только по направлению тренда, строгие требования к R:R и риску. Реже сигналов, выше требовательность.',
+    readinessThreshold: 80,
+    conditions: [
+      { id: 'price_above_ema200', enabled: true, param: null, direction: 'both' },
+      { id: 'market_trending', enabled: true, param: null, direction: 'both' },
+      { id: 'macd_positive', enabled: true, param: null, direction: 'both' },
+      { id: 'min_rr', enabled: true, param: 3, direction: 'both' },
+      { id: 'max_risk_percent', enabled: true, param: 0.5, direction: 'both' },
+      { id: 'max_margin_usage', enabled: true, param: 15, direction: 'both' },
+    ],
+  },
+  {
+    id: 'moderate',
+    label: 'Умеренная — отскок от уровня',
+    description: 'Вход на перепроданности/перекупленности у уровня поддержки/сопротивления, средние требования к риску.',
+    readinessThreshold: 60,
+    conditions: [
+      { id: 'near_support', enabled: true, param: 1, direction: 'both' },
+      { id: 'rsi_below', enabled: true, param: 35, direction: 'both' },
+      { id: 'min_rr', enabled: true, param: 2, direction: 'both' },
+      { id: 'max_risk_percent', enabled: true, param: 1, direction: 'both' },
+      { id: 'max_margin_usage', enabled: true, param: 30, direction: 'both' },
+    ],
+  },
+  {
+    id: 'aggressive',
+    label: 'Агрессивная — пробой уровня',
+    description: 'Вход на пробое сопротивления/поддержки с подтверждением объёмом, мягкие требования — больше сигналов, выше риск.',
+    readinessThreshold: 40,
+    conditions: [
+      { id: 'near_resistance', enabled: true, param: 1, direction: 'both' },
+      { id: 'volume_above_avg', enabled: true, param: 1.5, direction: 'both' },
+      { id: 'market_trending', enabled: true, param: null, direction: 'both' },
+      { id: 'min_rr', enabled: true, param: 1.5, direction: 'both' },
+      { id: 'max_risk_percent', enabled: true, param: 2, direction: 'both' },
+      { id: 'max_margin_usage', enabled: true, param: 50, direction: 'both' },
+    ],
+  },
+];
+
 // `strategy.conditions` = [{ id, enabled, param, direction }] — only enabled ones count.
 // Direction binding decides which side of a trade a condition applies to. Some
 // conditions (see `impliedDirection` in the catalog) have it hardcoded — the trader
