@@ -10,8 +10,17 @@ const FUTURES_MONTH_CODE = {
 
 const FUTURES_TICKER_RE = /^[A-Z]{2,6}([FGHJKMNQUVXZ])(\d)$/;
 
+// MOEX perpetual ("вечные") futures have no month+digit expiry code — the ticker is
+// just the asset code plus an F suffix: IMOEXF, USDRUBF, CNYRUBF, SBERF, GAZPF, ...
+// Minimum 5 chars total so a hypothetical 4-letter stock ticker can't be swallowed
+// (all MOEX perpetuals are asset code (≥4 chars) + F). Real user report: typing
+// IMOEXF into the Radar auto-detected it as a stock because only the classic
+// month+digit pattern was recognized.
+const PERPETUAL_FUTURES_RE = /^[A-Z]{4,6}F$/;
+
 export function isFuturesCode(code) {
-  return FUTURES_TICKER_RE.test(String(code || '').toUpperCase());
+  const c = String(code || '').toUpperCase();
+  return FUTURES_TICKER_RE.test(c) || PERPETUAL_FUTURES_RE.test(c);
 }
 
 // Currency spot pairs (CNYRUB_TOM, USDRUB_TOM, EURRUB_TOM, ...) are real speculative
