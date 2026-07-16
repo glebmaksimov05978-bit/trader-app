@@ -246,7 +246,10 @@ export default function Dashboard() {
                   ) : st?.result ? (
                     <span style={{fontWeight:700, color}}>{st.result.passed} из {st.result.total}</span>
                   ) : st && !st.loading && !st.error ? (
-                    <span className="text-muted" style={{fontSize:12}}>стратегия не задана</span>
+                    <span className="text-muted" style={{fontSize:12}}>
+                      нужно сначала написать или выбрать готовую стратегию в разделе{' '}
+                      <a href="/capital" style={{color:'var(--accent-primary)'}}>Капитал</a>
+                    </span>
                   ) : (
                     <button className="btn btn-ghost btn-sm" style={{fontSize:12}} onClick={() => checkRadarItem(item)}>Проверить</button>
                   )}
