@@ -1,7 +1,7 @@
 // src/components/capital/Capital.js
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { getUserTrades, calcStats } from '../../services/trades';
+import { getUserTrades, calcStats, computeLiveBalance } from '../../services/trades';
 import { formatCurrency, formatNumber, calcTrade } from '../../utils/calculator';
 import { CONDITION_CATALOG, defaultStrategy, STRATEGY_TEMPLATES } from '../../services/analytics/strategy';
 import toast from 'react-hot-toast';
@@ -71,7 +71,7 @@ export default function Capital() {
       // Firestore rejects `undefined` field values outright — conditions without a
       // parameter (e.g. "цена выше EMA200") must not get `param: undefined`, or the
       // whole setDoc throws and the save silently fails.
-      return { ...s, conditions: [...s.conditions, { id, enabled: true, param: def?.defaultParam ?? null, direction: 'both' }] };
+      return { ...s, conditions: [...s.conditions, { id, enabled: true, param: def?.defaultParam ?? null, direction: def?.defaultDirection || 'both' }] };
     });
   };
   const setConditionParam = (id, param) => {
@@ -108,8 +108,14 @@ export default function Capital() {
   const saveSettings = async () => {
     setSaving(true);
     try {
+      const newDeposit = parseFloat(settings.depositSize);
+      // Only re-stamp the anchor when the deposit number actually changed — saving the
+      // rest of the risk settings (which happens far more often) shouldn't silently
+      // reset which trades count toward the live balance.
+      const depositChanged = newDeposit !== (userProfile?.depositSize ?? null);
       await updateUserProfile({
-        depositSize: parseFloat(settings.depositSize),
+        depositSize: newDeposit,
+        ...(depositChanged ? { depositSetAt: new Date().toISOString() } : {}),
         dailyLossLimit: parseFloat(settings.dailyLossLimit),
         maxRiskPerTrade: parseFloat(settings.maxRiskPerTrade),
         maxDailyTrades: parseInt(settings.maxDailyTrades),
@@ -155,8 +161,11 @@ export default function Capital() {
   const todayLossUsed = Math.abs(Math.min(todayPnl, 0));
   const todayLimitUsedPct = Math.min((todayLossUsed / dailyLossRub) * 100, 100);
 
-  // Drawdown from peak
-  const currentBalance = deposit + (stats?.totalPnl || 0);
+  // Drawdown from peak — computeLiveBalance only counts trades closed on/after the
+  // deposit was last actually changed, so importing an old report doesn't retroactively
+  // drag today's stated deposit down by losses that already happened before it (real
+  // user report).
+  const currentBalance = computeLiveBalance(trades, deposit, userProfile?.depositSetAt);
   const peakBalance = Math.max(deposit, currentBalance); // simplified
   const currentDd = Math.max(0, peakBalance - currentBalance);
   const currentDdPct = peakBalance > 0 ? (currentDd / peakBalance) * 100 : 0;
@@ -482,14 +491,31 @@ export default function Capital() {
 
       {confirmTemplate && (
         <div className="modal-overlay" onClick={() => setConfirmTemplate(null)}>
-          <div className="modal" style={{maxWidth:380}} onClick={e => e.stopPropagation()}>
+          {/* Wider, and shows what the template actually contains — the old text was
+              vague ("не сохранено — можно будет вернуть, просто не сохраняя") and asked
+              the trader to replace their setup blind (real user report: both unclear). */}
+          <div className="modal" style={{maxWidth:480}} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">Заменить настройки шаблоном?</h3>
+              <h3 className="modal-title">Заменить условия стратегии?</h3>
               <button className="modal-close" onClick={() => setConfirmTemplate(null)}>✕</button>
             </div>
-            <div style={{padding:'16px 0', color:'var(--text-muted)', fontSize:14, lineHeight:1.6}}>
-              Текущие условия стратегии заменятся на шаблон «{confirmTemplate.label}». Не сохранено — можно
-              будет вернуть, просто не сохраняя. После загрузки всё так же можно редактировать.
+            <div style={{padding:'16px 0', color:'var(--text-secondary)', fontSize:14, lineHeight:1.6}}>
+              <p style={{margin:'0 0 12px'}}>
+                Текущий набор условий заменится на шаблон «{confirmTemplate.label}». Если передумаете —
+                просто не нажимайте «Сохранить стратегию» внизу страницы, и в базе останется прежний набор.
+              </p>
+              <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:6}}>Шаблон включает:</div>
+              <div className="flex flex-col gap-1">
+                {confirmTemplate.conditions.map((c) => {
+                  const def = CONDITION_CATALOG.find((d) => d.id === c.id);
+                  if (!def) return null;
+                  return (
+                    <div key={c.id} style={{fontSize:13, padding:'4px 10px', background:'var(--bg-surface-2)', borderRadius:8}}>
+                      {def.label.replace('X', c.param ?? def.defaultParam)}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setConfirmTemplate(null)}>Отмена</button>

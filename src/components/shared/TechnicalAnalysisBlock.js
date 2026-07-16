@@ -3,7 +3,8 @@
 // Shared by the Journal (trade "as of entry" frozen snapshot, Radar "as of now" live
 // snapshot) and the Calculator's live pre-trade panel — same indicators/patterns shape
 // everywhere, only `atDate` and caching strategy differ per caller.
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { formatNumber } from '../../utils/calculator';
 import RangeGauge from './RangeGauge';
 import { markStrongestLevel } from '../../services/analytics/patterns';
@@ -12,25 +13,51 @@ import { markStrongestLevel } from '../../services/analytics/patterns';
 // asked for exactly this instead of us trying to reword formulas into plain language
 // every time: keep the label short, put the "what does this actually mean" text behind
 // a small ⓘ. Click toggles (not hover) so it works on touch too.
+//
+// Rendered into a portal on <body>, positioned with fixed coordinates computed from the
+// button's own position — NOT a plain `position: absolute` child. Every modal in this
+// app clips overflow (rounded corners need it), and `.modal-body` also computes
+// overflow-x to `auto` the moment overflow-y is set — so a simple absolute popup got
+// hard-clipped at the modal's edge mid-sentence (real user report/photo: text cut off
+// at "...в журна|"). A portal escapes any ancestor's overflow/clipping entirely, which
+// is the only fix that's robust regardless of which card or modal an InfoTip ends up in.
 export function InfoTip({ text }) {
   const [open, setOpen] = useState(false);
+  const btnRef = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const TIP_WIDTH = 280;
+
+  const toggle = () => {
+    if (!open && btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      const left = Math.min(r.left, window.innerWidth - TIP_WIDTH - 12);
+      setPos({ top: r.bottom + 6, left: Math.max(12, left) });
+    }
+    setOpen((o) => !o);
+  };
+
   return (
     <span style={{position:'relative', display:'inline-flex'}}>
       <button
+        ref={btnRef}
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggle}
         title="Пояснение"
         style={{
           background:'var(--bg-surface-3)', border:'none', borderRadius:'50%', width:14, height:14,
           fontSize:10, lineHeight:'14px', color:'var(--text-muted)', cursor:'pointer', padding:0, flexShrink:0,
         }}
       >ⓘ</button>
-      {open && (
-        <span style={{
-          position:'absolute', top:18, left:0, zIndex:10, width:240, fontSize:11, fontWeight:400,
-          color:'var(--text-secondary)', background:'var(--bg-surface-2)', border:'1px solid var(--border-subtle)',
-          borderRadius:8, padding:'8px 10px', boxShadow:'0 4px 12px rgba(0,0,0,0.2)',
-        }}>{text}</span>
+      {open && createPortal(
+        <span
+          onClick={(e) => e.stopPropagation()}
+          style={{
+            position:'fixed', top:pos.top, left:pos.left, zIndex:10000, width:TIP_WIDTH, fontSize:12, fontWeight:400,
+            color:'var(--text-secondary)', background:'var(--bg-surface-2)', border:'1px solid var(--border-subtle)',
+            borderRadius:10, padding:'10px 12px', boxShadow:'0 8px 24px rgba(0,0,0,0.35)', lineHeight:1.5,
+          }}
+        >{text}</span>,
+        document.body
       )}
     </span>
   );

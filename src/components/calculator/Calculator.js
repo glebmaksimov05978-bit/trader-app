@@ -3,7 +3,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useAuth } from '../../context/AuthContext';
 import { TinkoffAPI, parseFutureInfo, parseShareInfo } from '../../services/tinkoff';
 import { calcTrade, formatCurrency, formatNumber } from '../../utils/calculator';
-import { addTrade } from '../../services/trades';
+import { addTrade, getUserTrades, computeLiveBalance } from '../../services/trades';
 import { fetchDailyCandles, availableTimeframes, DEFAULT_TIMEFRAME, TIMEFRAMES } from '../../services/marketData/candles';
 import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
@@ -93,6 +93,7 @@ export default function Calculator() {
     } catch { /* private mode/quota — черновик просто не сохранится */ }
   }, [form, instrumentType, priceSource, orderType, manualContracts, forcedDir]);
   const [result, setResult] = useState(null);
+  const [liveTrades, setLiveTrades] = useState([]); // for the "Депозит" default — see computeLiveBalance effect below
   const [instrumentInfo, setInstrumentInfo] = useState(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
   const [tapi, setTapi] = useState(null);
@@ -112,15 +113,27 @@ export default function Calculator() {
     if (userProfile?.tinkoffToken) setTapi(new TinkoffAPI(userProfile.tinkoffToken));
   }, [userProfile]);
 
+  // Дефолтное поле «Депозит» должно совпадать с тем, что Дашборд/Капитал считают
+  // текущим балансом — раньше здесь просто отражалось сырое depositSize из настроек,
+  // и трейдер видел на Дашборде «баланс уменьшился», а в Калькуляторе — старое число
+  // (real user report). computeLiveBalance — тот же расчёт, что и везде: депозит +
+  // P&L сделок, закрытых после того, как депозит последний раз меняли.
+  useEffect(() => {
+    if (!user) return;
+    getUserTrades(user.uid).then(setLiveTrades);
+  }, [user]);
+
   useEffect(() => {
     if (userProfile) {
+      const liveBalance = computeLiveBalance(liveTrades, userProfile.depositSize ?? 0, userProfile.depositSetAt);
       setForm(f => ({
         ...f,
-        depositSize: String(userProfile.depositSize ?? 0),
+        depositSize: String(Math.round(liveBalance)),
         riskPercent: userProfile.maxRiskPerTrade || f.riskPercent,
       }));
     }
-  }, [userProfile]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userProfile, liveTrades]);
 
   useEffect(() => {
     if (showJournalModal || showTinkoffModal) {
@@ -956,6 +969,17 @@ export default function Calculator() {
                 </div>
               </div>
             </>
+          ) : result ? (
+            <div className="card" style={{textAlign:'center',padding:'48px 24px'}}>
+              <div className="empty-state">
+                <div className="empty-state-icon">⚠️</div>
+                <div className="empty-state-title">Риск слишком мал для 1 контракта</div>
+                <div className="empty-state-text">
+                  При таком стоп-лоссе убыток на {instrumentType === 'stock' ? 'лот' : 'контракт'} превышает сумму риска ({formatCurrency(Math.round((parseFloat(form.depositSize)||0) * (parseFloat(form.riskPercent)||0) / 100))}).
+                  Увеличьте риск на сделку, сузьте стоп-лосс или уменьшите лотность контракта.
+                </div>
+              </div>
+            </div>
           ) : (
             <div className="card" style={{textAlign:'center',padding:'48px 24px'}}>
               <div className="empty-state">

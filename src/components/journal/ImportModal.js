@@ -7,6 +7,7 @@ import { parseTinkoffPdfExact } from '../../services/import/tinkoffPdf';
 import { parseTinkoffPdfViaAI } from '../../services/import/tinkoffPdfAi';
 import { matchTransactionsToTrades, classifyForPreview, enrichPnl, commitImport, filterAlreadyImportedTransactions, sanityCheck } from '../../services/import/importTrades';
 import { saveImportArtifacts } from '../../services/trades';
+import { InfoTip } from '../shared/TechnicalAnalysisBlock';
 import toast from 'react-hot-toast';
 import './Journal.css';
 
@@ -213,15 +214,22 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
 
           {preview && preview.classified.length > 0 && (
             <>
+              {/* Badges got their real names instead of Т-Инвестиций's report section
+                  numbers (1.2/1.3), and the raw `title=` browser tooltip (a plain white
+                  OS-styled box, clashing with the dark theme) swapped for the app's own
+                  InfoTip — real user report on both counts. */}
               <div className="flex gap-2" style={{marginBottom:12, flexWrap:'wrap'}}>
-                <span className="badge badge-blue" title="Заявки, которые вы выставили, но которые не исполнились до конца периода отчёта — не настоящие сделки, в журнал не попадают">
-                  Раздел 1.2 неисполненных: {preview.unexecutedCount}
+                <span className="badge badge-blue" style={{display:'inline-flex', alignItems:'center', gap:5}}>
+                  Неисполненные: {preview.unexecutedCount}
+                  <InfoTip text="Заявки, которые вы выставили, но которые не исполнились до конца периода отчёта — не настоящие сделки, в журнал не попадают." />
                 </span>
-                <span className="badge badge-gray" title="Заявки, которые вы сами отменили до исполнения — не настоящие сделки, в журнал не попадают">
-                  Раздел 1.3 отменённых: {preview.cancelledCount}
+                <span className="badge badge-gray" style={{display:'inline-flex', alignItems:'center', gap:5}}>
+                  Отменённые: {preview.cancelledCount}
+                  <InfoTip text="Заявки, которые вы сами отменили до исполнения — не настоящие сделки, в журнал не попадают." />
                 </span>
-                <span className="badge badge-purple" title="РЕПО — займ у брокера под залог бумаг, не спекулятивная сделка. В журнал не попадают, но сохраняются отдельно на будущее">
-                  РЕПО-операций: {preview.repoCount}
+                <span className="badge badge-purple" style={{display:'inline-flex', alignItems:'center', gap:5}}>
+                  Займы (РЕПО): {preview.repoCount}
+                  <InfoTip text="РЕПО — займ у брокера под залог бумаг, не спекулятивная сделка. В журнал не попадают, но сохраняются отдельно на будущее." />
                 </span>
                 {preview.unmatchedCount > 0 && (
                   <span className="badge badge-red">Не сопоставлено: {preview.unmatchedCount}</span>

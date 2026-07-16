@@ -37,9 +37,20 @@ export const CONDITION_CATALOG = [
   // condition would just be wrong for that trader; a manual selector, defaulting to
   // 'both', costs nothing and never boxes anyone out. See evaluateStrategy for how an
   // opposite-direction condition gets quietly collapsed instead of shown as a failure.
+  //
+  // `defaultDirection` is a separate, softer thing — it's what the direction selector
+  // starts on the FIRST time a trader enables this specific condition (toggleCondition
+  // in Capital.js), not a permanent lock. Without it, a trader who enables both
+  // rsi_below and rsi_above (the natural thing to do if they trade both ways) gets both
+  // stuck on "оба" by default — and outside the Calculator (Radar, or before a
+  // stop-loss is entered) direction is unknown, so BOTH evaluate and one of the pair is
+  // mathematically guaranteed to fail every single time, quietly capping their % (real
+  // user report — exactly this pairing, on Radar). Pre-selecting the conventional side
+  // fixes that for anyone who doesn't deliberately change it, same convention already
+  // used to explain the templates.
   {
     id: 'rsi_below', category: 'market', label: 'RSI ниже X (перепроданность)',
-    paramLabel: 'RSI ниже', defaultParam: 35,
+    paramLabel: 'RSI ниже', defaultParam: 35, defaultDirection: 'long',
     evaluate: (ctx, param) => {
       const v = ctx.indicators?.rsi14;
       if (v == null) return { na: true };
@@ -48,7 +59,7 @@ export const CONDITION_CATALOG = [
   },
   {
     id: 'rsi_above', category: 'market', label: 'RSI выше X (перекупленность)',
-    paramLabel: 'RSI выше', defaultParam: 65,
+    paramLabel: 'RSI выше', defaultParam: 65, defaultDirection: 'short',
     evaluate: (ctx, param) => {
       const v = ctx.indicators?.rsi14;
       if (v == null) return { na: true };
@@ -56,7 +67,7 @@ export const CONDITION_CATALOG = [
     },
   },
   {
-    id: 'price_above_ema200', category: 'market', label: 'Цена выше EMA200 (восходящий тренд)',
+    id: 'price_above_ema200', category: 'market', label: 'Цена выше EMA200 (восходящий тренд)', defaultDirection: 'long',
     evaluate: (ctx) => {
       const e = ctx.patterns?.emaLevels?.ema200;
       const price = refPrice(ctx);
@@ -67,7 +78,7 @@ export const CONDITION_CATALOG = [
     },
   },
   {
-    id: 'price_below_ema200', category: 'market', label: 'Цена ниже EMA200 (нисходящий тренд)',
+    id: 'price_below_ema200', category: 'market', label: 'Цена ниже EMA200 (нисходящий тренд)', defaultDirection: 'short',
     evaluate: (ctx) => {
       const e = ctx.patterns?.emaLevels?.ema200;
       const price = refPrice(ctx);
@@ -78,7 +89,7 @@ export const CONDITION_CATALOG = [
     },
   },
   {
-    id: 'macd_positive', category: 'market', label: 'MACD-гистограмма положительная',
+    id: 'macd_positive', category: 'market', label: 'MACD-гистограмма положительная', defaultDirection: 'long',
     evaluate: (ctx) => {
       const v = ctx.indicators?.macdHistogram;
       if (v == null) return { na: true };
@@ -86,7 +97,7 @@ export const CONDITION_CATALOG = [
     },
   },
   {
-    id: 'macd_negative', category: 'market', label: 'MACD-гистограмма отрицательная',
+    id: 'macd_negative', category: 'market', label: 'MACD-гистограмма отрицательная', defaultDirection: 'short',
     evaluate: (ctx) => {
       const v = ctx.indicators?.macdHistogram;
       if (v == null) return { na: true };

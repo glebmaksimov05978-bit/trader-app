@@ -33,7 +33,7 @@ export default function Dashboard() {
       setTrades(t);
       const s = calcStats(t);
       setStats(s);
-      setEquity(buildEquityCurve(t, userProfile?.depositSize ?? 0));
+      setEquity(buildEquityCurve(t, userProfile?.depositSize ?? 0, userProfile?.depositSetAt));
       setLoading(false);
     });
   }, [user, userProfile]);

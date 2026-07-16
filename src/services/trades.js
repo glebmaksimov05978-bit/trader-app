@@ -201,10 +201,30 @@ export function calcStats(trades) {
   };
 }
 
+// `depositSize` in Настройки/Капитал means "депозит на СЕГОДНЯ", not "депозит в
+// начале истории" — but every trade close event (including ones imported from
+// months before the trader ever typed a deposit number into the app) used to get
+// folded into the running balance regardless of when it happened. Importing an old
+// report after already telling the app your current deposit made the balance drop
+// by the old trades' losses on top of the number you'd just entered — wrong, since
+// those losses already happened and are already reflected in the deposit figure you
+// typed (real user report). `depositSetAt` (set whenever the trader actually changes
+// the deposit number, see Capital.js saveSettings) is the cutoff: only trades closed
+// ON OR AFTER that point move the balance away from the stated deposit. Trades with
+// no depositSetAt on record yet (nobody has changed their deposit since this existed)
+// fall back to counting everything, same as before.
+function isOnOrAfter(trade, anchorMs) {
+  if (anchorMs == null) return true;
+  const d = trade.date?.seconds ? trade.date.seconds * 1000 : new Date(trade.date).getTime();
+  return Number.isFinite(d) && d >= anchorMs;
+}
+
 // Equity curve data
-export function buildEquityCurve(trades, initialBalance = 100000) {
+export function buildEquityCurve(trades, initialBalance = 100000, depositSetAt = null) {
+  const anchorMs = depositSetAt ? new Date(depositSetAt).getTime() : null;
   const sorted = [...trades]
     .filter(hasRealizedPnl)
+    .filter((t) => isOnOrAfter(t, anchorMs))
     .sort((a, b) => new Date(a.date) - new Date(b.date));
 
   let balance = initialBalance;
@@ -218,4 +238,17 @@ export function buildEquityCurve(trades, initialBalance = 100000) {
     });
   });
   return curve;
+}
+
+// Same cutoff logic as buildEquityCurve, just the single current-balance number
+// instead of the whole curve — used wherever a page shows "текущий баланс/депозит"
+// without needing the chart (Капитал's ТЕКУЩИЙ ДЕПОЗИТ card, Калькулятор's default
+// "Депозит" field).
+export function computeLiveBalance(trades, depositSize, depositSetAt = null) {
+  const anchorMs = depositSetAt ? new Date(depositSetAt).getTime() : null;
+  const pnlSinceAnchor = trades
+    .filter(hasRealizedPnl)
+    .filter((t) => isOnOrAfter(t, anchorMs))
+    .reduce((s, t) => s + t.pnl, 0);
+  return (depositSize || 0) + pnlSinceAnchor;
 }

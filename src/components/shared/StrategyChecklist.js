@@ -33,7 +33,6 @@ export default function StrategyChecklist({ strategyName, result, readinessThres
   // trader picks one in Capital, and silently comparing against nothing would be worse
   // than not showing a verdict at all).
   const hasThreshold = readinessThreshold != null && Number.isFinite(readinessThreshold);
-  const ready = hasThreshold && pct >= readinessThreshold;
 
   // Conditions for the trade's actual direction stay in the main list, sorted so a
   // passed condition reads first — the trader's own configured criteria as the primary
@@ -63,14 +62,15 @@ export default function StrategyChecklist({ strategyName, result, readinessThres
         <div style={{height:'100%', width:`${pct}%`, background:color, transition:'width 0.2s'}} />
       </div>
       {hasThreshold && (
+        // Plain numbers, no "Готово"/"Рано" verdict — the trader decides what a given
+        // percentage means for them, the app just reports it (real user report: an
+        // evaluative label overstepped what the app should be deciding for them).
         <div style={{
           display:'flex', alignItems:'center', gap:8, padding:'8px 12px', borderRadius:8, marginBottom:14,
-          background: ready ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
-          border: `1px solid ${ready ? 'rgba(16,185,129,0.3)' : 'rgba(245,158,11,0.3)'}`,
+          background:'var(--bg-surface-2)', border:'1px solid var(--border-subtle)',
         }}>
-          <span style={{fontSize:16}}>{ready ? '✅' : '⏳'}</span>
-          <span style={{fontSize:13, color: ready ? 'var(--green)' : 'var(--gold)'}}>
-            {ready ? 'Готово к входу по вашей стратегии' : `Рано — выполнено ${pct}%, нужно от ${readinessThreshold}%`}
+          <span style={{fontSize:13, color:'var(--text-secondary)'}}>
+            Выполнено {pct}% (план: от {readinessThreshold}%)
           </span>
         </div>
       )}
