@@ -22,14 +22,41 @@ export class TinkoffAPI {
     return response.json();
   }
 
-  // Фьючерс по тикеру
+  // Фьючерс по тикеру. Большинство FORTS-контрактов торгуются под classCode 'SPBFUT',
+  // но не все — например, товарные фьючерсы (Brent и др.) у части аккаунтов резолвятся
+  // только через общий поиск, а не прямой FutureBy с этим classCode (real user report:
+  // "через API Тинькофф не могу ввести фьючерс на Brent, хотя через MOEX могу"). Тот же
+  // паттерн, что уже используется в getShareByTicker — прямой метод, затем FindInstrument.
   async getFutureByTicker(ticker) {
-    const data = await this.request('/tinkoff.public.invest.api.contract.v1.InstrumentsService/FutureBy', {
-      idType: 'INSTRUMENT_ID_TYPE_TICKER',
-      classCode: 'SPBFUT',
-      id: ticker,
-    });
-    return data.instrument || null;
+    try {
+      const data = await this.request('/tinkoff.public.invest.api.contract.v1.InstrumentsService/FutureBy', {
+        idType: 'INSTRUMENT_ID_TYPE_TICKER',
+        classCode: 'SPBFUT',
+        id: ticker,
+      });
+      if (data.instrument) return data.instrument;
+    } catch {
+      // Falls through to FindInstrument below.
+    }
+
+    try {
+      const data = await this.request('/tinkoff.public.invest.api.contract.v1.InstrumentsService/FindInstrument', {
+        query: ticker.toUpperCase(),
+        instrumentKind: 'INSTRUMENT_TYPE_FUTURES',
+        apiTradeAvailableFlag: true,
+      });
+      const instruments = data.instruments || [];
+      const exact = instruments.find(i => i.ticker?.toUpperCase() === ticker.toUpperCase());
+      const match = exact || instruments[0];
+      if (!match) return null;
+      const full = await this.request('/tinkoff.public.invest.api.contract.v1.InstrumentsService/FutureBy', {
+        idType: 'INSTRUMENT_ID_TYPE_FIGI',
+        id: match.figi,
+      });
+      return full.instrument || match;
+    } catch {
+      return null;
+    }
   }
 
   // Акция по тикеру — ищем через FindInstrument
