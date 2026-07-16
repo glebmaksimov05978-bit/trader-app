@@ -248,7 +248,11 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
                             className={`badge ${lvl.type === 'resistance' ? 'badge-red' : 'badge-green'}`}
                             style={lvl.isStrongest ? {border:'1px solid var(--gold)', boxShadow:'0 0 0 1px var(--gold)'} : undefined}>
                             {lvl.type === 'resistance' ? '🔴' : '🟢'} {formatNumber(lvl.price, 2)} ({lvl.touchCount} каc.)
-                            {lvl.isStrongest && <span style={{color:'var(--gold)', marginLeft:4}}>★ самый сильный</span>}
+                            {lvl.isStrongest && (
+                              <span style={{color:'var(--gold)', marginLeft:4}}>
+                                {lvl.type === 'resistance' ? '★ самое сильное сопротивление' : '★ самая сильная поддержка'}
+                              </span>
+                            )}
                           </LevelBadge>
                         ))}
                       </div>

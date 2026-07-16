@@ -124,16 +124,27 @@ export function findSupportResistance(swings, currentPrice, toleranceRatio = 0.0
 // exists to check it against.
 const LEVEL_STRENGTH_WEIGHTS = {
   ema9: 1, ema100: 2, ema200: 3,
-  fibGolden: 2,  // 38.2% / 50% / 61.8% — the most-watched Fibonacci ratios
-  fibOuter: 1,   // 23.6% / 78.6% — considered the weaker Fibonacci levels
-  bollinger: 1,
+  fibGolden: 2,      // 38.2% / 50% / 61.8% — the most-watched Fibonacci ratios
+  fibOuter: 1,       // 23.6% / 78.6% — considered the weaker Fibonacci levels
+  bollingerBand: 1,  // upper/lower band — recomputed every bar from current volatility,
+                      // not a stable structural price the way EMA200/Fibonacci are, so a
+                      // coincidence with it today doesn't carry the same weight (real user
+                      // question: confirmed intentional, not an oversight).
+  bollingerMid: 1,    // middle band (SMA20) — same reasoning, same weight as the outer bands.
 };
 
-// Marks the single support/resistance level (if any) with the highest combined score —
-// touches plus confluence with EMA/Fibonacci/Bollinger — as `isStrongest`. Everything
-// stays visible either way; this only adds a ranking on top of what's already shown,
-// never hides or merges the independent calculations (see findSupportResistance,
+// Marks the strongest RESISTANCE and the strongest SUPPORT separately — a global single
+// winner across both types (the old behavior) meant a strong support level never got
+// starred whenever some resistance happened to outscore it (real user report). Everything
+// stays visible either way; this only adds a ranking on top of what's already shown, never
+// hides or merges the independent calculations (see findSupportResistance,
 // computeEmaLevelsAtIndex, computeFibonacciLevels — all still computed separately).
+//
+// Note on what "confluence" actually measures: EMA/Fibonacci/Bollinger bonuses check
+// whether that indicator sits near the level RIGHT NOW (at the reference date), not how
+// many times it has touched there historically — only `touchCount` (from the swing
+// detector) is a genuine historical count. The weights reward independent methods
+// agreeing at this moment, not repeated history.
 export function markStrongestLevel(levels, emaLevels, fibonacci, bollinger, tolerancePct = 0.3) {
   if (!levels?.length) return levels;
   const near = (a, b) => a != null && b != null && (Math.abs(a - b) / b) * 100 <= tolerancePct;
@@ -147,17 +158,27 @@ export function markStrongestLevel(levels, emaLevels, fibonacci, bollinger, tole
       if (!near(f.price, lvl.price)) continue;
       score += (f.ratio === 0.236 || f.ratio === 0.786) ? LEVEL_STRENGTH_WEIGHTS.fibOuter : LEVEL_STRENGTH_WEIGHTS.fibGolden;
     }
-    if (near(bollinger?.upper, lvl.price) || near(bollinger?.lower, lvl.price)) score += LEVEL_STRENGTH_WEIGHTS.bollinger;
+    if (near(bollinger?.upper, lvl.price) || near(bollinger?.lower, lvl.price)) score += LEVEL_STRENGTH_WEIGHTS.bollingerBand;
+    if (near(bollinger?.mid, lvl.price)) score += LEVEL_STRENGTH_WEIGHTS.bollingerMid;
     return { ...lvl, strengthScore: score };
   });
 
-  // Only worth flagging if it stands out — tied-for-first among several levels isn't
+  // Only worth flagging if it stands out within its own type — tied-for-first isn't
   // "the strongest," it's just noise from a coarse scoring scheme. Touches alone are a
   // perfectly valid way to win (a level with far more touches than anything else IS
   // the strongest one), same as winning purely on confluence with no extra touches.
-  const maxScore = Math.max(...scored.map((l) => l.strengthScore));
-  const leaders = scored.filter((l) => l.strengthScore === maxScore);
-  return scored.map((l) => ({ ...l, isStrongest: leaders.length === 1 && l.strengthScore === maxScore }));
+  const markLeaderWithinType = (type) => {
+    const ofType = scored.filter((l) => l.type === type);
+    if (!ofType.length) return;
+    const maxScore = Math.max(...ofType.map((l) => l.strengthScore));
+    const leaders = ofType.filter((l) => l.strengthScore === maxScore);
+    if (leaders.length === 1) leaders[0].isStrongest = true;
+  };
+  scored.forEach((l) => { l.isStrongest = false; });
+  markLeaderWithinType('resistance');
+  markLeaderWithinType('support');
+
+  return scored;
 }
 
 // --- Fibonacci retracement levels, from the most recent confirmed swing leg ---------
