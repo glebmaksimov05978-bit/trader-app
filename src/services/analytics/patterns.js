@@ -87,20 +87,18 @@ export function computeEmaLevelsAtIndex(candles, index) {
   return result;
 }
 
-// Cap on how much a single touch's reversal amplitude can contribute — without it, one
-// outsized move (a genuine month-scale reversal) could single-handedly swamp everything
-// else, which is just trading one blind spot (flat touch counting) for another. A
-// first-guess number like every other weight in this file, not backtested.
-const MAX_TOUCH_AMPLITUDE_PCT = 8;
-
 // Static support/resistance from clustered swing points — a "level" is any price where
-// at least 2 different swings landed within `toleranceRatio` of each other. Each touch
-// is weighted by how far price moved away before reversing (`amplitudePct`) instead of
-// counting every touch equally — tripling the candle lookback (see candles.js) meant a
-// routine daily-noise wiggle could rack up the same touch count as a genuine multi-month
-// reversal, with no way to tell them apart (real user report: "бывают очень сильные...
-// а бывают не такие сильные и просто шум"). `touchCount` is kept for display (the badge
-// still reads "36 кас.") — `touchWeight` is what actually decides ★ самый сильный.
+// at least 2 different swings landed within `toleranceRatio` of each other.
+//
+// Each touch also records `amplitudePct` — how far price moved before reversing (to the
+// next swing in the zig-zag, or the previous one if it's the last point) — used by
+// markStrongestLevel below as a modest bonus on top of the touch count, not a
+// replacement for it. An earlier version summed amplitudes directly into the main score
+// (`touchWeight`) and that broke the balance the OTHER way: a level with several
+// percent-scale touches could rack up 20-30 points from amplitude alone, completely
+// burying the +3 EMA200 or +2 golden-Fibonacci bonuses that used to actually matter
+// (real user question: "не будет ли ошибки из-за того что за это присуждается намного
+// больше очков чем за EMA200"). Correct, caught before shipping to more users.
 export function findSupportResistance(swings, currentPrice, toleranceRatio = 0.006) {
   const withAmplitude = swings.map((s, i) => {
     const next = swings[i + 1];
@@ -125,7 +123,7 @@ export function findSupportResistance(swings, currentPrice, toleranceRatio = 0.0
     .map((c) => ({
       price: c.price,
       touchCount: c.touches.length,
-      touchWeight: c.touches.reduce((sum, t) => sum + Math.min(t.amplitudePct, MAX_TOUCH_AMPLITUDE_PCT), 0),
+      avgTouchAmplitudePct: c.touches.reduce((sum, t) => sum + t.amplitudePct, 0) / c.touches.length,
       type: c.price > currentPrice ? 'resistance' : 'support',
       lastTouchDate: c.touches[c.touches.length - 1].date,
     }))
@@ -150,6 +148,11 @@ const LEVEL_STRENGTH_WEIGHTS = {
                       // coincidence with it today doesn't carry the same weight (real user
                       // question: confirmed intentional, not an oversight).
   bollingerMid: 1,    // middle band (SMA20) — same reasoning, same weight as the outer bands.
+  reversalStrength: 3, // max bonus for touches with well-above-average reversal amplitude
+                        // — deliberately capped at the SAME size as the EMA200 bonus, not
+                        // summed per-touch, so a level with strong reversals stands out
+                        // without burying the confluence bonuses (real user question about
+                        // exactly this — see markStrongestLevel).
 };
 
 // Marks the strongest RESISTANCE and the strongest SUPPORT separately — a global single
@@ -168,19 +171,30 @@ export function markStrongestLevel(levels, emaLevels, fibonacci, bollinger, tole
   if (!levels?.length) return levels;
   const near = (a, b) => a != null && b != null && (Math.abs(a - b) / b) * 100 <= tolerancePct;
 
+  // Reversal-amplitude bonus is RELATIVE to the other levels being ranked right now (a
+  // fixed percentage threshold would mean something completely different on a
+  // low-volatility blue chip vs. a swingy futures contract) — the level with the single
+  // highest average touch amplitude gets the full +3, everything else gets a
+  // proportional share, zero at the low end. This is deliberately a small bonus added
+  // ON TOP of touchCount, not a replacement for it (see findSupportResistance).
+  const amplitudes = levels.map((l) => l.avgTouchAmplitudePct || 0);
+  const maxAmplitude = Math.max(...amplitudes, 0);
+
   // `reasons` records WHICH factors actually contributed to this level's score, in
   // plain Russian — the ★ badge used to point at one shared legend for the whole panel,
   // leaving the trader unable to tell whether THIS particular level won on touches
   // alone or genuine multi-method confluence (real user report: "непонятно конкретно
   // этот по каким критериям отобран"). Rendered per-badge via InfoTip.
   const scored = levels.map((lvl) => {
-    // Weighted by reversal amplitude (see findSupportResistance), not a flat touch
-    // count — falls back to touchCount for levels computed some other way (defensive,
-    // shouldn't normally happen since this always runs on findSupportResistance output).
-    let score = lvl.touchWeight ?? lvl.touchCount;
-    const strengthNote = lvl.touchWeight != null && lvl.touchWeight !== lvl.touchCount
-      ? ` (вес по силе разворота после касаний: ${lvl.touchWeight.toFixed(1)})` : '';
-    const reasons = [`${lvl.touchCount} касани${lvl.touchCount === 1 ? 'е' : lvl.touchCount < 5 ? 'я' : 'й'} свечами${strengthNote}`];
+    let score = lvl.touchCount;
+    const reasons = [`${lvl.touchCount} касани${lvl.touchCount === 1 ? 'е' : lvl.touchCount < 5 ? 'я' : 'й'} свечами`];
+    if (maxAmplitude > 0 && lvl.avgTouchAmplitudePct > 0) {
+      const bonus = (lvl.avgTouchAmplitudePct / maxAmplitude) * LEVEL_STRENGTH_WEIGHTS.reversalStrength;
+      if (bonus >= 0.5) {
+        score += bonus;
+        reasons.push(`сильный разворот после касаний (в среднем ${lvl.avgTouchAmplitudePct.toFixed(1)}% хода)`);
+      }
+    }
     if (near(emaLevels?.ema9?.value, lvl.price)) { score += LEVEL_STRENGTH_WEIGHTS.ema9; reasons.push('рядом EMA9'); }
     if (near(emaLevels?.ema100?.value, lvl.price)) { score += LEVEL_STRENGTH_WEIGHTS.ema100; reasons.push('рядом EMA100'); }
     if (near(emaLevels?.ema200?.value, lvl.price)) { score += LEVEL_STRENGTH_WEIGHTS.ema200; reasons.push('рядом EMA200'); }
