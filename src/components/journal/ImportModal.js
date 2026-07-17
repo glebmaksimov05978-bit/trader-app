@@ -1,5 +1,6 @@
 // src/components/journal/ImportModal.js
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../../context/AuthContext';
 import { formatCurrency, formatNumber } from '../../utils/calculator';
 import { parseTinkoffXlsx } from '../../services/import/tinkoffXlsx';
@@ -138,7 +139,16 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
     }
   };
 
-  return (
+  // Portaled to document.body — rendered inline, .modal-overlay's position:fixed got
+  // contained by the nearest .page ancestor instead of the real viewport, because .page
+  // has `animation: fadeIn` and ANY ancestor with a non-none transform (even mid- or
+  // post-animation, per spec) becomes the containing block for fixed descendants. The
+  // overlay ended up sized to .page's box (which stops after the sidebar) instead of the
+  // full screen — the modal visually "respected" the sidebar instead of centering on the
+  // whole window (real user report/screenshot). Same root-cause class as the InfoTip fix
+  // earlier — a portal sidesteps ancestor containment entirely, regardless of what CSS
+  // any future page/animation adds above this component.
+  return createPortal(
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       {/* The classification table's columns (checkbox, ticker, direction badge, date
           range, volume, P&L, status badge) don't fit inside 780px without truncating the
@@ -345,6 +355,7 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
