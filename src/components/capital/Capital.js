@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, calcStats, computeLiveBalance } from '../../services/trades';
 import { formatCurrency, formatNumber, calcTrade } from '../../utils/calculator';
-import { CONDITION_CATALOG, defaultStrategy, STRATEGY_TEMPLATES } from '../../services/analytics/strategy';
+import { CONDITION_CATALOG, defaultStrategy, STRATEGY_TEMPLATES, CUSTOM_CONDITION_PRESETS } from '../../services/analytics/strategy';
 import toast from 'react-hot-toast';
 import './Capital.css';
 
@@ -82,8 +82,35 @@ export default function Capital() {
   };
   const setReadinessThreshold = (v) => setStrategy(s => ({ ...s, readinessThreshold: v }));
 
+  // Templates only ship catalog conditions — a trader's own "Свои условия" notes (news
+  // checks, exotic indicators) aren't part of any template's formula, so loading one
+  // shouldn't wipe them out.
   const applyTemplate = (tpl) => {
-    setStrategy({ name: tpl.label, conditions: tpl.conditions.map(c => ({ ...c })), readinessThreshold: tpl.readinessThreshold });
+    setStrategy(s => ({
+      name: tpl.label, conditions: tpl.conditions.map(c => ({ ...c })),
+      readinessThreshold: tpl.readinessThreshold, customConditions: s.customConditions || [],
+    }));
+  };
+
+  // "Свои условия" — free-text checklist items for anything not in the catalog (exotic
+  // indicators, fundamental/news checks). No `evaluate` function exists for these; the
+  // trader ticks them by hand in the Calculator each time (see evaluateStrategy in
+  // strategy.js). Presets just prefill the label so nobody's inventing wording from a
+  // blank field, but the text stays fully editable.
+  const [customLabel, setCustomLabel] = useState('');
+  const [customDirection, setCustomDirection] = useState('both');
+  const addCustomCondition = () => {
+    const label = customLabel.trim();
+    if (!label) return;
+    setStrategy(s => ({
+      ...s,
+      customConditions: [...(s.customConditions || []), { id: `custom_${Date.now()}`, label, direction: customDirection }],
+    }));
+    setCustomLabel('');
+    setCustomDirection('both');
+  };
+  const removeCustomCondition = (id) => {
+    setStrategy(s => ({ ...s, customConditions: (s.customConditions || []).filter(c => c.id !== id) }));
   };
   // window.confirm blocks the whole tab on a native OS dialog — inconsistent with the
   // rest of the app's own themed modals, and (caught live, testing) hangs anything
@@ -483,6 +510,60 @@ export default function Capital() {
             </div>
           </div>
         ))}
+
+        <div style={{marginBottom:20}}>
+          <div className="calc-section-title">✍️ Свои условия</div>
+          <div className="text-xs text-muted" style={{marginBottom:10}}>
+            Для всего, чего нет в каталоге выше (экзотические индикаторы, проверка новостей) —
+            впишите своей формулировкой. ⚠️ Приложение это не считает и не проверяет — в
+            Калькуляторе вы будете отмечать такой пункт вручную, глядя на график/новости сами.
+          </div>
+          <div className="flex gap-2" style={{marginBottom:10, flexWrap:'wrap'}}>
+            <select className="input" style={{width:'auto', fontSize:13}} value=""
+              onChange={e => { if (e.target.value) setCustomLabel(e.target.value); }}>
+              <option value="">— выбрать из популярных —</option>
+              {CUSTOM_CONDITION_PRESETS.map(group => (
+                <optgroup key={group.group} label={group.group}>
+                  {group.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-2" style={{flexWrap:'wrap', alignItems:'center'}}>
+            <input className="input" style={{flex:1, minWidth:220}} placeholder="Своя формулировка условия..."
+              value={customLabel} onChange={e => setCustomLabel(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addCustomCondition()} />
+            <select className="input" style={{width:'auto', fontSize:12}} value={customDirection}
+              onChange={e => setCustomDirection(e.target.value)}>
+              <option value="both">Лонг и шорт</option>
+              <option value="long">Только лонг</option>
+              <option value="short">Только шорт</option>
+            </select>
+            <button className="btn btn-secondary btn-sm" onClick={addCustomCondition} disabled={!customLabel.trim()}>
+              + Добавить
+            </button>
+          </div>
+          {strategy.customConditions?.length > 0 && (
+            <div className="flex flex-col gap-2" style={{marginTop:10}}>
+              {strategy.customConditions.map(c => (
+                <div key={c.id} style={{
+                  display:'flex', alignItems:'center', justifyContent:'space-between', gap:12,
+                  padding:'8px 14px', borderRadius:10, background:'var(--bg-surface-2)', border:'1px solid var(--border-subtle)',
+                }}>
+                  <span style={{fontSize:13}}>
+                    {c.label}
+                    {c.direction !== 'both' && (
+                      <span className="text-xs text-muted" style={{marginLeft:8}}>
+                        ({c.direction === 'long' ? 'только лонг' : 'только шорт'})
+                      </span>
+                    )}
+                  </span>
+                  <button className="btn btn-ghost btn-sm" onClick={() => removeCustomCondition(c.id)}>✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
 
         <button className="btn btn-primary" onClick={saveStrategy} disabled={savingStrategy}>
           {savingStrategy ? <><div className="spinner" style={{width:14,height:14}}/> Сохранение...</> : '💾 Сохранить стратегию'}

@@ -205,8 +205,13 @@ export default function Calculator() {
     return forcedDir;
   })();
 
+  // Manual ticks for "Свои условия" (custom checklist items the app can't compute
+  // itself — see strategy.js). Reset happens once `resolvedTicker` exists, below.
+  const [manualChecks, setManualChecks] = useState({});
+
+  const hasAnyConditions = userProfile?.strategy?.conditions?.length || userProfile?.strategy?.customConditions?.length;
   const strategyResult = useMemo(() => {
-    if (!userProfile?.strategy?.conditions?.length) return null;
+    if (!hasAnyConditions) return null;
     if (!taState.data) return null;
     return evaluateStrategy(userProfile.strategy, {
       indicators: taState.data.indicators,
@@ -222,8 +227,9 @@ export default function Calculator() {
         marginUsagePercent: displayResult?.marginUsagePercent ?? null,
         entryPrice: parseFloat(form.entryPrice) || null,
       },
+      manualChecks,
     });
-  }, [userProfile?.strategy, taState.data, displayResult, form.riskPercent, form.entryPrice, activeDirection]);
+  }, [hasAnyConditions, userProfile?.strategy, taState.data, displayResult, form.riskPercent, form.entryPrice, activeDirection, manualChecks]);
 
   const rrColor = !displayResult ? '' : displayResult.rr >= 2 ? 'var(--green)' : displayResult.rr >= 1 ? 'var(--gold)' : 'var(--red)';
 
@@ -234,6 +240,8 @@ export default function Calculator() {
   // effect below can depend on "a ticker just resolved" — refs don't trigger effects.
   const loadedTickerRef = useRef(null);
   const [resolvedTicker, setResolvedTicker] = useState(null);
+  // Reset "Свои условия" ticks on every new ticker — see manualChecks above.
+  useEffect(() => { setManualChecks({}); }, [resolvedTicker]);
 
   const loadInstrument = useCallback(async () => {
     if (!form.ticker) { toast.error('Введите тикер'); return; }
@@ -1008,7 +1016,12 @@ export default function Calculator() {
       )}
 
       {taOpen && strategyResult && (
-        <StrategyChecklist strategyName={userProfile?.strategy?.name} result={strategyResult} readinessThreshold={userProfile?.strategy?.readinessThreshold} />
+        <StrategyChecklist
+          strategyName={userProfile?.strategy?.name}
+          result={strategyResult}
+          readinessThreshold={userProfile?.strategy?.readinessThreshold}
+          onToggleManual={(id) => setManualChecks(m => ({ ...m, [id]: !m[id] }))}
+        />
       )}
       {taOpen && taState.data && !userProfile?.strategy?.conditions?.length && (
         <div className="card" style={{marginTop:16, textAlign:'center', padding:'20px'}}>

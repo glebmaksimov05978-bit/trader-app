@@ -5,15 +5,27 @@
 // pass/fail logic lives in services/analytics/strategy.js, never here.
 import React from 'react';
 
-function ResultRow({ r }) {
+// Custom ("Свои условия") rows have no computed outcome — the app can't check a
+// stochastic or a news calendar, so the trader ticks a real checkbox by hand instead of
+// reading a computed ✅/❌ (see evaluateStrategy in strategy.js). Everything else about
+// the row (background, position in the sorted list) still comes from `r.passed`.
+function ResultRow({ r, onToggleManual }) {
   return (
     <div style={{
       display:'flex', alignItems:'flex-start', gap:8, padding:'6px 10px', borderRadius:8, fontSize:13,
       background: r.na ? 'rgba(148,163,184,0.08)' : r.passed ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)',
     }}>
-      <span style={{color: r.na ? 'var(--text-muted)' : r.passed ? 'var(--green)' : 'var(--red)', flexShrink:0}}>{r.na ? '➖' : r.passed ? '✅' : '❌'}</span>
+      {r.custom && !r.na ? (
+        <input type="checkbox" checked={!!r.passed} onChange={() => onToggleManual?.(r.id)}
+          style={{marginTop:2, flexShrink:0, cursor:'pointer'}} />
+      ) : (
+        <span style={{color: r.na ? 'var(--text-muted)' : r.passed ? 'var(--green)' : 'var(--red)', flexShrink:0}}>{r.na ? '➖' : r.passed ? '✅' : '❌'}</span>
+      )}
       <div>
-        <div style={{color:'var(--text-primary)'}}>{r.label}</div>
+        <div style={{color:'var(--text-primary)', cursor: r.custom && !r.na ? 'pointer' : undefined}}
+          onClick={r.custom && !r.na ? () => onToggleManual?.(r.id) : undefined}>
+          {r.label}
+        </div>
         <div style={{color:'var(--text-muted)', fontSize:12}}>
           {r.na && !r.skippedByDirection ? 'Нет данных — не учитывается в счётчике' : r.detail}
         </div>
@@ -22,7 +34,7 @@ function ResultRow({ r }) {
   );
 }
 
-export default function StrategyChecklist({ strategyName, result, readinessThreshold }) {
+export default function StrategyChecklist({ strategyName, result, readinessThreshold, onToggleManual }) {
   if (!result || result.total === 0) return null;
   const { total, passed, results } = result;
   const pct = Math.round((passed / total) * 100);
@@ -75,7 +87,7 @@ export default function StrategyChecklist({ strategyName, result, readinessThres
         </div>
       )}
       <div className="flex flex-col gap-2">
-        {sortedRelevant.map((r) => <ResultRow key={r.id} r={r} />)}
+        {sortedRelevant.map((r) => <ResultRow key={r.id} r={r} onToggleManual={onToggleManual} />)}
       </div>
       {otherDirection.length > 0 && (
         <details style={{marginTop:12}}>

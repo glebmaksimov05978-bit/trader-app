@@ -17,6 +17,26 @@ import { formatCurrency, formatNumber } from '../../utils/calculator';
 
 const INSTRUMENT_LABELS = { stock: 'Акции', future: 'Фьючерсы', currency: 'Валюта' };
 
+// Click anywhere on a top KPI card to flip it and see a plain-language explanation +
+// how many trades it takes before the number stops being a coin-flip (real user request:
+// "пояснения к каждой карточке — что она значит + сколько сделок нужно, чтобы вывод
+// перестал быть гипотезой", instead of a bare "мало данных"). The ⓘ badge is only there
+// so a first-time trader notices the card is clickable — the whole card is the hit area.
+function FlippableKpiCard({ className, front, back }) {
+  const [flipped, setFlipped] = useState(false);
+  return (
+    <div className={`kpi-flip-outer ${flipped ? 'flipped' : ''}`} onClick={() => setFlipped((f) => !f)}>
+      <div className="kpi-flip-inner">
+        <div className={`kpi-flip-face front kpi-card ${className || ''}`}>
+          <span className="kpi-info-badge">ⓘ</span>
+          {front}
+        </div>
+        <div className={`kpi-flip-face back kpi-card ${className || ''}`}>{back}</div>
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { user, userProfile } = useAuth();
   const [trades, setTrades] = useState([]);
@@ -105,37 +125,72 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* KPI row */}
+      {/* KPI row — each card flips on click to show a plain-language explanation +
+          a sample-size honesty check (real user request, see FlippableKpiCard above) */}
       <div className="grid-4" style={{marginBottom: 24}}>
-        <div className={`kpi-card ${pnlTotal >= 0 ? 'green' : 'red'}`}>
-          <div className="kpi-label">Баланс</div>
-          <div className="kpi-value" style={{color: pnlTotal >= 0 ? 'var(--green)' : 'var(--red)'}}>
-            {formatCurrency(lastEquity)}
-          </div>
-          <div className="kpi-sub">{pnlTotal >= 0 ? '+' : ''}{formatCurrency(pnlTotal)} ({pnlPercent}%)</div>
-        </div>
+        <FlippableKpiCard
+          className={pnlTotal >= 0 ? 'green' : 'red'}
+          front={<>
+            <div className="kpi-label">Баланс</div>
+            <div className="kpi-value" style={{color: pnlTotal >= 0 ? 'var(--green)' : 'var(--red)'}}>
+              {formatCurrency(lastEquity)}
+            </div>
+            <div className="kpi-sub">{pnlTotal >= 0 ? '+' : ''}{formatCurrency(pnlTotal)} ({pnlPercent}%)</div>
+          </>}
+          back={<>
+            Депозит, который вы указали в Капитале, плюс P&L сделок, закрытых <b>после</b> того
+            момента. Старые сделки на это число не влияют — они уже учтены в цифре, которую вы
+            ввели вручную.
+          </>}
+        />
 
-        <div className="kpi-card gold">
-          <div className="kpi-label">Сделок всего</div>
-          <div className="kpi-value" style={{color:'var(--gold)'}}>{stats?.total || 0}</div>
-          <div className="kpi-sub">{stats?.wins || 0} прибыльных / {stats?.losses || 0} убыточных</div>
-        </div>
+        <FlippableKpiCard
+          className="gold"
+          front={<>
+            <div className="kpi-label">Сделок всего</div>
+            <div className="kpi-value" style={{color:'var(--gold)'}}>{stats?.total || 0}</div>
+            <div className="kpi-sub">{stats?.wins || 0} прибыльных / {stats?.losses || 0} убыточных</div>
+          </>}
+          back={<>
+            Только сделки с посчитанным результатом (P&L). Открытые позиции и сделки, где не
+            хватает данных по контракту для расчёта, сюда не входят.
+          </>}
+        />
 
-        <div className="kpi-card blue">
-          <div className="kpi-label">Винрейт</div>
-          <div className="kpi-value" style={{color:'var(--blue)'}}>
-            {stats ? `${stats.winrate.toFixed(1)}%` : '—'}
-          </div>
-          <div className="kpi-sub">Профит-фактор: {stats ? formatNumber(stats.profitFactor, 2) : '—'}</div>
-        </div>
+        <FlippableKpiCard
+          className="blue"
+          front={<>
+            <div className="kpi-label">Винрейт</div>
+            <div className="kpi-value" style={{color:'var(--blue)'}}>
+              {stats ? `${stats.winrate.toFixed(1)}%` : '—'}
+            </div>
+            <div className="kpi-sub">Профит-фактор: {stats ? formatNumber(stats.profitFactor, 2) : '—'}</div>
+          </>}
+          back={<>
+            <b>Винрейт</b> — доля сделок в плюсе. <b>Профит-фактор</b> — сколько рублей прибыли
+            приходится на рубль убытка (больше 1 — торговля в плюс за период).<br/><br/>
+            {stats && stats.total < MIN_SAMPLE
+              ? <>У вас {stats.total} закрытых сделок — на такой выборке оба числа ещё сильно скачут от сделки к сделке. Обычно стабилизируются примерно после {MIN_SAMPLE} сделок, осталось ~{MIN_SAMPLE - stats.total}.</>
+              : <>У вас {stats?.total || 0} закрытых сделок — этого достаточно, чтобы числам можно было доверять больше, чем на первых {MIN_SAMPLE}.</>}
+          </>}
+        />
 
-        <div className={`kpi-card ${(stats?.maxDrawdown || 0) > deposit * 0.1 ? 'red' : 'purple'}`}>
-          <div className="kpi-label">Макс просадка</div>
-          <div className="kpi-value" style={{color: (stats?.maxDrawdown||0) > deposit*0.1 ? 'var(--red)' : 'var(--accent-primary)'}}>
-            {stats ? formatCurrency(stats.maxDrawdown) : '—'}
-          </div>
-          <div className="kpi-sub">Матожидание: {stats ? formatCurrency(Math.round(stats.expectancy)) : '—'}</div>
-        </div>
+        <FlippableKpiCard
+          className={(stats?.maxDrawdown || 0) > deposit * 0.1 ? 'red' : 'purple'}
+          front={<>
+            <div className="kpi-label">Макс просадка</div>
+            <div className="kpi-value" style={{color: (stats?.maxDrawdown||0) > deposit*0.1 ? 'var(--red)' : 'var(--accent-primary)'}}>
+              {stats ? formatCurrency(stats.maxDrawdown) : '—'}
+            </div>
+            <div className="kpi-sub">Матожидание: {stats ? formatCurrency(Math.round(stats.expectancy)) : '—'}</div>
+          </>}
+          back={<>
+            <b>Макс. просадка</b> — самая глубокая просадка баланса от пикового значения за всю
+            историю. Это уже случившийся факт, не прогноз — за {stats?.total || 0} сделок рынок
+            вас ещё мало испытывал, реальная худшая просадка впереди может быть глубже.<br/><br/>
+            <b>Матожидание</b> — средний ожидаемый результат на одну сделку. Чувствительно к редким крупным сделкам (одна большая может исказить число), стабильным становится обычно примерно от {MIN_SAMPLE * 2} сделок.
+          </>}
+        />
       </div>
 
       {/* Charts row */}

@@ -228,8 +228,34 @@ export const CONDITION_CATALOG = [
 const CATALOG_BY_ID = Object.fromEntries(CONDITION_CATALOG.map((c) => [c.id, c]));
 
 export function defaultStrategy() {
-  return { name: 'Моя стратегия', conditions: [] };
+  return { name: 'Моя стратегия', conditions: [], customConditions: [] };
 }
+
+// Presets for the "Свои условия" free-form list in Capital.js — real user request: give
+// popular indicator/event names to pick from so a trader isn't inventing wording from
+// scratch, without hardcoding an actual calculation for any of them (that's exactly the
+// kind of exotic-indicator scope-creep the app deliberately avoids — see backlog notes).
+// Picking a preset just fills the label text field; it's still a free-text condition
+// underneath, editable like any other.
+export const CUSTOM_CONDITION_PRESETS = [
+  { group: 'Индикаторы', options: [
+    'Стохастик в зоне перепроданности (<20)',
+    'Стохастик в зоне перекупленности (>80)',
+    'ADX выше 25 (сильный тренд)',
+    'CCI ниже -100 (перепроданность)',
+    'CCI выше +100 (перекупленность)',
+    'Дивергенция RSI с ценой',
+    'Объём подтверждает пробой',
+    'Свеча-разворот на дневном графике (пин-бар/поглощение)',
+  ]},
+  { group: 'Фундаментал / новости', options: [
+    'Нет важных новостей по эмитенту сегодня',
+    'Нет заседания ЦБ РФ в ближайшие 2 дня',
+    'Нет публикации отчётности эмитента на этой неделе',
+    'Нет экспирации по инструменту в ближайшие 3 дня',
+    'Общий новостной фон по рынку нейтральный/позитивный',
+  ]},
+];
 
 // Starting drafts, not tuned presets — the numbers (and even which conditions belong
 // in which tier) are a reasonable first guess based on how these styles are commonly
@@ -291,6 +317,14 @@ export const STRATEGY_TEMPLATES = [
 // direction isn't known yet (no stop-loss entered in the Calculator, or a Radar/
 // Dashboard check with no plan at all), direction-bound conditions still evaluate
 // normally — better to show both sides than to silently hide half the checklist.
+// `strategy.customConditions` = [{ id, label, direction }] — free-text conditions the
+// trader writes themselves for anything not in the catalog (exotic indicators,
+// fundamental checks — see CUSTOM_CONDITION_PRESETS). There's no `evaluate` function for
+// these; the app has no way to check a stochastic or a news calendar itself, so the
+// trader ticks a plain checkbox by hand in the Calculator (`ctx.manualChecks[id]`) each
+// time they analyze a ticker. Direction binding and na/skip behavior mirror the catalog
+// conditions exactly, just without a computed `outcome` — `passed` comes straight from
+// the checkbox.
 export function evaluateStrategy(strategy, ctx) {
   const active = (strategy?.conditions || []).filter((c) => c.enabled && CATALOG_BY_ID[c.id]);
   const results = active.map((c) => {
@@ -311,7 +345,24 @@ export function evaluateStrategy(strategy, ctx) {
     const outcome = def.evaluate(ctx, param) || { na: true };
     return { id: c.id, label, param, direction: condDirection, ...outcome };
   });
-  const evaluated = results.filter((r) => !r.na);
+
+  const customResults = (strategy?.customConditions || []).map((c) => {
+    const condDirection = c.direction || 'both';
+    if (condDirection !== 'both' && ctx.direction && ctx.direction !== condDirection) {
+      return {
+        id: c.id, label: c.label, custom: true, na: true, skippedByDirection: true,
+        detail: `Условие только для ${condDirection === 'long' ? 'лонга' : 'шорта'} — сделка в ${ctx.direction === 'long' ? 'лонг' : 'шорт'}`,
+      };
+    }
+    const checked = !!ctx.manualChecks?.[c.id];
+    return {
+      id: c.id, label: c.label, custom: true, direction: condDirection,
+      passed: checked, detail: 'Отмечено вручную — приложение это не проверяет',
+    };
+  });
+
+  const allResults = [...results, ...customResults];
+  const evaluated = allResults.filter((r) => !r.na);
   const passed = evaluated.filter((r) => r.passed).length;
-  return { total: evaluated.length, passed, results };
+  return { total: evaluated.length, passed, results: allResults };
 }
