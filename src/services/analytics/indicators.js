@@ -89,6 +89,36 @@ function bollingerAt(closes, index, period = 20, k = 2) {
   return { upper, mid, lower, percentB, position };
 }
 
+// ATR (Average True Range) — Wilder's smoothed average of the true range (the widest of
+// today's high-low, high-prevClose, low-prevClose). Answers "how far does this instrument
+// typically move per bar right now", independent of direction — used in the Calculator to
+// sanity-check a stop-loss distance against normal volatility (real user request: "стоп
+// на 5 пунктов при обычной качке в 40 — его выбьет шумом").
+function atr(candles, period = 14) {
+  const out = new Array(candles.length).fill(null);
+  let prevClose = null;
+  let prevAtr = null;
+  const trBuffer = [];
+  for (let i = 0; i < candles.length; i++) {
+    const { high, low, close } = candles[i];
+    const tr = prevClose == null
+      ? high - low
+      : Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
+    prevClose = close;
+    if (prevAtr == null) {
+      trBuffer.push(tr);
+      if (trBuffer.length === period) {
+        prevAtr = trBuffer.reduce((s, v) => s + v, 0) / period;
+        out[i] = prevAtr;
+      }
+    } else {
+      prevAtr = (prevAtr * (period - 1) + tr) / period;
+      out[i] = prevAtr;
+    }
+  }
+  return out;
+}
+
 function volumeRatioAt(volumes, index, period = 20) {
   if (index < period) return null;
   const window = volumes.slice(index - period, index);
@@ -123,6 +153,7 @@ export function computeIndicatorsAtEntry(candles, atDate) {
   const sma200 = sma(closes, 200);
   const rsi14 = rsi(closes, 14);
   const { histogram } = macd(closes);
+  const atr14 = atr(candles, 14);
 
   const closeAtIndex = closes[index];
   const sma200AtIndex = sma200[index];
@@ -136,5 +167,6 @@ export function computeIndicatorsAtEntry(candles, atDate) {
     sma200Distance: sma200AtIndex != null ? ((closeAtIndex - sma200AtIndex) / sma200AtIndex) * 100 : null,
     volumeRatio: volumeRatioAt(volumes, index),
     bollinger: bollingerAt(closes, index),
+    atr14: atr14[index] ?? null,
   };
 }

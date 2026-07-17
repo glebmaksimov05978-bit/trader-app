@@ -824,13 +824,21 @@ export default function Journal() {
       {/* Мини-модал быстрого закрытия */}
       {closeModal && (
         <div className="modal-overlay" onClick={() => setCloseModal(null)}>
-          <div className="modal" style={{maxWidth:400, paddingLeft:24, paddingRight:24}} onClick={e => e.stopPropagation()}>
+          {/* Was: extra paddingLeft/Right:24 directly on .modal PLUS its own inline
+              padding:'0 4px 8px' on the content wrapper instead of the shared
+              .modal-body class — the header/footer's divider borders (inset by
+              .modal-header/.modal-footer's own 28px padding + the extra 24px) ended up
+              narrower than the input fields below them (inset by only 24+4=28px total),
+              a ~24px mismatch that read as the lines being cut short (real user
+              report/photo). Using .modal-body like every other modal in the app fixes
+              the inset to match on all sides. */}
+          <div className="modal" style={{maxWidth:400}} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3 className="modal-title">✅ Закрыть сделку</h3>
               <button className="modal-close" onClick={() => setCloseModal(null)}>✕</button>
             </div>
 
-            <div style={{padding:'0 4px 8px'}}>
+            <div className="modal-body" style={{paddingTop:20, paddingBottom:8}}>
               {/* Инфо о сделке */}
               <div style={{
                 background:'rgba(79,70,229,0.08)',

@@ -10,7 +10,7 @@ import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { computeMarketContextAtEntry } from '../../services/analytics/marketContext';
 import { fetchActiveFutureCard, fetchMoexSecurityInfo } from '../../services/marketData/futuresSpecs';
 import { evaluateStrategy } from '../../services/analytics/strategy';
-import TechnicalAnalysisBlock, { PATTERN_LABELS } from '../shared/TechnicalAnalysisBlock';
+import TechnicalAnalysisBlock, { PATTERN_LABELS, InfoTip } from '../shared/TechnicalAnalysisBlock';
 import StrategyChecklist from '../shared/StrategyChecklist';
 import toast from 'react-hot-toast';
 import './Calculator.css';
@@ -998,6 +998,23 @@ export default function Calculator() {
                 <ResultRow label="Прибыль на контракт" value={displayResult.profitPerContract > 0 ? formatCurrency(displayResult.profitPerContract) : '—'} color="var(--green)" />
                 <ResultRow label="Комиссия" value={formatCurrency(displayResult.commission)} />
                 <ResultRow label="Точка безубытка" value={formatNumber(displayResult.breakeven, 2)} />
+                {taState.data?.indicators?.atr14 != null && form.stopLoss && form.entryPrice && (
+                  <>
+                    <div className="divider" />
+                    <div style={{display:'flex', alignItems:'center', gap:6, marginBottom:2}}>
+                      <span style={{fontSize:13, color:'var(--text-secondary)'}}>Средний размах цены (ATR)</span>
+                      <InfoTip text="ATR — типичная амплитуда движения цены за период (не направление, просто «насколько сильно качает»). Помогает понять, разумный ли у вас стоп: намного уже ATR — легко выбьет обычным шумом; намного шире — платите риском больше необходимого." />
+                    </div>
+                    <ResultRow label={`ATR (14, ${taTimeframe})`} value={formatNumber(taState.data.indicators.atr14, 2)} />
+                    {(() => {
+                      const stopDist = Math.abs(parseFloat(form.entryPrice) - parseFloat(form.stopLoss));
+                      const atrMult = stopDist / taState.data.indicators.atr14;
+                      const color = atrMult < 0.5 ? 'var(--red)' : atrMult > 4 ? 'var(--gold)' : 'var(--green)';
+                      const note = atrMult < 0.5 ? 'узко — риск выбить шумом' : atrMult > 4 ? 'широко — риска больше обычного' : 'в разумных пределах';
+                      return <ResultRow label="Ваш стоп в ATR" value={`${formatNumber(atrMult, 1)}× (${note})`} color={color} />;
+                    })()}
+                  </>
+                )}
                 <div className="divider" />
                 <ResultRow label="Макс. убыток (с комис.)" value={formatCurrency(displayResult.totalLoss)} color="var(--red)" large />
                 {displayResult.totalProfit > 0 && <ResultRow label="Потенц. прибыль (с комис.)" value={formatCurrency(displayResult.totalProfit)} color="var(--green)" large />}
