@@ -296,47 +296,11 @@ body {
   line-height: 1;
 }
 
-/* Flippable KPI cards — click anywhere on the card (not just the ⓘ) to see the
-   plain-language explanation + a sample-size honesty check on the back (real user
-   request: "не хочу переписывать формулы каждый раз", same spirit as InfoTip but
-   for the 4 top dashboard cards specifically). The ⓘ badge exists purely so a first-
-   time trader notices the card is clickable at all — the whole card is the hit area. */
-.kpi-flip-outer {
-  perspective: 1200px;
-  cursor: pointer;
-}
-.kpi-flip-inner {
-  position: relative;
-  width: 100%;
-  height: 100%;
-  /* Tall enough for the back face's explanation paragraphs — the front's own content
-     is much shorter, so it just sits vertically centered in the extra room. The old
-     108px (front-content height) clipped the back text mid-sentence against
-     .kpi-card's own overflow:hidden (real user report/photo: text cut off with no
-     ellipsis, looked broken rather than just short). */
-  min-height: 265px;
-  transition: transform 0.5s cubic-bezier(0.4, 0.2, 0.2, 1);
-  transform-style: preserve-3d;
-}
-.kpi-flip-outer.flipped .kpi-flip-inner {
-  transform: rotateY(180deg);
-}
-.kpi-flip-face {
-  position: absolute;
-  inset: 0;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-.kpi-flip-face.back {
-  transform: rotateY(180deg);
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--text-secondary);
-  overflow-y: auto;
-}
+/* KPI card ⓘ badge — opens a small shared modal with a plain-language explanation +
+   a sample-size honesty check (real user request). A card-flip animation was tried
+   here and reverted (looked oversized once the explanation text needed real room —
+   real user report: "дашборд теперь выглядит ужасно"); a modal doesn't force the
+   card's own layout to grow at all. */
 .kpi-info-badge {
   position: absolute;
   top: 10px;

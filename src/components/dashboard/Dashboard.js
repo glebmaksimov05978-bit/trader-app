@@ -1,5 +1,6 @@
 // src/components/dashboard/Dashboard.js
 import React, { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, calcStats, buildEquityCurve } from '../../services/trades';
 import { computeWeeklyHabits, detectPnlByInstrumentType, MIN_SAMPLE } from '../../services/analytics/insightsEngine';
@@ -17,22 +18,19 @@ import { formatCurrency, formatNumber } from '../../utils/calculator';
 
 const INSTRUMENT_LABELS = { stock: 'Акции', future: 'Фьючерсы', currency: 'Валюта' };
 
-// Click anywhere on a top KPI card to flip it and see a plain-language explanation +
-// how many trades it takes before the number stops being a coin-flip (real user request:
-// "пояснения к каждой карточке — что она значит + сколько сделок нужно, чтобы вывод
-// перестал быть гипотезой", instead of a bare "мало данных"). The ⓘ badge is only there
-// so a first-time trader notices the card is clickable — the whole card is the hit area.
-function FlippableKpiCard({ className, front, back }) {
-  const [flipped, setFlipped] = useState(false);
+// The original plain kpi-card, restored — flipping the whole card (tried in an earlier
+// round) looked broken/oversized once the back-face explanation text needed enough
+// height to not clip (real user report: "дашборд теперь выглядит ужасно"). The ⓘ badge
+// still exists, it just opens a small shared modal now instead of flipping the card.
+function KpiCard({ className, front, onInfo }) {
   return (
-    <div className={`kpi-flip-outer ${flipped ? 'flipped' : ''}`} onClick={() => setFlipped((f) => !f)}>
-      <div className="kpi-flip-inner">
-        <div className={`kpi-flip-face front kpi-card ${className || ''}`}>
-          <span className="kpi-info-badge">ⓘ</span>
-          {front}
-        </div>
-        <div className={`kpi-flip-face back kpi-card ${className || ''}`}>{back}</div>
-      </div>
+    <div className={`kpi-card ${className || ''}`} style={{position:'relative'}}>
+      <button
+        className="kpi-info-badge"
+        style={{border:'none', cursor:'pointer'}}
+        onClick={(e) => { e.stopPropagation(); onInfo(); }}
+      >ⓘ</button>
+      {front}
     </div>
   );
 }
@@ -46,6 +44,7 @@ export default function Dashboard() {
   const [showFullReport, setShowFullReport] = useState(false);
   const [radarItems, setRadarItems] = useState([]);
   const [radarState, setRadarState] = useState({}); // itemId -> { loading, result, error }
+  const [infoModal, setInfoModal] = useState(null); // { title, body } for the KPI card ⓘ modal
 
   useEffect(() => {
     if (!user) return;
@@ -125,11 +124,19 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* KPI row — each card flips on click to show a plain-language explanation +
-          a sample-size honesty check (real user request, see FlippableKpiCard above) */}
+      {/* KPI row — each card's ⓘ opens a small shared modal with a plain-language
+          explanation + a sample-size honesty check (real user request). Flipping the
+          whole card was tried and reverted — looked oversized/broken once the longer
+          explanation text needed room. */}
       <div className="grid-4" style={{marginBottom: 24}}>
-        <FlippableKpiCard
+        <KpiCard
           className={pnlTotal >= 0 ? 'green' : 'red'}
+          onInfo={() => setInfoModal({
+            title: 'Баланс',
+            body: <>Депозит, который вы указали в Капитале, плюс P&L сделок, закрытых <b>после</b> того
+              момента. Старые сделки на это число не влияют — они уже учтены в цифре, которую вы
+              ввели вручную.</>,
+          })}
           front={<>
             <div className="kpi-label">Баланс</div>
             <div className="kpi-value" style={{color: pnlTotal >= 0 ? 'var(--green)' : 'var(--red)'}}>
@@ -137,28 +144,34 @@ export default function Dashboard() {
             </div>
             <div className="kpi-sub">{pnlTotal >= 0 ? '+' : ''}{formatCurrency(pnlTotal)} ({pnlPercent}%)</div>
           </>}
-          back={<>
-            Депозит, который вы указали в Капитале, плюс P&L сделок, закрытых <b>после</b> того
-            момента. Старые сделки на это число не влияют — они уже учтены в цифре, которую вы
-            ввели вручную.
-          </>}
         />
 
-        <FlippableKpiCard
+        <KpiCard
           className="gold"
+          onInfo={() => setInfoModal({
+            title: 'Сделок всего',
+            body: <>Только сделки с посчитанным результатом (P&L). Открытые позиции и сделки, где не
+              хватает данных по контракту для расчёта, сюда не входят.</>,
+          })}
           front={<>
             <div className="kpi-label">Сделок всего</div>
             <div className="kpi-value" style={{color:'var(--gold)'}}>{stats?.total || 0}</div>
             <div className="kpi-sub">{stats?.wins || 0} прибыльных / {stats?.losses || 0} убыточных</div>
           </>}
-          back={<>
-            Только сделки с посчитанным результатом (P&L). Открытые позиции и сделки, где не
-            хватает данных по контракту для расчёта, сюда не входят.
-          </>}
         />
 
-        <FlippableKpiCard
+        <KpiCard
           className="blue"
+          onInfo={() => setInfoModal({
+            title: 'Винрейт и профит-фактор',
+            body: <>
+              <b>Винрейт</b> — доля сделок в плюсе. <b>Профит-фактор</b> — сколько рублей прибыли
+              приходится на рубль убытка (больше 1 — торговля в плюс за период).<br/><br/>
+              {stats && stats.total < MIN_SAMPLE
+                ? <>У вас {stats.total} закрытых сделок — на такой выборке оба числа ещё сильно скачут от сделки к сделке. Обычно стабилизируются примерно после {MIN_SAMPLE} сделок, осталось ~{MIN_SAMPLE - stats.total}.</>
+                : <>У вас {stats?.total || 0} закрытых сделок — этого достаточно, чтобы числам можно было доверять больше, чем на первых {MIN_SAMPLE}.</>}
+            </>,
+          })}
           front={<>
             <div className="kpi-label">Винрейт</div>
             <div className="kpi-value" style={{color:'var(--blue)'}}>
@@ -166,17 +179,19 @@ export default function Dashboard() {
             </div>
             <div className="kpi-sub">Профит-фактор: {stats ? formatNumber(stats.profitFactor, 2) : '—'}</div>
           </>}
-          back={<>
-            <b>Винрейт</b> — доля сделок в плюсе. <b>Профит-фактор</b> — сколько рублей прибыли
-            приходится на рубль убытка (больше 1 — торговля в плюс за период).<br/><br/>
-            {stats && stats.total < MIN_SAMPLE
-              ? <>У вас {stats.total} закрытых сделок — на такой выборке оба числа ещё сильно скачут от сделки к сделке. Обычно стабилизируются примерно после {MIN_SAMPLE} сделок, осталось ~{MIN_SAMPLE - stats.total}.</>
-              : <>У вас {stats?.total || 0} закрытых сделок — этого достаточно, чтобы числам можно было доверять больше, чем на первых {MIN_SAMPLE}.</>}
-          </>}
         />
 
-        <FlippableKpiCard
+        <KpiCard
           className={(stats?.maxDrawdown || 0) > deposit * 0.1 ? 'red' : 'purple'}
+          onInfo={() => setInfoModal({
+            title: 'Макс. просадка и матожидание',
+            body: <>
+              <b>Макс. просадка</b> — самая глубокая просадка баланса от пикового значения за всю
+              историю. Это уже случившийся факт, не прогноз — за {stats?.total || 0} сделок рынок
+              вас ещё мало испытывал, реальная худшая просадка впереди может быть глубже.<br/><br/>
+              <b>Матожидание</b> — средний ожидаемый результат на одну сделку. Чувствительно к редким крупным сделкам (одна большая может исказить число), стабильным становится обычно примерно от {MIN_SAMPLE * 2} сделок.
+            </>,
+          })}
           front={<>
             <div className="kpi-label">Макс просадка</div>
             <div className="kpi-value" style={{color: (stats?.maxDrawdown||0) > deposit*0.1 ? 'var(--red)' : 'var(--accent-primary)'}}>
@@ -184,14 +199,23 @@ export default function Dashboard() {
             </div>
             <div className="kpi-sub">Матожидание: {stats ? formatCurrency(Math.round(stats.expectancy)) : '—'}</div>
           </>}
-          back={<>
-            <b>Макс. просадка</b> — самая глубокая просадка баланса от пикового значения за всю
-            историю. Это уже случившийся факт, не прогноз — за {stats?.total || 0} сделок рынок
-            вас ещё мало испытывал, реальная худшая просадка впереди может быть глубже.<br/><br/>
-            <b>Матожидание</b> — средний ожидаемый результат на одну сделку. Чувствительно к редким крупным сделкам (одна большая может исказить число), стабильным становится обычно примерно от {MIN_SAMPLE * 2} сделок.
-          </>}
         />
       </div>
+
+      {infoModal && createPortal(
+        <div className="modal-overlay" onClick={() => setInfoModal(null)}>
+          <div className="modal" style={{maxWidth:420}} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">{infoModal.title}</h3>
+              <button className="modal-close" onClick={() => setInfoModal(null)}>✕</button>
+            </div>
+            <div className="modal-body" style={{fontSize:13, color:'var(--text-secondary)', lineHeight:1.55}}>
+              {infoModal.body}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
 
       {/* Charts row */}
       <div className="grid-2" style={{marginBottom: 24}}>

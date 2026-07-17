@@ -76,9 +76,10 @@
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  /* Extra bottom padding — the buttons sat close enough to the modal's rounded bottom
-     corner to look cramped, especially on short mini-modals like "Добавить в радар"
-     (real user report/photo). */
-  padding: 20px 28px 26px;
+  /* Extra padding both above (between the divider line and the buttons) and below —
+     the buttons sat close enough to the divider AND the modal's rounded bottom corner
+     to look cramped on short mini-modals like "Добавить в радар" (real user report/
+     photo, twice — first bump to 26px wasn't enough). */
+  padding: 26px 28px 32px;
   border-top: 1px solid var(--border-subtle);
 }

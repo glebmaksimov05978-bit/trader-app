@@ -3,7 +3,7 @@
 // Shared by the Journal (trade "as of entry" frozen snapshot, Radar "as of now" live
 // snapshot) and the Calculator's live pre-trade panel — same indicators/patterns shape
 // everywhere, only `atDate` and caching strategy differ per caller.
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { formatNumber } from '../../utils/calculator';
 import RangeGauge from './RangeGauge';
@@ -24,6 +24,7 @@ import { markStrongestLevel } from '../../services/analytics/patterns';
 export function InfoTip({ text }) {
   const [open, setOpen] = useState(false);
   const btnRef = useRef(null);
+  const tipRef = useRef(null);
   const [pos, setPos] = useState({ top: 0, left: 0 });
   const TIP_WIDTH = 280;
 
@@ -35,6 +36,20 @@ export function InfoTip({ text }) {
     }
     setOpen((o) => !o);
   };
+
+  // Clicking anywhere outside the tooltip (or the button itself) closes it — real user
+  // report: only the button's own re-click closed it before, which nobody expects for a
+  // popover. The button's own click is left alone (toggle already handles it); this
+  // listener only reacts to clicks that land elsewhere.
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e) => {
+      if (btnRef.current?.contains(e.target) || tipRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', onDocClick);
+    return () => document.removeEventListener('mousedown', onDocClick);
+  }, [open]);
 
   return (
     <span style={{position:'relative', display:'inline-flex'}}>
@@ -50,6 +65,7 @@ export function InfoTip({ text }) {
       >ⓘ</button>
       {open && createPortal(
         <span
+          ref={tipRef}
           onClick={(e) => e.stopPropagation()}
           style={{
             position:'fixed', top:pos.top, left:pos.left, zIndex:10000, width:TIP_WIDTH, fontSize:12, fontWeight:400,
@@ -162,7 +178,7 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
 
             {marketContext && (marketContext.trend || marketContext.volatility) && (
               <>
-                <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:8}}>Рыночный контекст (автоопределение)</div>
+                <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:8}}>Рыночный контекст (автоопределение)</div>
                 <div className="grid-2" style={{gap:16, maxWidth:640, marginBottom:14}}>
                   {marketContext.trend && (
                     <div>
@@ -192,7 +208,7 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
 
             {indicators?.bollinger && (
               <>
-                <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:6, display:'flex', alignItems:'center', gap:6}}>
+                <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:6, display:'flex', alignItems:'center', gap:6}}>
                   Полосы Боллинджера — цена {indicators.bollinger.position === 'above_upper' ? 'выше верхней полосы' : indicators.bollinger.position === 'below_lower' ? 'ниже нижней полосы' : 'внутри полос'}
                   <InfoTip text="Коридор обычного разброса цены. Верхняя и нижняя линии — на 2 стандартных отклонения от средней. Цена у верхней границы — рынок разогнан вверх сильнее обычного; у нижней — вниз." />
                 </div>
@@ -212,7 +228,7 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
 
             {patterns && (
               <>
-                <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:6}}>EMA-уровни (плавающие поддержка/сопротивление)</div>
+                <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:6}}>EMA-уровни (плавающие поддержка/сопротивление)</div>
                 <div className="grid-3" style={{gap:8, maxWidth:640, marginBottom:14}}>
                   {[9, 100, 200].map((p) => {
                     const e = patterns.emaLevels?.[`ema${p}`];
@@ -239,9 +255,8 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
                   const ranked = markStrongestLevel(patterns.supportResistance, patterns.emaLevels, patterns.fibonacci, indicators?.bollinger);
                   return (
                     <>
-                      <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:6, display:'flex', alignItems:'center', gap:6}}>
-                        <span>Уровни поддержки/сопротивления (по свингам) — 🔴 сопротивление (цена упиралась сверху) · 🟢 поддержка (цена отталкивалась снизу)</span>
-                        <InfoTip text="★ самый сильный — не только касания. Очки начисляются за каждое касание уровня свечами, плюс бонус, если рядом (в пределах 0.3%) оказывается EMA9/EMA100/EMA200 (чем длиннее период — тем весомее), золотой уровень Фибоначчи (38.2/50/61.8%), крайний Фибо (23.6/78.6%) или полоса Боллинджера. Совпадение с независимым методом расчёта весит больше, чем ещё одно касание тем же способом." />
+                      <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:6}}>
+                        Уровни поддержки/сопротивления (по свингам) — 🔴 сопротивление (цена упиралась сверху) · 🟢 поддержка (цена отталкивалась снизу)
                       </div>
                       <div style={{display:'flex', flexWrap:'wrap', gap:8, marginBottom:14}}>
                         {ranked.map((lvl, i) => (
@@ -250,8 +265,9 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
                             style={lvl.isStrongest ? {border:'1px solid var(--gold)', boxShadow:'0 0 0 1px var(--gold)'} : undefined}>
                             {lvl.type === 'resistance' ? '🔴' : '🟢'} {formatNumber(lvl.price, 2)} ({lvl.touchCount} каc.)
                             {lvl.isStrongest && (
-                              <span style={{color:'var(--gold)', marginLeft:4}}>
+                              <span style={{color:'var(--gold)', marginLeft:4, display:'inline-flex', alignItems:'center', gap:3}}>
                                 {lvl.type === 'resistance' ? '★ самое сильное сопротивление' : '★ самая сильная поддержка'}
+                                <InfoTip text={`Почему именно этот уровень сильнее остальных: ${lvl.strengthReasons.join(', ')}. Совпадение с независимым методом расчёта (EMA/Фибоначчи/Боллинджер) весит больше, чем ещё одно касание тем же способом.`} />
                               </span>
                             )}
                           </LevelBadge>
@@ -263,7 +279,7 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
 
                 {patterns.fibonacci && (
                   <>
-                    <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:6}}>
+                    <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:6}}>
                       Уровни Фибоначчи (от {formatNumber(patterns.fibonacci.from.price, 2)} до {formatNumber(patterns.fibonacci.to.price, 2)})
                     </div>
                     <div style={{display:'flex', flexWrap:'wrap', gap:8, marginBottom:6}}>
@@ -280,7 +296,7 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
                   </>
                 )}
 
-                <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:6}}>Фигуры-кандидаты (алгоритмическая оценка, не мнение AI)</div>
+                <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:6}}>Фигуры-кандидаты (алгоритмическая оценка, не мнение AI)</div>
                 {patterns.candidates?.length > 0 ? (
                   <div className="flex flex-col gap-2" style={{maxWidth:640}}>
                     {patterns.candidates.map((c, i) => (

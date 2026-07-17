@@ -149,18 +149,26 @@ export function markStrongestLevel(levels, emaLevels, fibonacci, bollinger, tole
   if (!levels?.length) return levels;
   const near = (a, b) => a != null && b != null && (Math.abs(a - b) / b) * 100 <= tolerancePct;
 
+  // `reasons` records WHICH factors actually contributed to this level's score, in
+  // plain Russian — the ★ badge used to point at one shared legend for the whole panel,
+  // leaving the trader unable to tell whether THIS particular level won on touches
+  // alone or genuine multi-method confluence (real user report: "непонятно конкретно
+  // этот по каким критериям отобран"). Rendered per-badge via InfoTip.
   const scored = levels.map((lvl) => {
     let score = lvl.touchCount;
-    if (near(emaLevels?.ema9?.value, lvl.price)) score += LEVEL_STRENGTH_WEIGHTS.ema9;
-    if (near(emaLevels?.ema100?.value, lvl.price)) score += LEVEL_STRENGTH_WEIGHTS.ema100;
-    if (near(emaLevels?.ema200?.value, lvl.price)) score += LEVEL_STRENGTH_WEIGHTS.ema200;
+    const reasons = [`${lvl.touchCount} касани${lvl.touchCount === 1 ? 'е' : lvl.touchCount < 5 ? 'я' : 'й'} свечами`];
+    if (near(emaLevels?.ema9?.value, lvl.price)) { score += LEVEL_STRENGTH_WEIGHTS.ema9; reasons.push('рядом EMA9'); }
+    if (near(emaLevels?.ema100?.value, lvl.price)) { score += LEVEL_STRENGTH_WEIGHTS.ema100; reasons.push('рядом EMA100'); }
+    if (near(emaLevels?.ema200?.value, lvl.price)) { score += LEVEL_STRENGTH_WEIGHTS.ema200; reasons.push('рядом EMA200'); }
     for (const f of fibonacci?.levels || []) {
       if (!near(f.price, lvl.price)) continue;
-      score += (f.ratio === 0.236 || f.ratio === 0.786) ? LEVEL_STRENGTH_WEIGHTS.fibOuter : LEVEL_STRENGTH_WEIGHTS.fibGolden;
+      const golden = f.ratio !== 0.236 && f.ratio !== 0.786;
+      score += golden ? LEVEL_STRENGTH_WEIGHTS.fibGolden : LEVEL_STRENGTH_WEIGHTS.fibOuter;
+      reasons.push(`рядом Фибо ${(f.ratio * 100).toFixed(1)}%`);
     }
-    if (near(bollinger?.upper, lvl.price) || near(bollinger?.lower, lvl.price)) score += LEVEL_STRENGTH_WEIGHTS.bollingerBand;
-    if (near(bollinger?.mid, lvl.price)) score += LEVEL_STRENGTH_WEIGHTS.bollingerMid;
-    return { ...lvl, strengthScore: score };
+    if (near(bollinger?.upper, lvl.price) || near(bollinger?.lower, lvl.price)) { score += LEVEL_STRENGTH_WEIGHTS.bollingerBand; reasons.push('рядом полоса Боллинджера'); }
+    if (near(bollinger?.mid, lvl.price)) { score += LEVEL_STRENGTH_WEIGHTS.bollingerMid; reasons.push('рядом средняя Боллинджера'); }
+    return { ...lvl, strengthScore: score, strengthReasons: reasons };
   });
 
   // Only worth flagging if it stands out within its own type — tied-for-first isn't

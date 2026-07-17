@@ -1,5 +1,6 @@
 // src/components/calculator/Calculator.js
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useAuth } from '../../context/AuthContext';
 import { TinkoffAPI, parseFutureInfo, parseShareInfo } from '../../services/tinkoff';
 import { calcTrade, formatCurrency, formatNumber } from '../../utils/calculator';
@@ -66,6 +67,7 @@ export default function Calculator() {
   const [journalAnim, setJournalAnim] = useState(false);
   const [showJournalModal, setShowJournalModal] = useState(false);
   const [showTinkoffModal, setShowTinkoffModal] = useState(false);
+  const [showAtrModal, setShowAtrModal] = useState(false);
   const [tinkoffCopied, setTinkoffCopied] = useState('');
   const [journalExtra, setJournalExtra] = useState({ setup: '', emotion: '', notes: '' });
   const [savingTrade, setSavingTrade] = useState(false);
@@ -996,21 +998,6 @@ export default function Calculator() {
                 <ResultRow label="Убыток на контракт" value={formatCurrency(displayResult.lossPerContract)} color="var(--red)" />
                 <ResultRow label="Прибыль на контракт" value={displayResult.profitPerContract > 0 ? formatCurrency(displayResult.profitPerContract) : '—'} color="var(--green)" />
                 <ResultRow label="Комиссия" value={formatCurrency(displayResult.commission)} />
-                {taState.data?.indicators?.atr14 != null && form.stopLoss && form.entryPrice && (
-                  <>
-                    <ResultRow
-                      label={<>ATR (14, {taTimeframe}) <InfoTip text="ATR — типичная амплитуда движения цены за период (не направление, просто «насколько сильно качает»). Помогает понять, разумный ли у вас стоп: намного уже ATR — легко выбьет обычным шумом; намного шире — платите риском больше необходимого." /></>}
-                      value={formatNumber(taState.data.indicators.atr14, 2)}
-                    />
-                    {(() => {
-                      const stopDist = Math.abs(parseFloat(form.entryPrice) - parseFloat(form.stopLoss));
-                      const atrMult = stopDist / taState.data.indicators.atr14;
-                      const color = atrMult < 0.5 ? 'var(--red)' : atrMult > 4 ? 'var(--gold)' : 'var(--green)';
-                      const note = atrMult < 0.5 ? 'узко' : atrMult > 4 ? 'широко' : 'разумно';
-                      return <ResultRow label="Ваш стоп в ATR" value={`${formatNumber(atrMult, 1)}× (${note})`} color={color} />;
-                    })()}
-                  </>
-                )}
                 <ResultRow label="Точка безубытка" value={formatNumber(displayResult.breakeven, 2)} />
                 <div className="divider" />
                 <ResultRow label="Макс. убыток (с комис.)" value={formatCurrency(displayResult.totalLoss)} color="var(--red)" large />
@@ -1031,6 +1018,28 @@ export default function Calculator() {
                   {(displayResult.marginUsagePercent||0)>70?'⚠️ Высокая загрузка — рискованно':(displayResult.marginUsagePercent||0)>40?'🟡 Умеренная загрузка':'✅ Нормальная загрузка'}
                 </div>
               </div>
+
+              {/* Own card, same size class as "Использование капитала" above it — moved
+                  out of Детализация into its own modal (real user request: "вынести
+                  вообще в отдельное модальное окно чтобы симметрично было"). Only shows
+                  once a TA fetch has actually run — no fabricated ATR before that. */}
+              {taState.data?.indicators?.atr14 != null && form.stopLoss && form.entryPrice && (
+                <div className="card" style={{cursor:'pointer'}} onClick={() => setShowAtrModal(true)}>
+                  <div className="section-title"><div className="section-title-icon">📏</div>Волатильность (ATR)</div>
+                  {(() => {
+                    const stopDist = Math.abs(parseFloat(form.entryPrice) - parseFloat(form.stopLoss));
+                    const atrMult = stopDist / taState.data.indicators.atr14;
+                    const color = atrMult < 0.5 ? 'var(--red)' : atrMult > 4 ? 'var(--gold)' : 'var(--green)';
+                    const note = atrMult < 0.5 ? 'узко' : atrMult > 4 ? 'широко' : 'разумно';
+                    return (
+                      <div className="risk-gauge-labels">
+                        <span className="text-sm text-secondary">Ваш стоп в ATR</span>
+                        <span style={{fontWeight:700,fontSize:14,color}}>{formatNumber(atrMult, 1)}× ({note}) →</span>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
             </>
           ) : result ? (
             <div className="card" style={{textAlign:'center',padding:'48px 24px'}}>
@@ -1086,6 +1095,41 @@ export default function Calculator() {
             и здесь появится счётчик «N из M».
           </div>
         </div>
+      )}
+
+      {/* Portaled to document.body — every other inline modal in this app (rendered
+          inside a .page div, which gets a transform from its own fadeIn animation) had
+          its position:fixed silently contained by .page's box instead of the real
+          viewport, an easy-to-miss CSS spec gotcha found and fixed for ImportModal
+          earlier — doing it right from the start here instead of adding another
+          instance of the same bug. */}
+      {showAtrModal && taState.data?.indicators?.atr14 != null && createPortal(
+        <div className="modal-overlay" onClick={() => setShowAtrModal(false)}>
+          <div className="modal" style={{maxWidth:440}} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">📏 Волатильность (ATR)</h3>
+              <button className="modal-close" onClick={() => setShowAtrModal(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <p style={{fontSize:13, color:'var(--text-secondary)', lineHeight:1.55, marginBottom:16}}>
+                ATR — типичная амплитуда движения цены за период (не направление, просто «насколько сильно качает»).
+                Помогает понять, разумный ли у вас стоп: намного уже ATR — легко выбьет обычным шумом; намного шире — платите риском больше необходимого.
+              </p>
+              <ResultRow label={`ATR (14, ${taTimeframe})`} value={formatNumber(taState.data.indicators.atr14, 2)} />
+              {form.stopLoss && form.entryPrice && (() => {
+                const stopDist = Math.abs(parseFloat(form.entryPrice) - parseFloat(form.stopLoss));
+                const atrMult = stopDist / taState.data.indicators.atr14;
+                const color = atrMult < 0.5 ? 'var(--red)' : atrMult > 4 ? 'var(--gold)' : 'var(--green)';
+                const note = atrMult < 0.5 ? 'узко — риск выбить шумом' : atrMult > 4 ? 'широко — риска больше обычного' : 'в разумных пределах';
+                return <ResultRow label="Ваш стоп в ATR" value={`${formatNumber(atrMult, 1)}× (${note})`} color={color} />;
+              })()}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-primary" onClick={() => setShowAtrModal(false)}>Понятно</button>
+            </div>
+          </div>
+        </div>,
+        document.body
       )}
 
       {/* Модалка Т-Банк */}
