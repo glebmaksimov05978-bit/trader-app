@@ -219,23 +219,43 @@ function isOnOrAfter(trade, anchorMs) {
   return Number.isFinite(d) && d >= anchorMs;
 }
 
-// Equity curve data
+const fmtCurveDate = (t) =>
+  t.date ? new Date(t.date?.seconds * 1000 || t.date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) : '';
+
+// Equity curve data. Pre-anchor trades don't move the live balance number
+// (computeLiveBalance still ignores them entirely — that's the whole point of the
+// anchor), but hiding them from the CHART made it go completely blank right after
+// setting a new deposit, which read as "my history got deleted" rather than "no new
+// trades since you last set it" (real user report/photo — "Кривая капитала: Нет
+// данных" with 14 real trades in the account). So the chart still draws the full
+// history for context, reconstructed backward from the anchor's known balance
+// (initialBalance) — only the live BALANCE figure elsewhere in the app stays
+// anchor-scoped.
 export function buildEquityCurve(trades, initialBalance = 100000, depositSetAt = null) {
+  const closed = [...trades].filter(hasRealizedPnl).sort((a, b) => new Date(a.date) - new Date(b.date));
   const anchorMs = depositSetAt ? new Date(depositSetAt).getTime() : null;
-  const sorted = [...trades]
-    .filter(hasRealizedPnl)
-    .filter((t) => isOnOrAfter(t, anchorMs))
-    .sort((a, b) => new Date(a.date) - new Date(b.date));
+  const pre = anchorMs != null ? closed.filter((t) => !isOnOrAfter(t, anchorMs)) : [];
+  const post = anchorMs != null ? closed.filter((t) => isOnOrAfter(t, anchorMs)) : closed;
+
+  const curve = [];
+  if (pre.length) {
+    // Walk backward from the anchor's known balance through pre-anchor trades to
+    // reconstruct what balance looked like historically, purely for the chart.
+    let bal = initialBalance;
+    const preCurve = [];
+    for (let i = pre.length - 1; i >= 0; i--) {
+      preCurve.unshift({ date: fmtCurveDate(pre[i]), balance: Math.round(bal), pnl: pre[i].pnl });
+      bal -= pre[i].pnl;
+    }
+    curve.push({ date: 'Start', balance: Math.round(bal) }, ...preCurve);
+  } else {
+    curve.push({ date: 'Start', balance: initialBalance });
+  }
 
   let balance = initialBalance;
-  const curve = [{ date: 'Start', balance }];
-  sorted.forEach((t) => {
+  post.forEach((t) => {
     balance += t.pnl;
-    curve.push({
-      date: t.date ? new Date(t.date?.seconds * 1000 || t.date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) : '',
-      balance: Math.round(balance),
-      pnl: t.pnl,
-    });
+    curve.push({ date: fmtCurveDate(t), balance: Math.round(balance), pnl: t.pnl });
   });
   return curve;
 }

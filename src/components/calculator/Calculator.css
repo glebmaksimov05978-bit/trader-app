@@ -3,7 +3,10 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 24px;
-  align-items: start;
+  /* No alignItems:start here on purpose (same fix as Capital.js's column-height bug) —
+     grid's default stretch keeps both columns the same height instead of leaving empty
+     space below the shorter one. .calc-input-panel's position:sticky still works fine
+     stretched — sticky just gets more scroll room within its column, not less. */
 }
 
 .calc-input-panel {

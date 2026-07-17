@@ -169,22 +169,21 @@ export default function Calculator() {
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
 
   // Editing the ticker field away from whatever it was last loaded for (including
-  // clearing it to empty) immediately drops the stop/take and, for limit orders, the
-  // entry price too — waiting for "Загрузить" left stale numbers from a DIFFERENT
-  // instrument on screen computing a confident-looking result with no ticker loaded at
-  // all, or with a wildly wrong scale after switching (Brent's 85/83/95 surviving a
-  // switch to IMOEXF, which trades in the thousands — real user report/screenshots).
+  // clearing it to empty) immediately drops entry/stop/take, unconditionally — waiting
+  // for "Загрузить" left stale numbers from a DIFFERENT instrument on screen computing a
+  // confident-looking result with no ticker loaded at all, or with a wildly wrong scale
+  // after switching (Brent's 85/83/95 surviving a switch to IMOEXF, which trades in the
+  // thousands — real user report/screenshots). Previously kept the entry price for
+  // market orders (reasoning: the next fetch overwrites it anyway) — but with an empty
+  // ticker there IS no next fetch, so it just sat there stale; real user report asked
+  // for all three to go, always, no exception.
   const handleTickerChange = (raw) => {
     const upper = raw.toUpperCase();
     const stillSameTicker = loadedTickerRef.current && upper === loadedTickerRef.current;
     setForm(f => ({
       ...f,
       ticker: upper,
-      ...(stillSameTicker ? {} : {
-        stopLoss: '',
-        takeProfit: '',
-        entryPrice: orderType === 'limit' ? '' : f.entryPrice,
-      }),
+      ...(stillSameTicker ? {} : { entryPrice: '', stopLoss: '', takeProfit: '' }),
     }));
   };
 
@@ -997,24 +996,22 @@ export default function Calculator() {
                 <ResultRow label="Убыток на контракт" value={formatCurrency(displayResult.lossPerContract)} color="var(--red)" />
                 <ResultRow label="Прибыль на контракт" value={displayResult.profitPerContract > 0 ? formatCurrency(displayResult.profitPerContract) : '—'} color="var(--green)" />
                 <ResultRow label="Комиссия" value={formatCurrency(displayResult.commission)} />
-                <ResultRow label="Точка безубытка" value={formatNumber(displayResult.breakeven, 2)} />
                 {taState.data?.indicators?.atr14 != null && form.stopLoss && form.entryPrice && (
                   <>
-                    <div className="divider" />
-                    <div style={{display:'flex', alignItems:'center', gap:6, marginBottom:2}}>
-                      <span style={{fontSize:13, color:'var(--text-secondary)'}}>Средний размах цены (ATR)</span>
-                      <InfoTip text="ATR — типичная амплитуда движения цены за период (не направление, просто «насколько сильно качает»). Помогает понять, разумный ли у вас стоп: намного уже ATR — легко выбьет обычным шумом; намного шире — платите риском больше необходимого." />
-                    </div>
-                    <ResultRow label={`ATR (14, ${taTimeframe})`} value={formatNumber(taState.data.indicators.atr14, 2)} />
+                    <ResultRow
+                      label={<>ATR (14, {taTimeframe}) <InfoTip text="ATR — типичная амплитуда движения цены за период (не направление, просто «насколько сильно качает»). Помогает понять, разумный ли у вас стоп: намного уже ATR — легко выбьет обычным шумом; намного шире — платите риском больше необходимого." /></>}
+                      value={formatNumber(taState.data.indicators.atr14, 2)}
+                    />
                     {(() => {
                       const stopDist = Math.abs(parseFloat(form.entryPrice) - parseFloat(form.stopLoss));
                       const atrMult = stopDist / taState.data.indicators.atr14;
                       const color = atrMult < 0.5 ? 'var(--red)' : atrMult > 4 ? 'var(--gold)' : 'var(--green)';
-                      const note = atrMult < 0.5 ? 'узко — риск выбить шумом' : atrMult > 4 ? 'широко — риска больше обычного' : 'в разумных пределах';
+                      const note = atrMult < 0.5 ? 'узко' : atrMult > 4 ? 'широко' : 'разумно';
                       return <ResultRow label="Ваш стоп в ATR" value={`${formatNumber(atrMult, 1)}× (${note})`} color={color} />;
                     })()}
                   </>
                 )}
+                <ResultRow label="Точка безубытка" value={formatNumber(displayResult.breakeven, 2)} />
                 <div className="divider" />
                 <ResultRow label="Макс. убыток (с комис.)" value={formatCurrency(displayResult.totalLoss)} color="var(--red)" large />
                 {displayResult.totalProfit > 0 && <ResultRow label="Потенц. прибыль (с комис.)" value={formatCurrency(displayResult.totalProfit)} color="var(--green)" large />}

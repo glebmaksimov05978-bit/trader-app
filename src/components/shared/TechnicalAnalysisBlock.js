@@ -239,8 +239,9 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
                   const ranked = markStrongestLevel(patterns.supportResistance, patterns.emaLevels, patterns.fibonacci, indicators?.bollinger);
                   return (
                     <>
-                      <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:6}}>
-                        Уровни поддержки/сопротивления (по свингам) — 🔴 сопротивление (цена упиралась сверху) · 🟢 поддержка (цена отталкивалась снизу)
+                      <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:6, display:'flex', alignItems:'center', gap:6}}>
+                        <span>Уровни поддержки/сопротивления (по свингам) — 🔴 сопротивление (цена упиралась сверху) · 🟢 поддержка (цена отталкивалась снизу)</span>
+                        <InfoTip text="★ самый сильный — не только касания. Очки начисляются за каждое касание уровня свечами, плюс бонус, если рядом (в пределах 0.3%) оказывается EMA9/EMA100/EMA200 (чем длиннее период — тем весомее), золотой уровень Фибоначчи (38.2/50/61.8%), крайний Фибо (23.6/78.6%) или полоса Боллинджера. Совпадение с независимым методом расчёта весит больше, чем ещё одно касание тем же способом." />
                       </div>
                       <div style={{display:'flex', flexWrap:'wrap', gap:8, marginBottom:14}}>
                         {ranked.map((lvl, i) => (
