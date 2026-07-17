@@ -87,11 +87,29 @@ export function computeEmaLevelsAtIndex(candles, index) {
   return result;
 }
 
+// Cap on how much a single touch's reversal amplitude can contribute — without it, one
+// outsized move (a genuine month-scale reversal) could single-handedly swamp everything
+// else, which is just trading one blind spot (flat touch counting) for another. A
+// first-guess number like every other weight in this file, not backtested.
+const MAX_TOUCH_AMPLITUDE_PCT = 8;
+
 // Static support/resistance from clustered swing points — a "level" is any price where
-// at least 2 different swings landed within `toleranceRatio` of each other; the more
-// touches, the more traders plausibly have orders sitting there.
+// at least 2 different swings landed within `toleranceRatio` of each other. Each touch
+// is weighted by how far price moved away before reversing (`amplitudePct`) instead of
+// counting every touch equally — tripling the candle lookback (see candles.js) meant a
+// routine daily-noise wiggle could rack up the same touch count as a genuine multi-month
+// reversal, with no way to tell them apart (real user report: "бывают очень сильные...
+// а бывают не такие сильные и просто шум"). `touchCount` is kept for display (the badge
+// still reads "36 кас.") — `touchWeight` is what actually decides ★ самый сильный.
 export function findSupportResistance(swings, currentPrice, toleranceRatio = 0.006) {
-  const sorted = [...swings].sort((a, b) => a.price - b.price);
+  const withAmplitude = swings.map((s, i) => {
+    const next = swings[i + 1];
+    const prev = swings[i - 1];
+    const move = next ? Math.abs(next.price - s.price) : prev ? Math.abs(s.price - prev.price) : 0;
+    return { ...s, amplitudePct: s.price > 0 ? (move / s.price) * 100 : 0 };
+  });
+
+  const sorted = [...withAmplitude].sort((a, b) => a.price - b.price);
   const clusters = [];
   for (const s of sorted) {
     const cluster = clusters.find((c) => Math.abs(c.price - s.price) / c.price <= toleranceRatio);
@@ -107,6 +125,7 @@ export function findSupportResistance(swings, currentPrice, toleranceRatio = 0.0
     .map((c) => ({
       price: c.price,
       touchCount: c.touches.length,
+      touchWeight: c.touches.reduce((sum, t) => sum + Math.min(t.amplitudePct, MAX_TOUCH_AMPLITUDE_PCT), 0),
       type: c.price > currentPrice ? 'resistance' : 'support',
       lastTouchDate: c.touches[c.touches.length - 1].date,
     }))
@@ -155,8 +174,13 @@ export function markStrongestLevel(levels, emaLevels, fibonacci, bollinger, tole
   // alone or genuine multi-method confluence (real user report: "непонятно конкретно
   // этот по каким критериям отобран"). Rendered per-badge via InfoTip.
   const scored = levels.map((lvl) => {
-    let score = lvl.touchCount;
-    const reasons = [`${lvl.touchCount} касани${lvl.touchCount === 1 ? 'е' : lvl.touchCount < 5 ? 'я' : 'й'} свечами`];
+    // Weighted by reversal amplitude (see findSupportResistance), not a flat touch
+    // count — falls back to touchCount for levels computed some other way (defensive,
+    // shouldn't normally happen since this always runs on findSupportResistance output).
+    let score = lvl.touchWeight ?? lvl.touchCount;
+    const strengthNote = lvl.touchWeight != null && lvl.touchWeight !== lvl.touchCount
+      ? ` (вес по силе разворота после касаний: ${lvl.touchWeight.toFixed(1)})` : '';
+    const reasons = [`${lvl.touchCount} касани${lvl.touchCount === 1 ? 'е' : lvl.touchCount < 5 ? 'я' : 'й'} свечами${strengthNote}`];
     if (near(emaLevels?.ema9?.value, lvl.price)) { score += LEVEL_STRENGTH_WEIGHTS.ema9; reasons.push('рядом EMA9'); }
     if (near(emaLevels?.ema100?.value, lvl.price)) { score += LEVEL_STRENGTH_WEIGHTS.ema100; reasons.push('рядом EMA100'); }
     if (near(emaLevels?.ema200?.value, lvl.price)) { score += LEVEL_STRENGTH_WEIGHTS.ema200; reasons.push('рядом EMA200'); }
