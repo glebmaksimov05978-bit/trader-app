@@ -765,7 +765,7 @@ export default function Journal() {
               <h3 className="modal-title">📡 Добавить в радар</h3>
               <button className="modal-close" onClick={() => setAddRadarOpen(false)}>✕</button>
             </div>
-            <div className="flex flex-col gap-3" style={{padding:'0 4px 8px'}}>
+            <div className="modal-body" style={{paddingTop:20, paddingBottom:8}}>
               <div className="input-group">
                 <label className="input-label">Тикер *</label>
                 <input className="input" value={radarForm.ticker}
