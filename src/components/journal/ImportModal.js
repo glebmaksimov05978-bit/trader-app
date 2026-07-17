@@ -140,7 +140,12 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
 
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal" style={{maxWidth: 780}}>
+      {/* The classification table's columns (checkbox, ticker, direction badge, date
+          range, volume, P&L, status badge) don't fit inside 780px without truncating the
+          last column — real user report/photo showed "СТАТ|" cut off with a horizontal
+          scrollbar users didn't realize was there. Widened, capped to the viewport so it
+          still fits on a laptop screen. */}
+      <div className="modal" style={{maxWidth: 960, width: '96vw'}}>
         <div className="modal-header">
           <h2 className="modal-title">📥 Импорт отчёта Т-Инвестиций</h2>
           <button className="modal-close" onClick={onClose}>✕</button>
@@ -271,7 +276,7 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
               </div>
 
               <div className="table-wrapper" style={{maxHeight: 360, overflowY: 'auto'}}>
-                <table className="table">
+                <table className="table table-compact">
                   <thead>
                     <tr>
                       <th></th><th>Тикер</th><th>Направление</th><th>Открытие → Закрытие</th>

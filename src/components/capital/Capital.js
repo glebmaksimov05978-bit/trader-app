@@ -244,9 +244,14 @@ export default function Capital() {
         </div>
       </div>
 
-      <div className="grid-2" style={{alignItems:'start'}}>
+      {/* No explicit alignItems here on purpose — grid's default `stretch` makes both
+          columns match the taller one's height, and the contracts card below grows to
+          fill it (flex:1). With `alignItems:'start'` (the old value) the shorter left
+          column just stopped early, leaving a chunk of empty space next to a much
+          taller «Настройки риск-менеджмента» panel — real user report/screenshot. */}
+      <div className="grid-2">
         {/* Limits gauges */}
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4" style={{height:'100%'}}>
           {/* Daily loss gauge */}
           <div className="card">
             <div className="section-title">
@@ -284,8 +289,9 @@ export default function Capital() {
             </div>
           </div>
 
-          {/* Max contracts calculator */}
-          <div className="card">
+          {/* Max contracts calculator — flex:1 so it (not the shorter daily-loss card
+              above it) absorbs any extra height from the taller settings column. */}
+          <div className="card" style={{flex:1, display:'flex', flexDirection:'column'}}>
             <div className="section-title">
               <div className="section-title-icon">🔢</div>
               Сколько контрактов торговать?
@@ -342,7 +348,7 @@ export default function Capital() {
                 </div>
               </div>
             ) : (
-              <div className="text-muted text-sm" style={{padding:'12px 0'}}>
+              <div className="text-muted text-sm" style={{flex:1, display:'flex', alignItems:'center', justifyContent:'center', padding:'12px 0'}}>
                 Заполните цену входа и стоп-лосс
               </div>
             )}

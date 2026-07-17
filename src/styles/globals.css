@@ -602,6 +602,11 @@ input[type=number] { -moz-appearance: textfield; }
 
 .table tr:last-child td { border-bottom: none; }
 
+/* Tighter columns for tables inside modals where horizontal room is at a premium
+   (import preview) — same data, less padding, so more of it fits before the wrapper's
+   overflow-x scroll kicks in. */
+.table-compact th, .table-compact td { padding-left: 10px; padding-right: 10px; }
+
 .table tr:hover td { background: var(--bg-surface-2); }
 
 /* Tooltip */

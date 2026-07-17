@@ -87,11 +87,34 @@ export default function Calculator() {
     ...(draft?.form || {}),
   });
 
+  // Which ticker the current form numbers (SL/TP, contract specs) belong to — reloading
+  // the SAME ticker to refresh its price must not wipe the trader's stop/take, but
+  // loading a DIFFERENT one must (stale SL from the previous instrument is a footgun,
+  // real user report). Initialized from the draft (not just null) — otherwise a page
+  // reload forgot which ticker the restored form belonged to, so loading any new ticker
+  // read as "same ticker, don't clear stale prices" and a Brent limit order's 85/83/95
+  // stayed on screen after switching to IMOEXF (real user report/screenshot). Mirrored
+  // into state (not just the ref) so the analysis-prefetch effect below can depend on
+  // "a ticker just resolved" — refs don't trigger effects.
+  const loadedTickerRef = useRef(draft?.pricedForTicker || null);
+  const [resolvedTicker, setResolvedTicker] = useState(draft?.pricedForTicker || null);
+
   useEffect(() => {
     try {
-      sessionStorage.setItem(CALC_DRAFT_KEY, JSON.stringify({ form, instrumentType, priceSource, orderType, manualContracts, forcedDir }));
+      sessionStorage.setItem(CALC_DRAFT_KEY, JSON.stringify({
+        form, instrumentType, priceSource, orderType, manualContracts, forcedDir,
+        // Which ticker `form.entryPrice`/`stopLoss`/`takeProfit` actually belong to —
+        // restored into loadedTickerRef below so a page reload doesn't forget it (see
+        // that ref's own comment). Without this, reloading the page then loading a
+        // DIFFERENT ticker read loadedTickerRef as empty and treated it as "same
+        // ticker, don't clear stale prices" — a Brent limit order's 85/83/95 stayed on
+        // screen after switching to IMOEXF, which trades in the thousands (real user
+        // report/screenshot).
+        pricedForTicker: loadedTickerRef.current,
+      }));
     } catch { /* private mode/quota — черновик просто не сохранится */ }
-  }, [form, instrumentType, priceSource, orderType, manualContracts, forcedDir]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form, instrumentType, priceSource, orderType, manualContracts, forcedDir, resolvedTicker]);
   const [result, setResult] = useState(null);
   const [liveTrades, setLiveTrades] = useState([]); // for the "Депозит" default — see computeLiveBalance effect below
   const [instrumentInfo, setInstrumentInfo] = useState(null);
@@ -144,6 +167,26 @@ export default function Calculator() {
   }, [showJournalModal, showTinkoffModal]);
 
   const set = (key, val) => setForm(f => ({ ...f, [key]: val }));
+
+  // Editing the ticker field away from whatever it was last loaded for (including
+  // clearing it to empty) immediately drops the stop/take and, for limit orders, the
+  // entry price too — waiting for "Загрузить" left stale numbers from a DIFFERENT
+  // instrument on screen computing a confident-looking result with no ticker loaded at
+  // all, or with a wildly wrong scale after switching (Brent's 85/83/95 surviving a
+  // switch to IMOEXF, which trades in the thousands — real user report/screenshots).
+  const handleTickerChange = (raw) => {
+    const upper = raw.toUpperCase();
+    const stillSameTicker = loadedTickerRef.current && upper === loadedTickerRef.current;
+    setForm(f => ({
+      ...f,
+      ticker: upper,
+      ...(stillSameTicker ? {} : {
+        stopLoss: '',
+        takeProfit: '',
+        entryPrice: orderType === 'limit' ? '' : f.entryPrice,
+      }),
+    }));
+  };
 
   useEffect(() => {
     const r = calcTrade({
@@ -233,13 +276,6 @@ export default function Calculator() {
 
   const rrColor = !displayResult ? '' : displayResult.rr >= 2 ? 'var(--green)' : displayResult.rr >= 1 ? 'var(--gold)' : 'var(--red)';
 
-  // Which ticker the current form numbers (SL/TP, contract specs) belong to — reloading
-  // the SAME ticker to refresh its price must not wipe the trader's stop/take, but
-  // loading a DIFFERENT one must (stale SL from the previous instrument is a footgun,
-  // real user report). Mirrored into state (not just the ref) so the analysis-prefetch
-  // effect below can depend on "a ticker just resolved" — refs don't trigger effects.
-  const loadedTickerRef = useRef(null);
-  const [resolvedTicker, setResolvedTicker] = useState(null);
   // Reset "Свои условия" ticks on every new ticker — see manualChecks above.
   useEffect(() => { setManualChecks({}); }, [resolvedTicker]);
 
@@ -257,7 +293,12 @@ export default function Calculator() {
         if (!price) { toast.error('Инструмент не найден на MOEX'); return; }
         fetchMoexSecurityInfo(ticker).then((info) => { if (info) setInstrumentInfo(info); });
         if (orderType === 'market') set('entryPrice', String(price));
-        if (isNewTicker) setForm(f => ({ ...f, stopLoss: '', takeProfit: '' }));
+        // Market orders always get a fresh price above; limit orders keep whatever the
+        // trader typed UNLESS the ticker actually changed — a stale entry price from a
+        // different instrument (e.g. Brent's 85 left in place after switching to
+        // IMOEXF, which trades in the thousands) fed calcTrade meaningless numbers that
+        // still printed a confident-looking result (real user report/screenshot).
+        if (isNewTicker) setForm(f => ({ ...f, entryPrice: orderType === 'limit' ? '' : f.entryPrice, stopLoss: '', takeProfit: '' }));
         if (instrumentType === 'future') {
           const card = await fetchActiveFutureCard(ticker);
           if (card) {
@@ -291,7 +332,7 @@ export default function Calculator() {
         const fmtNum = (n) => n ? String(n).replace(',', '.') : '';
         setForm(f => ({
           ...f,
-          entryPrice: (orderType === 'market' && price) ? String(price) : f.entryPrice,
+          entryPrice: (orderType === 'market' && price) ? String(price) : (isNewTicker && orderType === 'limit') ? '' : f.entryPrice,
           stopLoss: isNewTicker ? '' : f.stopLoss,
           takeProfit: isNewTicker ? '' : f.takeProfit,
           lot: String(info.lot || 1),
@@ -659,7 +700,7 @@ export default function Calculator() {
               <label className="input-label">Тикер</label>
               <div style={{display:'flex', gap:8}}>
                 <input className="input" value={form.ticker}
-                  onChange={e => set('ticker', e.target.value.toUpperCase())}
+                  onChange={e => handleTickerChange(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && loadInstrument()}
                   placeholder={instrumentType === 'future' ? 'SRZ6, IMOEXF...' : 'VTBR, SBER...'}
                   style={{flex:1}} />
