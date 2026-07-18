@@ -369,7 +369,11 @@ export default function Dashboard() {
             <div className="empty-state-title">
               {allHabits.some((h) => h.confidence === 'confirmed')
                 ? 'Явных дорогих привычек не найдено'
-                : `Пока данных мало (нужно от ${MIN_SAMPLE} сделок для точного вывода)`}
+                // Same personalized "у вас N, осталось ~M" phrasing as the Винрейт KPI
+                // card — the flat "нужно от 25" (no trader-specific count) was the exact
+                // gap the user caught: this section still just said the threshold, not
+                // where they stand against it.
+                : `Пока данных мало — у вас ${stats?.total || 0} закрытых сделок, нужно от ${MIN_SAMPLE} для точного вывода (осталось ~${Math.max(0, MIN_SAMPLE - (stats?.total || 0))})`}
             </div>
           </div>
         )}
