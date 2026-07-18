@@ -99,6 +99,15 @@ export function computeEmaLevelsAtIndex(candles, index) {
 // burying the +3 EMA200 or +2 golden-Fibonacci bonuses that used to actually matter
 // (real user question: "не будет ли ошибки из-за того что за это присуждается намного
 // больше очков чем за EMA200"). Correct, caught before shipping to more users.
+// A touch only counts toward a level if the reversal off it reached at least this
+// fraction of the ticker's own average swing amplitude — below that it's market noise,
+// not a defended level, and it shouldn't inflate the touch count at all (real user
+// concern: "касаний может быть уйма... не брать у кого был маленький отскок").
+// Relative to the ticker's own average (not a fixed %) so the same rule adapts to a
+// quiet blue chip and a swingy futures contract alike. First-guess threshold like every
+// other number in this file — to be revisited against real outcomes (see backlog).
+const MIN_TOUCH_AMPLITUDE_RATIO = 0.5;
+
 export function findSupportResistance(swings, currentPrice, toleranceRatio = 0.006) {
   const withAmplitude = swings.map((s, i) => {
     const next = swings[i + 1];
@@ -107,7 +116,16 @@ export function findSupportResistance(swings, currentPrice, toleranceRatio = 0.0
     return { ...s, amplitudePct: s.price > 0 ? (move / s.price) * 100 : 0 };
   });
 
-  const sorted = [...withAmplitude].sort((a, b) => a.price - b.price);
+  // Noise gate: drop swings whose reversal was well below this ticker's typical swing —
+  // they never enter clustering, so they can't pad touch counts OR spawn phantom levels.
+  const avgAmplitude = withAmplitude.length
+    ? withAmplitude.reduce((sum, s) => sum + s.amplitudePct, 0) / withAmplitude.length
+    : 0;
+  const significant = avgAmplitude > 0
+    ? withAmplitude.filter((s) => s.amplitudePct >= avgAmplitude * MIN_TOUCH_AMPLITUDE_RATIO)
+    : withAmplitude;
+
+  const sorted = [...significant].sort((a, b) => a.price - b.price);
   const clusters = [];
   for (const s of sorted) {
     const cluster = clusters.find((c) => Math.abs(c.price - s.price) / c.price <= toleranceRatio);
