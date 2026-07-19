@@ -4,10 +4,22 @@ import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, calcStats, computeLiveBalance } from '../../services/trades';
 import { formatCurrency, formatNumber, calcTrade } from '../../utils/calculator';
 import { CONDITION_CATALOG, defaultStrategy, STRATEGY_TEMPLATES, CUSTOM_CONDITION_PRESETS } from '../../services/analytics/strategy';
+import { PATTERN_LABELS, PATTERN_DIRECTIONS } from '../shared/TechnicalAnalysisBlock';
 import toast from 'react-hot-toast';
 import './Capital.css';
 
-const CATEGORY_LABELS = { market: '📈 Рыночные условия (считаются по тикеру)', plan: '📝 Условия плана (из Калькулятора)' };
+// The flat two-section list ("market" / "plan") outgrew itself — 18 conditions in one
+// column made eyes glaze over (real user report: "пунктов много, глаза разбегаются").
+// Grouped into collapsible <details> sections instead; a group opens by default when
+// any of its conditions is already enabled, so an existing strategy shows itself.
+const CONDITION_GROUPS = [
+  { id: 'indicators', label: '📉 Индикаторы (RSI / MACD)', ids: ['rsi_below', 'rsi_above', 'macd_positive', 'macd_negative'] },
+  { id: 'ema', label: '📈 Скользящие средние (EMA)', ids: ['price_above_ema200', 'price_below_ema200'] },
+  { id: 'levels', label: '📏 Уровни и полосы Боллинджера', ids: ['near_support', 'near_resistance', 'bollinger_lower', 'bollinger_upper'] },
+  { id: 'patterns', label: '📐 Фигуры теханализа', ids: ['pattern_confirmed'] },
+  { id: 'context', label: '🌊 Рыночный контекст и объём', ids: ['volume_above_avg', 'market_trending', 'market_sideways', 'volatility_not_high'] },
+  { id: 'plan', label: '📝 Условия плана (из Калькулятора)', ids: ['min_rr', 'max_risk_percent', 'max_margin_usage'] },
+];
 
 export default function Capital() {
   const { user, userProfile, updateUserProfile } = useAuth();
@@ -459,63 +471,92 @@ export default function Capital() {
           </div>
         </div>
 
-        {['market', 'plan'].map(category => (
-          <div key={category} style={{marginBottom:20}}>
-            <div className="calc-section-title">{CATEGORY_LABELS[category]}</div>
-            {category === 'market' && (
-              <div className="text-xs text-muted" style={{marginBottom:10}}>
-                У каждого условия можно выбрать «Только лонг» или «Только шорт» справа — тогда для сделки в
-                другую сторону оно не будет считаться проваленным, а просто не покажется в основном списке.
-                Если ничего не выбрать — условие проверяется для обеих сторон (например, если вы намеренно
-                торгуете перекупленность RSI в лонг, а не по обычной логике — просто выберите «Только лонг»
-                у этого условия).
+        <div className="text-xs text-muted" style={{marginBottom:10}}>
+          У каждого рыночного условия можно выбрать «Только лонг» или «Только шорт» справа — тогда для
+          сделки в другую сторону оно не будет считаться проваленным, а просто не покажется в основном
+          списке. Если ничего не выбрать — условие проверяется для обеих сторон.
+        </div>
+        {CONDITION_GROUPS.map(group => {
+          const defs = CONDITION_CATALOG.filter(c => group.ids.includes(c.id));
+          const enabledCount = defs.filter(def => getCondition(def.id)?.enabled).length;
+          return (
+            <details key={group.id} open={enabledCount > 0} style={{marginBottom:10}}>
+              <summary style={{cursor:'pointer', padding:'10px 14px', borderRadius:10, background:'var(--bg-surface-2)', border:'1px solid var(--border-subtle)', fontSize:13, fontWeight:600}}>
+                {group.label}
+                <span className="text-xs text-muted" style={{fontWeight:400, marginLeft:8}}>
+                  {enabledCount > 0 ? `выбрано: ${enabledCount} из ${defs.length}` : `${defs.length} услов.`}
+                </span>
+              </summary>
+              <div className="flex flex-col gap-2" style={{marginTop:8, marginLeft:4}}>
+                {defs.map(def => {
+                  const cond = getCondition(def.id);
+                  const enabled = !!cond?.enabled;
+                  return (
+                    <div key={def.id} style={{
+                      display:'flex', alignItems:'center', justifyContent:'space-between', gap:12,
+                      padding:'10px 14px', borderRadius:10,
+                      background: enabled ? 'rgba(79,70,229,0.08)' : 'var(--bg-surface-2)',
+                      border: `1px solid ${enabled ? 'rgba(79,70,229,0.3)' : 'var(--border-subtle)'}`,
+                    }}>
+                      <label style={{display:'flex', alignItems:'center', gap:10, cursor:'pointer', flex:1}}>
+                        <input type="checkbox" checked={enabled} onChange={() => toggleCondition(def.id)} />
+                        <span style={{fontSize:13, color: enabled ? 'var(--text-primary)' : 'var(--text-secondary)'}}>
+                          {def.label}
+                        </span>
+                      </label>
+                      {enabled && def.paramLabel && (
+                        <div style={{display:'flex', alignItems:'center', gap:6, flexShrink:0}}>
+                          <span className="text-xs text-muted">{def.paramLabel}</span>
+                          <input className="input" type="number" step="any"
+                            value={cond?.param ?? def.defaultParam}
+                            onChange={e => setConditionParam(def.id, parseFloat(e.target.value))}
+                            style={{width:70, padding:'4px 8px', fontSize:13}} />
+                        </div>
+                      )}
+                      {enabled && def.category === 'market' && (
+                        <select
+                          className="input"
+                          value={cond?.direction || 'both'}
+                          onChange={e => setConditionDirection(def.id, e.target.value)}
+                          title="Для сделок в какую сторону проверять это условие — противоположная сторона не считается проваленной, а просто пропускается"
+                          style={{width:'auto', padding:'4px 8px', fontSize:12, flexShrink:0}}
+                        >
+                          <option value="both">Лонг и шорт</option>
+                          <option value="long">Только лонг</option>
+                          <option value="short">Только шорт</option>
+                        </select>
+                      )}
+                    </div>
+                  );
+                })}
+                {group.id === 'patterns' && (
+                  // Reference list of every figure the engine can actually detect, split
+                  // by textbook direction (real user request) — the condition above says
+                  // "есть фигура", and without this list nobody knows what that covers.
+                  <details style={{marginTop:4}}>
+                    <summary className="text-xs text-muted" style={{cursor:'pointer'}}>
+                      📚 Какие фигуры умеет искать движок ({Object.keys(PATTERN_LABELS).length})
+                    </summary>
+                    <div style={{marginTop:8, display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))', gap:12, fontSize:12}}>
+                      {[['bullish', '🟢 Бычьи (сигнал вверх)'], ['bearish', '🔴 Медвежьи (сигнал вниз)'], ['neutral', '⚪ Нейтральные (куда пробьёт)']].map(([dir, title]) => (
+                        <div key={dir}>
+                          <div style={{fontWeight:600, marginBottom:4}}>{title}</div>
+                          {PATTERN_DIRECTIONS[dir].map(p => (
+                            <div key={p} style={{color:'var(--text-secondary)', padding:'2px 0'}}>{PATTERN_LABELS[p] || p}</div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="text-xs text-muted" style={{marginTop:8}}>
+                      Условие «есть фигура с уверенностью ≥ X%» пока не различает направление фигуры —
+                      учитывается любая. Разделение по направлению в условии — в планах.
+                    </div>
+                  </details>
+                )}
               </div>
-            )}
-            <div className="flex flex-col gap-2">
-              {CONDITION_CATALOG.filter(c => c.category === category).map(def => {
-                const cond = getCondition(def.id);
-                const enabled = !!cond?.enabled;
-                return (
-                  <div key={def.id} style={{
-                    display:'flex', alignItems:'center', justifyContent:'space-between', gap:12,
-                    padding:'10px 14px', borderRadius:10,
-                    background: enabled ? 'rgba(79,70,229,0.08)' : 'var(--bg-surface-2)',
-                    border: `1px solid ${enabled ? 'rgba(79,70,229,0.3)' : 'var(--border-subtle)'}`,
-                  }}>
-                    <label style={{display:'flex', alignItems:'center', gap:10, cursor:'pointer', flex:1}}>
-                      <input type="checkbox" checked={enabled} onChange={() => toggleCondition(def.id)} />
-                      <span style={{fontSize:13, color: enabled ? 'var(--text-primary)' : 'var(--text-secondary)'}}>
-                        {def.label}
-                      </span>
-                    </label>
-                    {enabled && def.paramLabel && (
-                      <div style={{display:'flex', alignItems:'center', gap:6, flexShrink:0}}>
-                        <span className="text-xs text-muted">{def.paramLabel}</span>
-                        <input className="input" type="number" step="any"
-                          value={cond?.param ?? def.defaultParam}
-                          onChange={e => setConditionParam(def.id, parseFloat(e.target.value))}
-                          style={{width:70, padding:'4px 8px', fontSize:13}} />
-                      </div>
-                    )}
-                    {enabled && category === 'market' && (
-                      <select
-                        className="input"
-                        value={cond?.direction || 'both'}
-                        onChange={e => setConditionDirection(def.id, e.target.value)}
-                        title="Для сделок в какую сторону проверять это условие — противоположная сторона не считается проваленной, а просто пропускается"
-                        style={{width:'auto', padding:'4px 8px', fontSize:12, flexShrink:0}}
-                      >
-                        <option value="both">Лонг и шорт</option>
-                        <option value="long">Только лонг</option>
-                        <option value="short">Только шорт</option>
-                      </select>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))}
+            </details>
+          );
+        })}
 
         <div style={{marginBottom:20}}>
           <div className="calc-section-title">✍️ Свои условия</div>

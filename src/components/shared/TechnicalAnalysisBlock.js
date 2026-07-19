@@ -106,6 +106,18 @@ export const PATTERN_LABELS = {
 
 export const STATUS_LABELS = { confirmed: 'сформирована', forming: 'формируется', invalidated: 'отменилась' };
 
+// Textbook direction of each detectable figure — used by the strategy constructor's
+// reference list (real user request: показать перечень фигур, разделённый на бычьи/
+// медвежьи/нейтральные). Classification follows the common convention: falling wedge
+// and ascending triangle are bullish, their mirrors bearish; symmetric triangle and
+// horizontal flag break either way. Flags/pennants are named here by the direction of
+// the move they continue (восходящий флаг = бычий).
+export const PATTERN_DIRECTIONS = {
+  bullish: ['double_bottom', 'head_shoulders_bottom', 'triangle_ascending', 'wedge_falling', 'breakout_up', 'flag_ascending', 'pennant_bullish', 'pin_bar_bullish', 'engulfing_bullish', 'impulse_up_5wave'],
+  bearish: ['double_top', 'head_shoulders_top', 'triangle_descending', 'wedge_rising', 'breakout_down', 'flag_descending', 'pennant_bearish', 'pin_bar_bearish', 'engulfing_bearish', 'impulse_down_5wave'],
+  neutral: ['triangle_symmetric', 'flag_horizontal'],
+};
+
 // Color-by-confidence instead of a separate icon system — the number already carries
 // the meaning, no need for extra visual clutter next to it (agreed with the trader,
 // who found a badge/icon language for "exact vs candidate vs AI" overkill on top of an

@@ -15,6 +15,7 @@ import {
   BarChart, Bar, Cell
 } from 'recharts';
 import { formatCurrency, formatNumber } from '../../utils/calculator';
+import toast from 'react-hot-toast';
 
 const INSTRUMENT_LABELS = { stock: 'Акции', future: 'Фьючерсы', currency: 'Валюта' };
 
@@ -45,6 +46,14 @@ export default function Dashboard() {
   const [radarItems, setRadarItems] = useState([]);
   const [radarState, setRadarState] = useState({}); // itemId -> { loading, result, error }
   const [infoModal, setInfoModal] = useState(null); // { title, body } for the KPI card ⓘ modal
+  // Live mode for the Radar widget — polls every watched ticker on a timer and notifies
+  // when a ticker's condition count changes meaningfully (real user request, long
+  // promised: "уведомление «цена дошла до уровня из стратегии» / «N/M стало полным»").
+  // Works only while a tab with the app is open — real push notifications need a
+  // server, a known and already-discussed limitation.
+  const [radarLive, setRadarLive] = useState(false);
+  const [radarUpdatedAt, setRadarUpdatedAt] = useState(null);
+  const prevRadarPctRef = React.useRef({}); // itemId -> last seen pct, for transition detection
 
   useEffect(() => {
     if (!user) return;
@@ -62,10 +71,11 @@ export default function Dashboard() {
     getRadarItems(user.uid).then(setRadarItems);
   }, [user]);
 
-  // On-demand, not automatic — same reasoning as the Calculator's analysis button: no
-  // point hitting the market for every ticker on every dashboard load.
-  const checkRadarItem = async (item) => {
-    setRadarState((s) => ({ ...s, [item.id]: { loading: true, result: null, error: null } }));
+  // On-demand via the per-ticker button, or on a timer when Live mode is on — no
+  // automatic checking on plain dashboard load either way (no point hitting the market
+  // for every ticker on every visit).
+  const checkRadarItem = async (item, { silent = false } = {}) => {
+    if (!silent) setRadarState((s) => ({ ...s, [item.id]: { loading: true, result: null, error: null } }));
     try {
       const now = new Date();
       const candles = await fetchDailyCandles({
@@ -82,10 +92,43 @@ export default function Dashboard() {
         ? evaluateStrategy(userProfile.strategy, { indicators, patterns, marketContext, plan: {} })
         : null;
       setRadarState((s) => ({ ...s, [item.id]: { loading: false, result, error: null } }));
+      return result;
     } catch (e) {
-      setRadarState((s) => ({ ...s, [item.id]: { loading: false, result: null, error: e.message || 'Не удалось загрузить данные' } }));
+      if (!silent) setRadarState((s) => ({ ...s, [item.id]: { loading: false, result: null, error: e.message || 'Не удалось загрузить данные' } }));
+      return null;
     }
   };
+
+  // Live polling loop. Notifies ONLY on transitions worth interrupting for: the match
+  // percentage just reached the strategy's readiness threshold (or 100% when no
+  // threshold is set) — not on every poll, and not while a ticker merely stays good
+  // (that would be noise every 5 minutes). First poll of a session records the baseline
+  // silently, so turning Live on doesn't instantly fire alerts for already-ready tickers.
+  useEffect(() => {
+    if (!radarLive || !radarItems.length || !userProfile?.strategy?.conditions?.length) return;
+    let cancelled = false;
+
+    const pollAll = async (isBaseline) => {
+      for (const item of radarItems) {
+        if (cancelled) return;
+        const result = await checkRadarItem(item, { silent: true });
+        if (!result?.total) continue;
+        const pct = Math.round((result.passed / result.total) * 100);
+        const threshold = userProfile?.strategy?.readinessThreshold ?? 100;
+        const prev = prevRadarPctRef.current[item.id];
+        if (!isBaseline && prev != null && prev < threshold && pct >= threshold) {
+          toast.success(`📡 ${item.ticker}: условия стратегии сошлись — ${result.passed} из ${result.total} (${pct}%)`, { duration: 10000 });
+        }
+        prevRadarPctRef.current[item.id] = pct;
+      }
+      if (!cancelled) setRadarUpdatedAt(new Date());
+    };
+
+    pollAll(true);
+    const interval = setInterval(() => pollAll(false), 5 * 60 * 1000);
+    return () => { cancelled = true; clearInterval(interval); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [radarLive, radarItems, userProfile?.strategy]);
 
   const deposit = userProfile?.depositSize ?? 0;
   const lastEquity = equity[equity.length - 1]?.balance || deposit;
@@ -298,15 +341,41 @@ export default function Dashboard() {
           and only on demand (button per ticker), never automatically on page load */}
       {radarItems.length > 0 && (
         <div className="card" style={{marginBottom: 24}}>
-          <div className="section-title">
+          <div className="section-title" style={{alignItems:'center'}}>
             <div className="section-title-icon">📡</div>
             Радар
-            {!userProfile?.strategy?.conditions?.length && (
+            {!userProfile?.strategy?.conditions?.length ? (
               <span style={{fontWeight:400, fontSize:12, color:'var(--text-muted)', marginLeft:8}}>
                 стратегия не настроена — <a href="/capital" style={{color:'var(--accent-primary)'}}>задать в Капитале</a>
               </span>
+            ) : (
+              <button
+                onClick={() => setRadarLive((v) => !v)}
+                title={radarLive ? 'Остановить автопроверку' : 'Проверять все тикеры каждые 5 минут и уведомлять, когда условия стратегии сойдутся (пока открыта вкладка)'}
+                style={{
+                  marginLeft:10, padding:'4px 10px', borderRadius:8, cursor:'pointer',
+                  border:`1px solid ${radarLive ? 'var(--red)' : 'var(--border-medium)'}`,
+                  background: radarLive ? 'rgba(239,68,68,0.12)' : 'transparent',
+                  color: radarLive ? 'var(--red)' : 'var(--text-secondary)',
+                  fontFamily:'inherit', fontSize:12, fontWeight:600,
+                }}
+              >
+                {radarLive ? '🔴 Live' : '⚪ Live'}
+              </button>
+            )}
+            {radarLive && radarUpdatedAt && (
+              <span style={{fontWeight:400, fontSize:11, color:'var(--green)', marginLeft:8}}>
+                обновлено в {radarUpdatedAt.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'})}
+              </span>
             )}
           </div>
+          {radarLive && (
+            <div className="text-xs text-muted" style={{marginBottom:10}}>
+              Автопроверка каждые 5 минут, пока открыта эта вкладка. Уведомление придёт, когда
+              процент выполненных условий по тикеру достигнет порога готовности из вашей стратегии
+              {userProfile?.strategy?.readinessThreshold == null && ' (порог не задан — уведомим при 100%)'}
+            </div>
+          )}
           <div className="flex flex-col gap-2">
             {radarItems.map((item) => {
               const st = radarState[item.id];

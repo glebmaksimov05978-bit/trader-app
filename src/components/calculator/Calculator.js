@@ -126,6 +126,10 @@ export default function Calculator() {
   const [taState, setTaState] = useState({ loading: false, data: null, error: null });
   const [taTimeframe, setTaTimeframe] = useState(DEFAULT_TIMEFRAME);
   const [taLive, setTaLive] = useState(false);
+  // Timestamp of the last successful analysis fetch — the Live badge alone said nothing
+  // about whether anything had actually happened since toggling it on (real user
+  // report: "непонятно, что вообще произошло при включении").
+  const [taUpdatedAt, setTaUpdatedAt] = useState(null);
   const hasTinkoffToken = !!userProfile?.tinkoffToken;
   const taTimeframeOptions = useMemo(() => availableTimeframes(hasTinkoffToken), [hasTinkoffToken]);
   // Tracks which "forming" setups were on screen after the last poll, so the next poll
@@ -453,6 +457,7 @@ export default function Calculator() {
       const marketContext = computeMarketContextAtEntry(candles, now);
       if (!indicators) throw new Error('Нет исторических свечей по этому тикеру');
       setTaState({ loading: false, data: { indicators, patterns, marketContext }, error: null });
+      setTaUpdatedAt(new Date());
       loadedAnalysisKeyRef.current = key;
       diffFormingStatuses(patterns);
     } catch (e) {
@@ -794,6 +799,11 @@ export default function Calculator() {
             {taLive && (
               <div className="text-xs text-muted" style={{marginTop:6}}>
                 Автообновление включено — работает, пока эта вкладка браузера открыта.
+                {taUpdatedAt && (
+                  <span style={{color:'var(--green)', marginLeft:6}}>
+                    Обновлено в {taUpdatedAt.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit', second:'2-digit'})}
+                  </span>
+                )}
               </div>
             )}
 
@@ -1074,7 +1084,7 @@ export default function Calculator() {
           <TechnicalAnalysisBlock
             state={taState}
             onRefresh={() => loadAnalysis()}
-            title={`На данный момент (${TIMEFRAMES[taTimeframe]?.label || taTimeframe})`}
+            title={`На данный момент (${TIMEFRAMES[taTimeframe]?.label || taTimeframe})${taUpdatedAt ? ` · обновлено в ${taUpdatedAt.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'})}` : ''}`}
           />
         </div>
       )}
