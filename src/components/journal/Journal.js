@@ -265,10 +265,15 @@ export default function Journal() {
         try {
           const openedAt = resolveOpenedAt(trade);
           if (!openedAt) return;
+          // Candles extend through the EXIT (or "now" for still-open trades), not just
+          // entry — the chart needs to draw every leg and the exit marker, which happen
+          // after entry. The indicators/patterns text panel below still anchors strictly
+          // to `openedAt` (indexAtOrBefore), so this doesn't leak hindsight into "on
+          // entry" numbers — it only gives the chart more bars to place markers on.
           const candles = await fetchDailyCandles({
             ticker: trade.ticker,
             instrumentType: trade.instrumentType || guessInstrumentType(trade.ticker),
-            toDate: openedAt,
+            toDate: resolveClosedAt(trade) || new Date(),
             tinkoffToken: userProfile?.tinkoffToken,
             timeframe,
           });
@@ -289,7 +294,7 @@ export default function Journal() {
       const candles = await fetchDailyCandles({
         ticker: trade.ticker,
         instrumentType: trade.instrumentType || guessInstrumentType(trade.ticker),
-        toDate: openedAt,
+        toDate: resolveClosedAt(trade) || new Date(),
         tinkoffToken: userProfile?.tinkoffToken,
         timeframe,
       });
@@ -740,8 +745,10 @@ export default function Journal() {
                               candles={indicatorsState[trade.id].data.candles}
                               patterns={indicatorsState[trade.id].data.patterns}
                               ticker={trade.ticker}
-                              entryMarker={resolveOpenedAt(trade) ? { date: resolveOpenedAt(trade), price: trade.entryPrice, direction: trade.direction } : null}
-                              exitMarker={trade.status === 'closed' && resolveClosedAt(trade) ? { date: resolveClosedAt(trade), price: trade.exitPrice } : null}
+                              direction={trade.direction}
+                              legs={trade.legs}
+                              entryMarker={!trade.legs?.length && resolveOpenedAt(trade) ? { date: resolveOpenedAt(trade), price: trade.entryPrice, direction: trade.direction } : null}
+                              exitMarker={!trade.legs?.length && trade.status === 'closed' && resolveClosedAt(trade) ? { date: resolveClosedAt(trade), price: trade.exitPrice } : null}
                             />
                           </div>
                         )}

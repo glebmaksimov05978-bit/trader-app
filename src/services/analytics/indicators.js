@@ -42,7 +42,7 @@ export function ema(values, period) {
   return out;
 }
 
-function rsi(closes, period = 14) {
+export function rsi(closes, period = 14) {
   const out = new Array(closes.length).fill(null);
   let avgGain = 0, avgLoss = 0;
   for (let i = 1; i < closes.length; i++) {
@@ -62,7 +62,7 @@ function rsi(closes, period = 14) {
   return out;
 }
 
-function macd(closes, fast = 12, slow = 26, signalPeriod = 9) {
+export function macd(closes, fast = 12, slow = 26, signalPeriod = 9) {
   const emaFast = ema(closes, fast);
   const emaSlow = ema(closes, slow);
   const macdLine = closes.map((_, i) => (emaFast[i] != null && emaSlow[i] != null) ? emaFast[i] - emaSlow[i] : null);
