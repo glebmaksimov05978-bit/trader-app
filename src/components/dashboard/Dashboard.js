@@ -10,6 +10,7 @@ import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { computeMarketContextAtEntry } from '../../services/analytics/marketContext';
 import { evaluateStrategy } from '../../services/analytics/strategy';
+import { useRadarLive } from '../../context/RadarLiveContext';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, Cell
@@ -44,16 +45,13 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [showFullReport, setShowFullReport] = useState(false);
   const [radarItems, setRadarItems] = useState([]);
-  const [radarState, setRadarState] = useState({}); // itemId -> { loading, result, error }
+  const [radarState, setRadarState] = useState({}); // itemId -> { loading, result, error } — on-demand "Проверить" clicks only
   const [infoModal, setInfoModal] = useState(null); // { title, body } for the KPI card ⓘ modal
-  // Live mode for the Radar widget — polls every watched ticker on a timer and notifies
-  // when a ticker's condition count changes meaningfully (real user request, long
-  // promised: "уведомление «цена дошла до уровня из стратегии» / «N/M стало полным»").
-  // Works only while a tab with the app is open — real push notifications need a
-  // server, a known and already-discussed limitation.
-  const [radarLive, setRadarLive] = useState(false);
-  const [radarUpdatedAt, setRadarUpdatedAt] = useState(null);
-  const prevRadarPctRef = React.useRef({}); // itemId -> last seen pct, for transition detection
+  // Live polling itself lives in RadarLiveProvider (mounted in AppLayout, above the
+  // router) so it survives navigating away from this page — see that file's own
+  // comment for why. This component just reads the shared state and merges it into
+  // what it renders.
+  const { radarLive, setRadarLive, radarUpdatedAt, radarResults } = useRadarLive();
 
   useEffect(() => {
     if (!user) return;
@@ -71,11 +69,11 @@ export default function Dashboard() {
     getRadarItems(user.uid).then(setRadarItems);
   }, [user]);
 
-  // On-demand via the per-ticker button, or on a timer when Live mode is on — no
-  // automatic checking on plain dashboard load either way (no point hitting the market
-  // for every ticker on every visit).
-  const checkRadarItem = async (item, { silent = false } = {}) => {
-    if (!silent) setRadarState((s) => ({ ...s, [item.id]: { loading: true, result: null, error: null } }));
+  // On-demand check for the per-ticker "Проверить" button — separate from the Live
+  // polling that now lives in RadarLiveProvider (runs regardless of whether this
+  // component is even mounted, see that file's comment).
+  const checkRadarItem = async (item) => {
+    setRadarState((s) => ({ ...s, [item.id]: { loading: true, result: null, error: null } }));
     try {
       const now = new Date();
       const candles = await fetchDailyCandles({
@@ -99,41 +97,10 @@ export default function Dashboard() {
       setRadarState((s) => ({ ...s, [item.id]: { loading: false, result, error: null } }));
       return result;
     } catch (e) {
-      if (!silent) setRadarState((s) => ({ ...s, [item.id]: { loading: false, result: null, error: e.message || 'Не удалось загрузить данные' } }));
+      setRadarState((s) => ({ ...s, [item.id]: { loading: false, result: null, error: e.message || 'Не удалось загрузить данные' } }));
       return null;
     }
   };
-
-  // Live polling loop. Notifies ONLY on transitions worth interrupting for: the match
-  // percentage just reached the strategy's readiness threshold (or 100% when no
-  // threshold is set) — not on every poll, and not while a ticker merely stays good
-  // (that would be noise every 5 minutes). First poll of a session records the baseline
-  // silently, so turning Live on doesn't instantly fire alerts for already-ready tickers.
-  useEffect(() => {
-    if (!radarLive || !radarItems.length || !userProfile?.strategy?.conditions?.length) return;
-    let cancelled = false;
-
-    const pollAll = async (isBaseline) => {
-      for (const item of radarItems) {
-        if (cancelled) return;
-        const result = await checkRadarItem(item, { silent: true });
-        if (!result?.total) continue;
-        const pct = Math.round((result.passed / result.total) * 100);
-        const threshold = userProfile?.strategy?.readinessThreshold ?? 100;
-        const prev = prevRadarPctRef.current[item.id];
-        if (!isBaseline && prev != null && prev < threshold && pct >= threshold) {
-          toast.success(`📡 ${item.ticker}: условия стратегии сошлись — ${result.passed} из ${result.total} (${pct}%)`, { duration: 10000 });
-        }
-        prevRadarPctRef.current[item.id] = pct;
-      }
-      if (!cancelled) setRadarUpdatedAt(new Date());
-    };
-
-    pollAll(true);
-    const interval = setInterval(() => pollAll(false), 5 * 60 * 1000);
-    return () => { cancelled = true; clearInterval(interval); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [radarLive, radarItems, userProfile?.strategy]);
 
   const deposit = userProfile?.depositSize ?? 0;
   const lastEquity = equity[equity.length - 1]?.balance || deposit;
@@ -383,7 +350,11 @@ export default function Dashboard() {
           )}
           <div className="flex flex-col gap-2">
             {radarItems.map((item) => {
-              const st = radarState[item.id];
+              // A manual "Проверить" click always wins if it's in flight or just
+              // finished — otherwise fall back to whatever Live polling last found for
+              // this ticker, so turning Live on actually updates the list here too
+              // without needing a click.
+              const st = radarState[item.id] || radarResults?.[item.id];
               const pct = st?.result?.total ? Math.round((st.result.passed / st.result.total) * 100) : null;
               const color = pct == null ? undefined : pct >= 80 ? 'var(--green)' : pct >= 50 ? 'var(--gold)' : 'var(--red)';
               return (
@@ -396,8 +367,17 @@ export default function Dashboard() {
                     <div className="spinner" style={{width:14,height:14}}/>
                   ) : st?.error ? (
                     <span style={{fontSize:12, color:'var(--red)'}}>⚠️ {st.error}</span>
-                  ) : st?.result ? (
+                  ) : st?.result && st.result.total > 0 ? (
                     <span style={{fontWeight:700, color}}>{st.result.passed} из {st.result.total}</span>
+                  ) : st?.result ? (
+                    // total===0 means every condition came back "нет данных" (na) — not
+                    // "0 failed". Displaying it as "0 из 0" read as a total failure
+                    // instead of "nothing could be checked" (real user report: looked
+                    // like a bug). Common real cause: near_support/near_resistance find
+                    // no swing levels for this ticker/timeframe/history combo at all.
+                    <span className="text-muted" style={{fontSize:12}} title="Ни одно условие стратегии не удалось посчитать для этого тикера на выбранном таймфрейме — например, не нашлось уровней поддержки/сопротивления в истории.">
+                      нет данных для проверки
+                    </span>
                   ) : st && !st.loading && !st.error ? (
                     <span className="text-muted" style={{fontSize:12}}>
                       нужно сначала написать или выбрать готовую стратегию в разделе{' '}

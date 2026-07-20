@@ -9,6 +9,7 @@ import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { computeMarketContextAtEntry } from '../../services/analytics/marketContext';
 import { isFuturesCode, isCurrencyCode } from '../../services/import/instrumentResolver';
 import { addRadarItem, getRadarItems, deleteRadarItem } from '../../services/radar';
+import { useRadarLive } from '../../context/RadarLiveContext';
 import TechnicalAnalysisBlock from '../shared/TechnicalAnalysisBlock';
 import toast from 'react-hot-toast';
 import TradeModal from './TradeModal';
@@ -19,6 +20,7 @@ const COLS = ['Тикер', 'Дата', 'Направление', 'Вход', '�
 
 export default function Journal() {
   const { user, userProfile } = useAuth();
+  const { radarLive, setRadarLive, radarUpdatedAt, radarResults } = useRadarLive();
   const [trades, setTrades] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -396,7 +398,14 @@ export default function Journal() {
       <div className="page-header flex justify-between items-center">
         <div>
           <h1 className="page-title">📓 Журнал сделок</h1>
-          <p className="page-subtitle">{view === 'trades' ? 'История всех ваших позиций' : 'Тикеры, за которыми вы следите, пока сетап не подтвердился'}</p>
+          <p className="page-subtitle">
+            {view === 'trades' ? 'История всех ваших позиций' : 'Тикеры, за которыми вы следите, пока сетап не подтвердился'}
+            {view === 'radar' && radarLive && radarUpdatedAt && (
+              <span style={{color:'var(--green)', marginLeft:8}}>
+                · обновлено в {radarUpdatedAt.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'})}
+              </span>
+            )}
+          </p>
         </div>
         <div className="flex gap-2 page-header-actions">
           {view === 'trades' ? (
@@ -409,9 +418,29 @@ export default function Journal() {
               </button>
             </>
           ) : (
-            <button className="btn btn-primary" onClick={() => { setRadarTypeTouched(false); setAddRadarOpen(true); }}>
-              + Добавить в радар
-            </button>
+            <>
+              {/* Same shared Live toggle as the Dashboard widget — real user request:
+                  it only existed there, not here where the trader spends more time
+                  managing the actual watchlist. */}
+              {userProfile?.strategy?.conditions?.length > 0 && (
+                <button
+                  onClick={() => setRadarLive((v) => !v)}
+                  title={radarLive ? 'Остановить автопроверку' : 'Проверять все тикеры каждые 5 минут и уведомлять, когда условия стратегии сойдутся (пока открыта вкладка)'}
+                  style={{
+                    padding:'8px 14px', borderRadius:10, cursor:'pointer',
+                    border:`1px solid ${radarLive ? 'var(--red)' : 'var(--border-medium)'}`,
+                    background: radarLive ? 'rgba(239,68,68,0.12)' : 'transparent',
+                    color: radarLive ? 'var(--red)' : 'var(--text-secondary)',
+                    fontFamily:'inherit', fontSize:13, fontWeight:600,
+                  }}
+                >
+                  {radarLive ? '🔴 Live' : '⚪ Live'}
+                </button>
+              )}
+              <button className="btn btn-primary" onClick={() => { setRadarTypeTouched(false); setAddRadarOpen(true); }}>
+                + Добавить в радар
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -732,6 +761,15 @@ export default function Journal() {
                       <span className="badge badge-blue" style={{fontSize:11}}>
                         {item.instrumentType === 'future' ? 'Фьючерс' : item.instrumentType === 'currency' ? 'Валюта' : 'Акция'}
                       </span>
+                      {radarLive && radarResults?.[item.id]?.result?.total > 0 && (() => {
+                        const r = radarResults[item.id].result;
+                        const pct = Math.round((r.passed / r.total) * 100);
+                        return (
+                          <span className="badge" style={{fontSize:11, background: pct >= 80 ? 'rgba(16,185,129,0.15)' : pct >= 50 ? 'rgba(245,158,11,0.15)' : 'rgba(239,68,68,0.15)', color: pct >= 80 ? 'var(--green)' : pct >= 50 ? 'var(--gold)' : 'var(--red)'}}>
+                            {r.passed} из {r.total}
+                          </span>
+                        );
+                      })()}
                       {item.note && <span className="text-muted" style={{fontSize:13}}>{item.note}</span>}
                     </div>
                     <div className="flex gap-2">

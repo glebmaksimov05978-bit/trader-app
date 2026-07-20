@@ -1026,7 +1026,10 @@ export default function Calculator() {
                 <ResultRow label="Прибыль на контракт" value={displayResult.profitPerContract > 0 ? formatCurrency(displayResult.profitPerContract) : '—'} color="var(--green)" />
                 <ResultRow label="Комиссия" value={formatCurrency(displayResult.commission)} />
                 <ResultRow label="Точка безубытка" value={formatNumber(displayResult.breakeven, 2)} />
-                <div className="divider" />
+                {/* No extra <div className="divider"/> here — every .result-row already
+                    draws its own border-bottom, so an explicit divider right after one
+                    doubled up into two visible lines back to back (real user report/
+                    photo). The row's own border is separation enough. */}
                 <ResultRow label="Макс. убыток (с комис.)" value={formatCurrency(displayResult.totalLoss)} color="var(--red)" large />
                 {displayResult.totalProfit > 0 && <ResultRow label="Потенц. прибыль (с комис.)" value={formatCurrency(displayResult.totalProfit)} color="var(--green)" large />}
               </div>
