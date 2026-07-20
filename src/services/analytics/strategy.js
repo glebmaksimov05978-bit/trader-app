@@ -107,10 +107,14 @@ export const CONDITION_CATALOG = [
   {
     id: 'pattern_confirmed', category: 'market', label: 'Есть подтверждённая фигура с уверенностью ≥ X%',
     paramLabel: 'Уверенность от', defaultParam: 60,
-    evaluate: (ctx, param) => {
+    // `cond.patterns` (picked from the reference list in Capital.js) narrows which
+    // figures count — empty/undefined means "any figure", the only behavior before
+    // that list existed (real user request: "может выбрать фигуры которые ему нужны").
+    evaluate: (ctx, param, cond) => {
       const candidates = ctx.patterns?.candidates;
       if (!candidates) return { na: true };
-      const best = candidates.filter((c) => c.status === 'confirmed').sort((a, b) => b.confidence - a.confidence)[0];
+      const wanted = cond?.patterns?.length ? candidates.filter((c) => cond.patterns.includes(c.pattern)) : candidates;
+      const best = wanted.filter((c) => c.status === 'confirmed').sort((a, b) => b.confidence - a.confidence)[0];
       if (!best) return { passed: false, detail: 'Подтверждённых фигур нет' };
       return { passed: best.confidence >= param, detail: `Лучшая фигура — ${best.confidence}%` };
     },
@@ -342,7 +346,7 @@ export function evaluateStrategy(strategy, ctx) {
         detail: `Условие только для ${condDirection === 'long' ? 'лонга' : 'шорта'} — сделка в ${ctx.direction === 'long' ? 'лонг' : 'шорт'}`,
       };
     }
-    const outcome = def.evaluate(ctx, param) || { na: true };
+    const outcome = def.evaluate(ctx, param, c) || { na: true };
     return { id: c.id, label, param, direction: condDirection, ...outcome };
   });
 

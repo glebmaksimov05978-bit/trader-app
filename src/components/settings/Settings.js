@@ -5,7 +5,7 @@ import { availableTimeframes } from '../../services/marketData/candles';
 import toast from 'react-hot-toast';
 
 export default function Settings() {
-  const { userProfile, updateUserProfile } = useAuth();
+  const { user, userProfile, updateUserProfile } = useAuth();
   const [form, setForm] = useState({
     displayName: '',
     tinkoffToken: '',
@@ -73,6 +73,13 @@ export default function Settings() {
           <div className="section-title">
             <div className="section-title-icon">👤</div>
             Профиль
+            {/* Real user report: on a multi-account setup it wasn't obvious WHICH
+                account's settings this page was even showing. */}
+            {user?.email && (
+              <span className="text-xs text-muted" style={{fontWeight:400, marginLeft:8}}>
+                {user.email}
+              </span>
+            )}
           </div>
           <div className="flex flex-col gap-3">
             <div className="input-group">
@@ -104,6 +111,9 @@ export default function Settings() {
               <input
                 className="input"
                 type={showToken ? 'text' : 'password'}
+                autoComplete="off"
+                data-lpignore="true"
+                data-1p-ignore="true"
                 value={form.tinkoffToken}
                 onChange={e => set('tinkoffToken', e.target.value)}
                 placeholder="t.xxx..."

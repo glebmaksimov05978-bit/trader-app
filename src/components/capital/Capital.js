@@ -12,13 +12,16 @@ import './Capital.css';
 // column made eyes glaze over (real user report: "пунктов много, глаза разбегаются").
 // Grouped into collapsible <details> sections instead; a group opens by default when
 // any of its conditions is already enabled, so an existing strategy shows itself.
+// `color` gives each group its own left-border/accent — icons alone still read as one
+// undifferentiated grey list at a glance (real user report: "не только стикерами,
+// всё равно глаза разбегаются").
 const CONDITION_GROUPS = [
-  { id: 'indicators', label: '📉 Индикаторы (RSI / MACD)', ids: ['rsi_below', 'rsi_above', 'macd_positive', 'macd_negative'] },
-  { id: 'ema', label: '📈 Скользящие средние (EMA)', ids: ['price_above_ema200', 'price_below_ema200'] },
-  { id: 'levels', label: '📏 Уровни и полосы Боллинджера', ids: ['near_support', 'near_resistance', 'bollinger_lower', 'bollinger_upper'] },
-  { id: 'patterns', label: '📐 Фигуры теханализа', ids: ['pattern_confirmed'] },
-  { id: 'context', label: '🌊 Рыночный контекст и объём', ids: ['volume_above_avg', 'market_trending', 'market_sideways', 'volatility_not_high'] },
-  { id: 'plan', label: '📝 Условия плана (из Калькулятора)', ids: ['min_rr', 'max_risk_percent', 'max_margin_usage'] },
+  { id: 'indicators', label: '📉 Индикаторы (RSI / MACD)', ids: ['rsi_below', 'rsi_above', 'macd_positive', 'macd_negative'], color: '#3b82f6' },
+  { id: 'ema', label: '📈 Скользящие средние (EMA)', ids: ['price_above_ema200', 'price_below_ema200'], color: '#f59e0b' },
+  { id: 'levels', label: '📏 Уровни и полосы Боллинджера', ids: ['near_support', 'near_resistance', 'bollinger_lower', 'bollinger_upper'], color: '#10b981' },
+  { id: 'patterns', label: '📐 Фигуры теханализа', ids: ['pattern_confirmed'], color: '#a855f7' },
+  { id: 'context', label: '🌊 Рыночный контекст и объём', ids: ['volume_above_avg', 'market_trending', 'market_sideways', 'volatility_not_high'], color: '#06b6d4' },
+  { id: 'plan', label: '📝 Условия плана (из Калькулятора)', ids: ['min_rr', 'max_risk_percent', 'max_margin_usage'], color: '#ef4444' },
 ];
 
 export default function Capital() {
@@ -91,6 +94,23 @@ export default function Capital() {
   };
   const setConditionDirection = (id, direction) => {
     setStrategy(s => ({ ...s, conditions: s.conditions.map(c => c.id === id ? { ...c, direction } : c) }));
+  };
+  // Which specific figures count toward "есть подтверждённая фигура" — undefined/empty
+  // means "any figure" (the old, only behavior). Real user request: pick only the
+  // figures that matter to you, not every one of the 22 the engine can find. Kept as a
+  // single shared confidence threshold rather than per-figure percentages — 22 separate
+  // % inputs would recreate the exact "глаза разбегаются" clutter this reorg was meant
+  // to fix.
+  const togglePatternInCondition = (patternId) => {
+    setStrategy(s => ({
+      ...s,
+      conditions: s.conditions.map(c => {
+        if (c.id !== 'pattern_confirmed') return c;
+        const current = c.patterns || [];
+        const next = current.includes(patternId) ? current.filter(p => p !== patternId) : [...current, patternId];
+        return { ...c, patterns: next };
+      }),
+    }));
   };
   const setReadinessThreshold = (v) => setStrategy(s => ({ ...s, readinessThreshold: v }));
 
@@ -308,6 +328,15 @@ export default function Capital() {
               <div className="section-title-icon">🔢</div>
               Сколько контрактов торговать?
             </div>
+            {/* Real user report: "не понимаю для чего эта модальное окно, что она
+                регулирует". Clarifying what makes this different from the full
+                Calculator — nothing is "regulated" here, it's a read-only sanity check
+                against the risk settings saved in the card to the right. */}
+            <p className="text-xs text-muted" style={{marginBottom:12}}>
+              Быстрая прикидка по риску из настроек справа — без тикера и Тейк-профита,
+              просто «сколько контрактов позволяет мой риск при этой цене входа и стопе».
+              Полный расчёт сделки (с тикером, планом и сохранением в журнал) — в Калькуляторе.
+            </p>
             <div className="grid-2" style={{marginBottom:12}}>
               <div className="input-group">
                 <label className="input-label">Цена входа</label>
@@ -481,13 +510,46 @@ export default function Capital() {
           const enabledCount = defs.filter(def => getCondition(def.id)?.enabled).length;
           return (
             <details key={group.id} open={enabledCount > 0} style={{marginBottom:10}}>
-              <summary style={{cursor:'pointer', padding:'10px 14px', borderRadius:10, background:'var(--bg-surface-2)', border:'1px solid var(--border-subtle)', fontSize:13, fontWeight:600}}>
+              <summary style={{cursor:'pointer', padding:'10px 14px 10px 12px', borderRadius:10, background:'var(--bg-surface-2)', borderTop:'1px solid var(--border-subtle)', borderRight:'1px solid var(--border-subtle)', borderBottom:'1px solid var(--border-subtle)', borderLeft:`3px solid ${group.color}`, fontSize:13, fontWeight:600}}>
                 {group.label}
                 <span className="text-xs text-muted" style={{fontWeight:400, marginLeft:8}}>
                   {enabledCount > 0 ? `выбрано: ${enabledCount} из ${defs.length}` : `${defs.length} услов.`}
                 </span>
               </summary>
-              <div className="flex flex-col gap-2" style={{marginTop:8, marginLeft:4}}>
+              <div className="flex flex-col gap-2" style={{marginTop:8, marginLeft:4, paddingLeft:8, borderLeft:`2px solid ${group.color}33`}}>
+                {group.id === 'patterns' && (() => {
+                  // Reference list of every figure the engine can detect, split by
+                  // textbook direction — shown ABOVE the condition checkbox (real user
+                  // request: "сначала перечень, человек просмотрел, потом поставил
+                  // галочку"), and each figure is itself a checkbox: picking specific
+                  // figures narrows what "есть подтверждённая фигура" actually checks
+                  // for (default = any figure, same as before this list existed).
+                  const patternCond = getCondition('pattern_confirmed');
+                  const selected = patternCond?.patterns || [];
+                  return (
+                    <div style={{padding:'10px 14px', borderRadius:10, background:'var(--bg-surface-2)', border:'1px solid var(--border-subtle)', marginBottom:4}}>
+                      <div style={{fontSize:13, fontWeight:600, marginBottom:2}}>📚 Какие фигуры умеет искать движок</div>
+                      <div className="text-xs text-muted" style={{marginBottom:10}}>
+                        {selected.length > 0
+                          ? `Отмечено ${selected.length} — в условии «есть подтверждённая фигура» ниже учитываются только они.`
+                          : 'Ничего не отмечено — условие ниже засчитывает ЛЮБУЮ подтверждённую фигуру. Отметьте нужные, чтобы сузить.'}
+                      </div>
+                      <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:12, fontSize:12}}>
+                        {[['bullish', '🟢 Бычьи (сигнал вверх)'], ['bearish', '🔴 Медвежьи (сигнал вниз)'], ['neutral', '⚪ Нейтральные (куда пробьёт)']].map(([dir, title]) => (
+                          <div key={dir}>
+                            <div style={{fontWeight:600, marginBottom:4}}>{title}</div>
+                            {PATTERN_DIRECTIONS[dir].map(p => (
+                              <label key={p} style={{display:'flex', alignItems:'center', gap:6, padding:'2px 0', cursor:'pointer', color:'var(--text-secondary)'}}>
+                                <input type="checkbox" checked={selected.includes(p)} onChange={() => togglePatternInCondition(p)} />
+                                {PATTERN_LABELS[p] || p}
+                              </label>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
                 {defs.map(def => {
                   const cond = getCondition(def.id);
                   const enabled = !!cond?.enabled;
@@ -529,30 +591,6 @@ export default function Capital() {
                     </div>
                   );
                 })}
-                {group.id === 'patterns' && (
-                  // Reference list of every figure the engine can actually detect, split
-                  // by textbook direction (real user request) — the condition above says
-                  // "есть фигура", and without this list nobody knows what that covers.
-                  <details style={{marginTop:4}}>
-                    <summary className="text-xs text-muted" style={{cursor:'pointer'}}>
-                      📚 Какие фигуры умеет искать движок ({Object.keys(PATTERN_LABELS).length})
-                    </summary>
-                    <div style={{marginTop:8, display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))', gap:12, fontSize:12}}>
-                      {[['bullish', '🟢 Бычьи (сигнал вверх)'], ['bearish', '🔴 Медвежьи (сигнал вниз)'], ['neutral', '⚪ Нейтральные (куда пробьёт)']].map(([dir, title]) => (
-                        <div key={dir}>
-                          <div style={{fontWeight:600, marginBottom:4}}>{title}</div>
-                          {PATTERN_DIRECTIONS[dir].map(p => (
-                            <div key={p} style={{color:'var(--text-secondary)', padding:'2px 0'}}>{PATTERN_LABELS[p] || p}</div>
-                          ))}
-                        </div>
-                      ))}
-                    </div>
-                    <div className="text-xs text-muted" style={{marginTop:8}}>
-                      Условие «есть фигура с уверенностью ≥ X%» пока не различает направление фигуры —
-                      учитывается любая. Разделение по направлению в условии — в планах.
-                    </div>
-                  </details>
-                )}
               </div>
             </details>
           );

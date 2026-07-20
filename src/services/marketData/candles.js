@@ -80,6 +80,19 @@ async function fetchCandlesFromMoex(ticker, instrumentType, from, to, moexInterv
   })).filter((c) => Number.isFinite(c.close));
 }
 
+// Tinkoff's GetCandles rejects a single request spanning more than this many days for
+// a given interval (documented API limit, not a guess) — a real bug when lookbackDays
+// was tripled without checking it: requesting 36 days of 15-minute candles in one call
+// got silently rejected, and the caller's catch-and-fall-back-to-MOEX swallowed the
+// error, but MOEX has no M5/M15 data at all, so it surfaced as "M15 doesn't work even
+// with a token" (real user report). Chunk the request into windows within these caps
+// instead of capping lookbackDays itself, which would have thrown away the extra
+// history that was the whole point of tripling it.
+const TINKOFF_MAX_SPAN_DAYS = {
+  CANDLE_INTERVAL_1_MIN: 1, CANDLE_INTERVAL_5_MIN: 1, CANDLE_INTERVAL_15_MIN: 1,
+  CANDLE_INTERVAL_HOUR: 7, CANDLE_INTERVAL_DAY: 360,
+};
+
 async function fetchCandlesFromTinkoff(ticker, instrumentType, from, to, token, tinkoffInterval) {
   const api = new TinkoffAPI(token);
   const instrument = instrumentType === 'future'
@@ -87,21 +100,39 @@ async function fetchCandlesFromTinkoff(ticker, instrumentType, from, to, token, 
     : await api.getShareByTicker(ticker);
   if (!instrument?.figi) throw new Error('instrument not found on Tinkoff');
 
-  const data = await api.request('/tinkoff.public.invest.api.contract.v1.MarketDataService/GetCandles', {
-    figi: instrument.figi,
-    from: from.toISOString(),
-    to: to.toISOString(),
-    interval: tinkoffInterval,
-  });
+  const maxSpanMs = (TINKOFF_MAX_SPAN_DAYS[tinkoffInterval] || 1) * 86400 * 1000;
+  const windows = [];
+  for (let windowEnd = to.getTime(); windowEnd > from.getTime(); windowEnd -= maxSpanMs) {
+    const windowStart = Math.max(from.getTime(), windowEnd - maxSpanMs);
+    windows.push([new Date(windowStart), new Date(windowEnd)]);
+  }
 
-  return (data.candles || [])
-    .filter((c) => c.isComplete !== false)
-    .map((c) => ({
+  const allCandles = [];
+  for (const [wFrom, wTo] of windows) {
+    const data = await api.request('/tinkoff.public.invest.api.contract.v1.MarketDataService/GetCandles', {
+      figi: instrument.figi,
+      from: wFrom.toISOString(),
+      to: wTo.toISOString(),
+      interval: tinkoffInterval,
+    });
+    allCandles.push(...(data.candles || []));
+  }
+
+  // Adjacent windows share their boundary instant, which can hand back the same candle
+  // twice — dedupe by timestamp before returning.
+  const seen = new Set();
+  const out = [];
+  for (const c of allCandles) {
+    if (c.isComplete === false || seen.has(c.time)) continue;
+    seen.add(c.time);
+    out.push({
       date: new Date(c.time),
       open: moneyToFloat(c.open), high: moneyToFloat(c.high),
       low: moneyToFloat(c.low), close: moneyToFloat(c.close),
       volume: Number(c.volume) || 0,
-    }));
+    });
+  }
+  return out;
 }
 
 // Returns candles at the requested timeframe, ending at `toDate`, going back far enough

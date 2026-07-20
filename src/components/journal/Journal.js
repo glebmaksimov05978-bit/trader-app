@@ -3,7 +3,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, addTrade, updateTrade, deleteTrade, calcStats, resolveOpenedAt, resolveClosedAt } from '../../services/trades';
 import { formatCurrency, formatNumber } from '../../utils/calculator';
-import { fetchDailyCandles, availableTimeframes, recommendTimeframe } from '../../services/marketData/candles';
+import { fetchDailyCandles, availableTimeframes, recommendTimeframe, TIMEFRAMES, DEFAULT_TIMEFRAME } from '../../services/marketData/candles';
 import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { computeMarketContextAtEntry } from '../../services/analytics/marketContext';
@@ -50,7 +50,7 @@ export default function Journal() {
   const [radarLoading, setRadarLoading] = useState(true);
   const [radarState, setRadarState] = useState({}); // itemId -> { loading, data, error }
   const [addRadarOpen, setAddRadarOpen] = useState(false);
-  const [radarForm, setRadarForm] = useState({ ticker: '', instrumentType: 'stock', note: '' });
+  const [radarForm, setRadarForm] = useState({ ticker: '', instrumentType: 'stock', note: '', timeframe: DEFAULT_TIMEFRAME });
   // Once the trader manually picks a type, stop overriding it as they keep typing.
   const [radarTypeTouched, setRadarTypeTouched] = useState(false);
 
@@ -318,7 +318,7 @@ export default function Journal() {
       await addRadarItem(user.uid, radarForm);
       toast.success('Добавлено в радар');
       setAddRadarOpen(false);
-      setRadarForm({ ticker: '', instrumentType: 'stock', note: '' });
+      setRadarForm({ ticker: '', instrumentType: 'stock', note: '', timeframe: DEFAULT_TIMEFRAME });
       setRadarTypeTouched(false);
       await loadRadar();
     } catch (e) {
@@ -783,6 +783,23 @@ export default function Journal() {
                   <option value="future">Фьючерс</option>
                   <option value="currency">Валюта</option>
                 </select>
+              </div>
+              <div className="input-group">
+                <label className="input-label">
+                  Таймфрейм для проверки условий
+                  <span className="text-muted" style={{fontWeight:400}}> (тот же, что вы используете в Калькуляторе для этого тикера)</span>
+                </label>
+                <select className="input" value={radarForm.timeframe}
+                  onChange={e => setRadarForm(f => ({ ...f, timeframe: e.target.value }))}>
+                  {availableTimeframes(!!userProfile?.tinkoffToken).map(tf => (
+                    <option key={tf.key} value={tf.key}>{tf.label}</option>
+                  ))}
+                </select>
+                <div className="input-hint">
+                  Уровни/индикаторы на Д1 и на внутридневном графике — разные цифры. Радар по умолчанию
+                  считал на Д1 всегда, из-за чего верно настроенное условие могло выглядеть невыполненным
+                  просто не на том горизонте.
+                </div>
               </div>
               <div className="input-group">
                 <label className="input-label">Заметка</label>

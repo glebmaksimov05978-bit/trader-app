@@ -83,6 +83,11 @@ export default function Dashboard() {
         instrumentType: item.instrumentType || 'stock',
         toDate: now,
         tinkoffToken: userProfile?.tinkoffToken,
+        // Радар silently always used D1 — a condition set up with an intraday chart in
+        // mind could look "failed" purely from checking the wrong horizon (real user
+        // report: "0 из 1", turned out to be this, not a broken condition). Falls back
+        // to D1 for radar items added before this field existed.
+        timeframe: item.timeframe || undefined,
       });
       const indicators = computeIndicatorsAtEntry(candles, now);
       const patterns = computePatternsAtEntry(candles, now);

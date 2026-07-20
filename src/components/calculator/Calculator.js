@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { TinkoffAPI, parseFutureInfo, parseShareInfo } from '../../services/tinkoff';
 import { calcTrade, formatCurrency, formatNumber } from '../../utils/calculator';
 import { addTrade, getUserTrades, computeLiveBalance } from '../../services/trades';
+import { addRadarItem } from '../../services/radar';
 import { fetchDailyCandles, availableTimeframes, DEFAULT_TIMEFRAME, TIMEFRAMES } from '../../services/marketData/candles';
 import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
@@ -997,6 +998,22 @@ export default function Calculator() {
                   }}>T</span>
                   В Т-Банк
                 </button>
+                {/* Real user request: no way to move a ticker being planned in the
+                    Calculator into the Radar watchlist without retyping it by hand in
+                    Journal's separate "+ Добавить в радар" form. */}
+                <button
+                  className="btn btn-secondary"
+                  style={{flex:1}}
+                  disabled={!user || !form.ticker}
+                  onClick={async () => {
+                    try {
+                      await addRadarItem(user.uid, { ticker: form.ticker, instrumentType, timeframe: taTimeframe });
+                      toast.success(`${form.ticker.toUpperCase()} добавлен в радар`);
+                    } catch {
+                      toast.error('Не удалось добавить в радар');
+                    }
+                  }}
+                >📡 В радар</button>
               </div>
 
               {/* Детализация */}
@@ -1014,25 +1031,11 @@ export default function Calculator() {
                 {displayResult.totalProfit > 0 && <ResultRow label="Потенц. прибыль (с комис.)" value={formatCurrency(displayResult.totalProfit)} color="var(--green)" large />}
               </div>
 
-              {/* Прогресс-бар */}
-              <div className="card">
-                <div className="section-title"><div className="section-title-icon">⚡</div>Использование капитала</div>
-                <div className="risk-gauge-bar">
-                  <div className="risk-gauge-fill" style={{width:`${Math.min(displayResult.marginUsagePercent||0,100)}%`,background:(displayResult.marginUsagePercent||0)>50?'linear-gradient(90deg,#f59e0b,#ef4444)':(displayResult.marginUsagePercent||0)>25?'linear-gradient(90deg,#4f46e5,#f59e0b)':'linear-gradient(90deg,#4f46e5,#10b981)'}}/>
-                </div>
-                <div className="risk-gauge-labels">
-                  <span className="text-sm text-secondary">{instrumentType==='stock'?'Позиция':'ГО'}: {formatCurrency(instrumentType==='stock'?displayResult.positionValue:displayResult.totalMargin)}</span>
-                  <span style={{fontWeight:700,fontSize:14,color:(displayResult.marginUsagePercent||0)>50?'var(--red)':'var(--text-primary)'}}>{displayResult.marginUsagePercent||0}%</span>
-                </div>
-                <div className="text-xs text-muted" style={{marginTop:6,color:(displayResult.marginUsagePercent||0)>70?'var(--gold)':(displayResult.marginUsagePercent||0)>40?'var(--gold)':'var(--green)'}}>
-                  {(displayResult.marginUsagePercent||0)>70?'⚠️ Высокая загрузка — рискованно':(displayResult.marginUsagePercent||0)>40?'🟡 Умеренная загрузка':'✅ Нормальная загрузка'}
-                </div>
-              </div>
-
-              {/* Own card, same size class as "Использование капитала" above it — moved
-                  out of Детализация into its own modal (real user request: "вынести
-                  вообще в отдельное модальное окно чтобы симметрично было"). Only shows
-                  once a TA fetch has actually run — no fabricated ATR before that. */}
+              {/* ATR moved above "Использование капитала" (real user request: swap for
+                  visual symmetry) — its own card, shown once a TA fetch has actually
+                  run so no fabricated ATR appears before that. flex:1 on the LAST card
+                  below absorbs whatever height difference is left against the taller
+                  left-hand input form, instead of leaving dead space under it. */}
               {taState.data?.indicators?.atr14 != null && form.stopLoss && form.entryPrice && (
                 <div className="card" style={{cursor:'pointer'}} onClick={() => setShowAtrModal(true)}>
                   <div className="section-title"><div className="section-title-icon">📏</div>Волатильность (ATR)</div>
@@ -1050,6 +1053,23 @@ export default function Calculator() {
                   })()}
                 </div>
               )}
+
+              {/* Прогресс-бар — last card in the column, flex:1 so it (not empty page
+                  space below it) absorbs any extra height the taller input form on the
+                  left forces onto this stretched grid row. */}
+              <div className="card" style={{flex:1, display:'flex', flexDirection:'column', justifyContent:'center'}}>
+                <div className="section-title"><div className="section-title-icon">⚡</div>Использование капитала</div>
+                <div className="risk-gauge-bar">
+                  <div className="risk-gauge-fill" style={{width:`${Math.min(displayResult.marginUsagePercent||0,100)}%`,background:(displayResult.marginUsagePercent||0)>50?'linear-gradient(90deg,#f59e0b,#ef4444)':(displayResult.marginUsagePercent||0)>25?'linear-gradient(90deg,#4f46e5,#f59e0b)':'linear-gradient(90deg,#4f46e5,#10b981)'}}/>
+                </div>
+                <div className="risk-gauge-labels">
+                  <span className="text-sm text-secondary">{instrumentType==='stock'?'Позиция':'ГО'}: {formatCurrency(instrumentType==='stock'?displayResult.positionValue:displayResult.totalMargin)}</span>
+                  <span style={{fontWeight:700,fontSize:14,color:(displayResult.marginUsagePercent||0)>50?'var(--red)':'var(--text-primary)'}}>{displayResult.marginUsagePercent||0}%</span>
+                </div>
+                <div className="text-xs text-muted" style={{marginTop:6,color:(displayResult.marginUsagePercent||0)>70?'var(--gold)':(displayResult.marginUsagePercent||0)>40?'var(--gold)':'var(--green)'}}>
+                  {(displayResult.marginUsagePercent||0)>70?'⚠️ Высокая загрузка — рискованно':(displayResult.marginUsagePercent||0)>40?'🟡 Умеренная загрузка':'✅ Нормальная загрузка'}
+                </div>
+              </div>
             </>
           ) : result ? (
             <div className="card" style={{textAlign:'center',padding:'48px 24px'}}>

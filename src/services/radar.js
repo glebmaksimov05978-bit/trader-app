@@ -9,12 +9,19 @@ import { db } from './firebase';
 
 const COLL = 'radarItems';
 
-export async function addRadarItem(uid, { ticker, instrumentType, note }) {
+export async function addRadarItem(uid, { ticker, instrumentType, note, timeframe }) {
   return addDoc(collection(db, COLL), {
     uid,
     ticker: ticker.toUpperCase(),
     instrumentType: instrumentType || 'stock',
     note: note || '',
+    // Which timeframe this item's conditions should be checked against — the swing
+    // levels/indicators a trader had in mind when setting up a condition can look
+    // completely different on D1 vs an intraday chart, and Радар silently defaulting to
+    // D1 with no way to change it made a correctly-configured condition read as failed
+    // (real user report: "0 из 1", turned out to be a timeframe mismatch, not a bug in
+    // the condition itself). null = D1 default, same as before this field existed.
+    timeframe: timeframe || null,
     createdAt: serverTimestamp(),
   });
 }
