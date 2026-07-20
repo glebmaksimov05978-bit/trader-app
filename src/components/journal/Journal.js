@@ -11,6 +11,7 @@ import { isFuturesCode, isCurrencyCode } from '../../services/import/instrumentR
 import { addRadarItem, getRadarItems, deleteRadarItem } from '../../services/radar';
 import { useRadarLive } from '../../context/RadarLiveContext';
 import TechnicalAnalysisBlock from '../shared/TechnicalAnalysisBlock';
+import CandleChart from '../shared/CandleChart';
 import toast from 'react-hot-toast';
 import TradeModal from './TradeModal';
 import ImportModal from './ImportModal';
@@ -256,6 +257,26 @@ export default function Journal() {
     const cached = trade.technicalAnalysis;
     if (!force && cached?.indicators && cached?.patterns && cached?.timeframe === timeframe) {
       setIndicatorsState((s) => ({ ...s, [trade.id]: { loading: false, data: cached, error: null } }));
+      // The Firestore cache never stored candles (would bloat every trade doc for no
+      // benefit — see the comment below where they're added to state). Fetch just the
+      // candle series in the background so the chart still has something to draw,
+      // without redoing the indicator/pattern math or re-writing Firestore.
+      (async () => {
+        try {
+          const openedAt = resolveOpenedAt(trade);
+          if (!openedAt) return;
+          const candles = await fetchDailyCandles({
+            ticker: trade.ticker,
+            instrumentType: trade.instrumentType || guessInstrumentType(trade.ticker),
+            toDate: openedAt,
+            tinkoffToken: userProfile?.tinkoffToken,
+            timeframe,
+          });
+          setIndicatorsState((s) => (s[trade.id]?.data === cached
+            ? { ...s, [trade.id]: { loading: false, data: { ...cached, candles }, error: null } }
+            : s));
+        } catch { /* chart just stays hidden if this fails — indicators already shown */ }
+      })();
       return;
     }
     setIndicatorsState((s) => ({ ...s, [trade.id]: { loading: true, data: null, error: null } }));
@@ -277,7 +298,10 @@ export default function Journal() {
       const marketContext = computeMarketContextAtEntry(candles, openedAt);
       if (!indicators) throw new Error('Нет исторических свечей по этому тикеру');
       const result = { indicators, patterns, marketContext, timeframe };
-      setIndicatorsState((s) => ({ ...s, [trade.id]: { loading: false, data: result, error: null } }));
+      // `candles` stays local-state-only (not spread into `result`) — it's only needed
+      // to draw the chart in this session, and saving a whole candle history into every
+      // trade document would bloat Firestore for no benefit (the chart just refetches).
+      setIndicatorsState((s) => ({ ...s, [trade.id]: { loading: false, data: { ...result, candles }, error: null } }));
       await updateTrade(trade.id, { technicalAnalysis: { ...(trade.technicalAnalysis || {}), ...result } });
     } catch (e) {
       setIndicatorsState((s) => ({ ...s, [trade.id]: { loading: false, data: null, error: e.message || 'Не удалось загрузить данные' } }));
@@ -308,7 +332,7 @@ export default function Journal() {
       const patterns = computePatternsAtEntry(candles, now);
       const marketContext = computeMarketContextAtEntry(candles, now);
       if (!indicators) throw new Error('Нет исторических свечей по этому тикеру');
-      setRadarState((s) => ({ ...s, [item.id]: { loading: false, data: { indicators, patterns, marketContext }, error: null } }));
+      setRadarState((s) => ({ ...s, [item.id]: { loading: false, data: { indicators, patterns, marketContext, candles }, error: null } }));
     } catch (e) {
       setRadarState((s) => ({ ...s, [item.id]: { loading: false, data: null, error: e.message || 'Не удалось загрузить данные' } }));
     }
@@ -710,6 +734,17 @@ export default function Journal() {
                             <span style={{fontSize: 11, color: 'var(--text-muted)'}}>(подобран по длительности сделки)</span>
                           )}
                         </div>
+                        {indicatorsState[trade.id]?.data?.candles?.length > 0 && (
+                          <div style={{marginBottom: 16}}>
+                            <CandleChart
+                              candles={indicatorsState[trade.id].data.candles}
+                              patterns={indicatorsState[trade.id].data.patterns}
+                              ticker={trade.ticker}
+                              entryMarker={resolveOpenedAt(trade) ? { date: resolveOpenedAt(trade), price: trade.entryPrice, direction: trade.direction } : null}
+                              exitMarker={trade.status === 'closed' && resolveClosedAt(trade) ? { date: resolveClosedAt(trade), price: trade.exitPrice } : null}
+                            />
+                          </div>
+                        )}
                         <TechnicalAnalysisBlock
                           state={indicatorsState[trade.id]}
                           onRefresh={() => loadIndicators(trade, true)}

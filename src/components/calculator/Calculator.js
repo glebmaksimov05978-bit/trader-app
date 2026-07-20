@@ -13,6 +13,7 @@ import { computeMarketContextAtEntry } from '../../services/analytics/marketCont
 import { fetchActiveFutureCard, fetchMoexSecurityInfo } from '../../services/marketData/futuresSpecs';
 import { evaluateStrategy } from '../../services/analytics/strategy';
 import TechnicalAnalysisBlock, { PATTERN_LABELS, InfoTip } from '../shared/TechnicalAnalysisBlock';
+import CandleChart from '../shared/CandleChart';
 import StrategyChecklist from '../shared/StrategyChecklist';
 import toast from 'react-hot-toast';
 import './Calculator.css';
@@ -457,7 +458,7 @@ export default function Calculator() {
       const patterns = computePatternsAtEntry(candles, now, { timeframeMinutes: TIMEFRAMES[taTimeframe]?.minutes });
       const marketContext = computeMarketContextAtEntry(candles, now);
       if (!indicators) throw new Error('Нет исторических свечей по этому тикеру');
-      setTaState({ loading: false, data: { indicators, patterns, marketContext }, error: null });
+      setTaState({ loading: false, data: { indicators, patterns, marketContext, candles }, error: null });
       setTaUpdatedAt(new Date());
       loadedAnalysisKeyRef.current = key;
       diffFormingStatuses(patterns);
@@ -1104,6 +1105,21 @@ export default function Calculator() {
             <div className="section-title-icon">📊</div>
             Технический анализ {form.ticker ? `— ${form.ticker.toUpperCase()}` : ''}
           </div>
+          {taState.data?.candles?.length > 0 && (
+            <CandleChart
+              candles={taState.data.candles}
+              patterns={taState.data.patterns}
+              ticker={form.ticker.toUpperCase()}
+              timeframe={taTimeframe}
+              timeframeOptions={taTimeframeOptions}
+              onTimeframeChange={setTaTimeframe}
+              planLines={{
+                entry: form.entryPrice ? Number(form.entryPrice) : null,
+                stop: form.stopLoss ? Number(form.stopLoss) : null,
+                take: form.takeProfit ? Number(form.takeProfit) : null,
+              }}
+            />
+          )}
           <TechnicalAnalysisBlock
             state={taState}
             onRefresh={() => loadAnalysis()}

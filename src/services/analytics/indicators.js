@@ -89,6 +89,12 @@ function bollingerAt(closes, index, period = 20, k = 2) {
   return { upper, mid, lower, percentB, position };
 }
 
+// Same formula as bollingerAt, but for every bar — the candle chart needs a full band
+// line, not just the value at one point in time.
+export function bollingerSeries(closes, period = 20, k = 2) {
+  return closes.map((_, i) => bollingerAt(closes, i, period, k));
+}
+
 // ATR (Average True Range) — Wilder's smoothed average of the true range (the widest of
 // today's high-low, high-prevClose, low-prevClose). Answers "how far does this instrument
 // typically move per bar right now", independent of direction — used in the Calculator to
