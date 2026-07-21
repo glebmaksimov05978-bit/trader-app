@@ -52,6 +52,7 @@ export default function Journal() {
   const [radarItems, setRadarItems] = useState([]);
   const [radarLoading, setRadarLoading] = useState(true);
   const [radarState, setRadarState] = useState({}); // itemId -> { loading, data, error }
+  const [radarTfOverride, setRadarTfOverride] = useState({});
   const [addRadarOpen, setAddRadarOpen] = useState(false);
   const [radarForm, setRadarForm] = useState({ ticker: '', instrumentType: 'stock', note: '', timeframe: DEFAULT_TIMEFRAME });
   // Once the trader manually picks a type, stop overriding it as they keep typing.
@@ -318,12 +319,20 @@ export default function Journal() {
     loadIndicators(trade, true, tf);
   };
 
+  const changeRadarTimeframe = (item, tf) => {
+    setRadarTfOverride((s) => ({ ...s, [item.id]: tf }));
+    loadRadarAnalysis(item, true, tf);
+  };
+
   // Same computation as loadIndicators, but anchored to "now" instead of a trade's
   // entry date, and deliberately not cached in Firestore — a radar item's whole point
   // is to reflect the current moment, so a stale cache would defeat it. Refetches every
   // time the row is opened or "Обновить" is pressed.
-  const loadRadarAnalysis = async (item, force = false) => {
+  const radarTimeframeFor = (item) => radarTfOverride[item.id] || item.timeframe || DEFAULT_TIMEFRAME;
+
+  const loadRadarAnalysis = async (item, force = false, timeframeArg = null) => {
     if (!force && radarState[item.id]?.data) return;
+    const timeframe = timeframeArg || radarTimeframeFor(item);
     setRadarState((s) => ({ ...s, [item.id]: { loading: true, data: null, error: null } }));
     try {
       const now = new Date();
@@ -332,9 +341,10 @@ export default function Journal() {
         instrumentType: item.instrumentType || 'stock',
         toDate: now,
         tinkoffToken: userProfile?.tinkoffToken,
+        timeframe,
       });
       const indicators = computeIndicatorsAtEntry(candles, now);
-      const patterns = computePatternsAtEntry(candles, now);
+      const patterns = computePatternsAtEntry(candles, now, { timeframeMinutes: TIMEFRAMES[timeframe]?.minutes });
       const marketContext = computeMarketContextAtEntry(candles, now);
       if (!indicators) throw new Error('Нет исторических свечей по этому тикеру');
       setRadarState((s) => ({ ...s, [item.id]: { loading: false, data: { indicators, patterns, marketContext, candles }, error: null } }));
@@ -719,26 +729,10 @@ export default function Journal() {
                           </div>
                         )}
 
-                        {/* Технический анализ на момент входа — module 4 */}
-                        <div className="flex gap-2" style={{alignItems: 'center', marginBottom: 8, flexWrap: 'wrap'}}>
-                          <span style={{fontSize: 11, color: 'var(--text-muted)'}}>Таймфрейм:</span>
-                          {availableTimeframes(!!userProfile?.tinkoffToken).map((tf) => {
-                            const active = timeframeFor(trade) === tf.key;
-                            return (
-                              <button
-                                key={tf.key}
-                                className={active ? 'btn btn-secondary btn-sm' : 'btn btn-ghost btn-sm'}
-                                style={{fontSize: 11, padding: '2px 8px'}}
-                                onClick={() => changeTimeframe(trade, tf.key)}
-                              >
-                                {tf.label}
-                              </button>
-                            );
-                          })}
-                          {!tfOverride[trade.id] && (
-                            <span style={{fontSize: 11, color: 'var(--text-muted)'}}>(подобран по длительности сделки)</span>
-                          )}
-                        </div>
+                        {/* Технический анализ на момент входа — module 4. Таймфрейм
+                            выбирается прямо в шапке графика (тот же контрол, что в
+                            Калькуляторе) — раньше была отдельная строка кнопок над
+                            графиком, дублирующая то же самое (real user report). */}
                         {indicatorsState[trade.id]?.data?.candles?.length > 0 && (
                           <div style={{marginBottom: 16}}>
                             <CandleChart
@@ -749,7 +743,13 @@ export default function Journal() {
                               legs={trade.legs}
                               entryMarker={!trade.legs?.length && resolveOpenedAt(trade) ? { date: resolveOpenedAt(trade), price: trade.entryPrice, direction: trade.direction } : null}
                               exitMarker={!trade.legs?.length && trade.status === 'closed' && resolveClosedAt(trade) ? { date: resolveClosedAt(trade), price: trade.exitPrice } : null}
+                              timeframe={timeframeFor(trade)}
+                              timeframeOptions={availableTimeframes(!!userProfile?.tinkoffToken)}
+                              onTimeframeChange={(tf) => changeTimeframe(trade, tf)}
                             />
+                            {!tfOverride[trade.id] && (
+                              <div style={{fontSize: 11, color: 'var(--text-muted)', marginTop: 4}}>Таймфрейм подобран по длительности сделки</div>
+                            )}
                           </div>
                         )}
                         <TechnicalAnalysisBlock
@@ -823,6 +823,18 @@ export default function Journal() {
                   </div>
                   {isExpanded && (
                     <div style={{marginTop:16, paddingTop:16, borderTop:'1px solid var(--border-subtle)'}}>
+                      {radarState[item.id]?.data?.candles?.length > 0 && (
+                        <div style={{marginBottom:16}}>
+                          <CandleChart
+                            candles={radarState[item.id].data.candles}
+                            patterns={radarState[item.id].data.patterns}
+                            ticker={item.ticker}
+                            timeframe={radarTimeframeFor(item)}
+                            timeframeOptions={availableTimeframes(!!userProfile?.tinkoffToken)}
+                            onTimeframeChange={(tf) => changeRadarTimeframe(item, tf)}
+                          />
+                        </div>
+                      )}
                       <TechnicalAnalysisBlock
                         state={radarState[item.id]}
                         onRefresh={() => loadRadarAnalysis(item, true)}

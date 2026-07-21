@@ -58,6 +58,18 @@ function toChartTime(date) {
   return Math.floor(date.getTime() / 1000);
 }
 
+// Trade legs come straight из Firestore, where a JS Date written on import round-trips
+// back as a Firestore Timestamp object ({ seconds, nanoseconds }), not a Date/ISO string
+// — `new Date(firestoreTimestamp)` silently produces an Invalid Date (NaN), which made
+// every leg marker vanish without a single console error (real user report: markers that
+// worked before this went quiet again after switching to leg-by-leg markers). Same
+// coercion Journal.js already uses for its own leg table (`fmtDateTime`).
+function toDate(d) {
+  if (d instanceof Date) return d;
+  if (d?.seconds != null) return new Date(d.seconds * 1000);
+  return new Date(d);
+}
+
 // One marker per fill, not one entry + one exit — a position built or unwound over
 // several orders (докупки, partial closes) needs every leg on the chart, or the trader
 // can't tell "when did I actually add" from "when did I finally get out" (real user
@@ -69,7 +81,7 @@ function legsToMarkers(legs, direction, colors) {
   let openCount = 0;
   let closedSoFar = 0;
   return legs.map((leg) => {
-    const time = toChartTime(new Date(leg.timestampUtc));
+    const time = toChartTime(toDate(leg.timestampUtc));
     if (leg.type === 'open') {
       openCount += 1;
       return {
@@ -251,23 +263,21 @@ export default function CandleChart({
         mid.push({ time: times[i], value: b.mid });
         lower.push({ time: times[i], value: b.lower });
       });
+      // A translucent Area series under the upper band, tinted down to the BOTTOM of
+      // the visible price scale (not stopping at the lower band — Lightweight Charts
+      // has no built-in "fill only between two lines" primitive), then the candlestick
+      // series is re-added on top so it always paints over the tint instead of getting
+      // masked by it. A previous version tried to erase the area below the lower band
+      // with a second opaque Area series — that painted OVER the candles too (real user
+      // report: "всё что под нижней полосой пропадает"), which is worse than an
+      // imperfect tint. This version never hides real candle data, only tints behind it.
       if (upper.length) {
-        // Band fill trick (no built-in "fill between two lines" in Lightweight Charts):
-        // an Area series tinted down from the upper band to the bottom of the visible
-        // scale, then a second Area series painted in the actual page background from
-        // the lower band down — it masks everything below the lower band, leaving only
-        // the strip between upper and lower visibly tinted.
-        const pageBg = themeColor('--bg-surface', '#111827');
-        const tint = withAlpha(colors.bollinger, 0.12);
+        const tint = withAlpha(colors.bollinger, 0.1);
         const fillUpper = chart.addSeries(AreaSeries, {
-          lineVisible: false, topColor: tint, bottomColor: tint, priceLineVisible: false, crosshairMarkerVisible: false,
+          lineVisible: false, topColor: tint, bottomColor: 'rgba(0,0,0,0)', priceLineVisible: false, crosshairMarkerVisible: false,
         });
         fillUpper.setData(upper);
-        const fillLower = chart.addSeries(AreaSeries, {
-          lineVisible: false, topColor: pageBg, bottomColor: pageBg, priceLineVisible: false, crosshairMarkerVisible: false,
-        });
-        fillLower.setData(lower);
-        seriesRef.current.overlaySeries.push(fillUpper, fillLower);
+        seriesRef.current.overlaySeries.push(fillUpper);
       }
       const bandColor = colors.bollinger;
       [upper, mid, lower].forEach((data, idx) => {
