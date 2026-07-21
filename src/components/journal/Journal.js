@@ -741,6 +741,8 @@ export default function Journal() {
                               ticker={trade.ticker}
                               direction={trade.direction}
                               legs={trade.legs}
+                              entryPrice={trade.entryPrice}
+                              exitPrice={trade.status === 'closed' ? trade.exitPrice : null}
                               entryMarker={!trade.legs?.length && resolveOpenedAt(trade) ? { date: resolveOpenedAt(trade), price: trade.entryPrice, direction: trade.direction } : null}
                               exitMarker={!trade.legs?.length && trade.status === 'closed' && resolveClosedAt(trade) ? { date: resolveClosedAt(trade), price: trade.exitPrice } : null}
                               timeframe={timeframeFor(trade)}

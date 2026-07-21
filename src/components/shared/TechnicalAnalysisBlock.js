@@ -152,55 +152,7 @@ function LevelBadge({ price, children, className, style }) {
   return <span className={className} style={{fontSize:11, ...style}}>{children}</span>;
 }
 
-const SECTION_DEFS = [
-  { key: 'basics', label: 'RSI/MACD/Объём' },
-  { key: 'marketContext', label: 'Рыночный контекст' },
-  { key: 'bollinger', label: 'Боллинджер' },
-  { key: 'ema', label: 'EMA-уровни' },
-  { key: 'sr', label: 'Уровни S/R' },
-  { key: 'fibonacci', label: 'Фибоначчи' },
-  { key: 'patterns', label: 'Фигуры' },
-];
-const SECTIONS_KEY = 'traderpro-ta-sections';
-
-function loadVisibleSections() {
-  try {
-    const raw = localStorage.getItem(SECTIONS_KEY);
-    const saved = raw ? JSON.parse(raw) : {};
-    return Object.fromEntries(SECTION_DEFS.map((s) => [s.key, saved[s.key] !== false]));
-  } catch {
-    return Object.fromEntries(SECTION_DEFS.map((s) => [s.key, true]));
-  }
-}
-
-// The text panel packs RSI/MACD/volume/market context/Bollinger/EMA/S-R/Fibonacci/
-// patterns all into one long scroll — real user report: "очень много ничего не
-// понятно". Chips let the trader hide sections they don't care about; the choice is
-// remembered (localStorage) the same way chart layer colors are, since it's a personal
-// reading preference, not something that should reset every time the panel reopens.
-function SectionToggles({ visible, onToggle }) {
-  return (
-    <div style={{display:'flex', flexWrap:'wrap', gap:6, marginBottom:12}}>
-      {SECTION_DEFS.map((s) => (
-        <button
-          key={s.key}
-          className={`badge ${visible[s.key] ? 'badge-blue' : ''}`}
-          style={{cursor:'pointer', border:'none', fontSize:11}}
-          onClick={() => onToggle(s.key)}
-        >{visible[s.key] ? '✓ ' : ''}{s.label}</button>
-      ))}
-    </div>
-  );
-}
-
 export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
-  const [visible, setVisible] = useState(loadVisibleSections);
-  const toggleSection = (key) => setVisible((s) => {
-    const next = { ...s, [key]: !s[key] };
-    try { localStorage.setItem(SECTIONS_KEY, JSON.stringify(next)); } catch {}
-    return next;
-  });
-
   return (
     <>
       <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:8}}>
@@ -209,7 +161,6 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
           <button className="btn btn-ghost btn-sm" style={{fontSize:11, padding:'2px 6px'}} onClick={onRefresh}>🔄 Обновить</button>
         )}
       </div>
-      {state?.data && !state?.loading && <SectionToggles visible={visible} onToggle={toggleSection} />}
       {state?.loading && (
         <div className="flex gap-2" style={{alignItems:'center', color:'var(--text-muted)', fontSize:13}}>
           <div className="spinner" style={{width:14,height:14}}/> Загружаем свечи...
@@ -225,21 +176,19 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
             {/* "До SMA200" dropped — it duplicated the EMA200 row below closely enough
                 (both "distance to a long-term 200-period average") that the trader read
                 them as the same number shown twice, not two different indicators. */}
-            {visible.basics && (
-              <div className="flex flex-col gap-2" style={{maxWidth:420, marginBottom:14}}>
-                <MiniStat label="RSI" value={indicators?.rsi14 != null ? formatNumber(indicators.rsi14, 1) : 'нет данных'} />
-                <MiniStat label="MACD" value={indicators?.macdHistogram != null ? formatNumber(indicators.macdHistogram, 2) : 'нет данных'} />
-                <MiniStat label="Объём"
-                  tip="Сравнение объёма сделок в этой свече со средним объёмом за 20 предыдущих свечей того же таймфрейма (на дневном графике — 20 дней, на часовом — 20 часовых баров)."
-                  value={indicators?.volumeRatio != null
-                    ? (indicators.volumeRatio >= 1
-                      ? `в ${formatNumber(indicators.volumeRatio, 1)} раза выше обычного`
-                      : `на ${Math.round((1 - indicators.volumeRatio) * 100)}% ниже обычного`)
-                    : 'нет данных'} />
-              </div>
-            )}
+            <div className="flex flex-col gap-2" style={{maxWidth:420, marginBottom:14}}>
+              <MiniStat label="RSI" value={indicators?.rsi14 != null ? formatNumber(indicators.rsi14, 1) : 'нет данных'} />
+              <MiniStat label="MACD" value={indicators?.macdHistogram != null ? formatNumber(indicators.macdHistogram, 2) : 'нет данных'} />
+              <MiniStat label="Объём"
+                tip="Сравнение объёма сделок в этой свече со средним объёмом за 20 предыдущих свечей того же таймфрейма (на дневном графике — 20 дней, на часовом — 20 часовых баров)."
+                value={indicators?.volumeRatio != null
+                  ? (indicators.volumeRatio >= 1
+                    ? `в ${formatNumber(indicators.volumeRatio, 1)} раза выше обычного`
+                    : `на ${Math.round((1 - indicators.volumeRatio) * 100)}% ниже обычного`)
+                  : 'нет данных'} />
+            </div>
 
-            {visible.marketContext && marketContext && (marketContext.trend || marketContext.volatility) && (
+            {marketContext && (marketContext.trend || marketContext.volatility) && (
               <>
                 <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:8}}>Рыночный контекст (автоопределение)</div>
                 <div className="grid-2" style={{gap:16, maxWidth:640, marginBottom:14}}>
@@ -269,7 +218,7 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
               </>
             )}
 
-            {visible.bollinger && indicators?.bollinger && (
+            {indicators?.bollinger && (
               <>
                 <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:6, display:'flex', alignItems:'center', gap:6}}>
                   Полосы Боллинджера — цена {indicators.bollinger.position === 'above_upper' ? 'выше верхней полосы' : indicators.bollinger.position === 'below_lower' ? 'ниже нижней полосы' : 'внутри полос'}
@@ -291,29 +240,25 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
 
             {patterns && (
               <>
-                {visible.ema && (
-                  <>
-                    <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:6}}>EMA-уровни (плавающие поддержка/сопротивление)</div>
-                    <div className="grid-3" style={{gap:8, maxWidth:640, marginBottom:14}}>
-                      {[9, 100, 200].map((p) => {
-                        const e = patterns.emaLevels?.[`ema${p}`];
-                        return (
-                          <div key={p}>
-                            <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:2}}>EMA{p}</div>
-                            <div style={{fontSize:13, fontWeight:600, color: e ? (e.position === 'above' ? 'var(--green)' : 'var(--red)') : undefined}}>
-                              {/* EMA{p} already named in the label right above — repeating it
-                                  in the value too was the "текст прилип, больше чем сама
-                                  надпись" clutter (real user report). */}
-                              {e ? `Цена ${e.position === 'above' ? 'выше' : 'ниже'} на ${Math.abs(e.distancePct).toFixed(1)}% (${e.slope === 'rising' ? '↑ растёт' : e.slope === 'falling' ? '↓ падает' : '→ плоская'})` : 'нет данных'}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </>
-                )}
+                <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:6}}>EMA-уровни (плавающие поддержка/сопротивление)</div>
+                <div className="grid-3" style={{gap:8, maxWidth:640, marginBottom:14}}>
+                  {[9, 100, 200].map((p) => {
+                    const e = patterns.emaLevels?.[`ema${p}`];
+                    return (
+                      <div key={p}>
+                        <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:2}}>EMA{p}</div>
+                        <div style={{fontSize:13, fontWeight:600, color: e ? (e.position === 'above' ? 'var(--green)' : 'var(--red)') : undefined}}>
+                          {/* EMA{p} already named in the label right above — repeating it
+                              in the value too was the "текст прилип, больше чем сама
+                              надпись" clutter (real user report). */}
+                          {e ? `Цена ${e.position === 'above' ? 'выше' : 'ниже'} на ${Math.abs(e.distancePct).toFixed(1)}% (${e.slope === 'rising' ? '↑ растёт' : e.slope === 'falling' ? '↓ падает' : '→ плоская'})` : 'нет данных'}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
 
-                {visible.sr && patterns.supportResistance?.length > 0 && (() => {
+                {patterns.supportResistance?.length > 0 && (() => {
                   // Ranked here, not baked into computePatternsAtEntry — Боллинджер
                   // lives in `indicators`, computed by a separate module, and only the
                   // two are ever available together at this render layer without
@@ -344,7 +289,7 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
                   );
                 })()}
 
-                {visible.fibonacci && patterns.fibonacci && (
+                {patterns.fibonacci && (
                   <>
                     <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:6}}>
                       Уровни Фибоначчи (от {formatNumber(patterns.fibonacci.from.price, 2)} до {formatNumber(patterns.fibonacci.to.price, 2)})
@@ -363,30 +308,26 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
                   </>
                 )}
 
-                {visible.patterns && (
-                  <>
-                    <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:6}}>Фигуры-кандидаты (алгоритмическая оценка, не мнение AI)</div>
-                    {patterns.candidates?.length > 0 ? (
-                      <div className="flex flex-col gap-2" style={{maxWidth:640}}>
-                        {patterns.candidates.map((c, i) => (
-                          <div key={i} style={{padding:'8px 12px', background:'var(--bg-surface-3)', borderRadius:10, fontSize:13}}>
-                            <div className="flex justify-between items-center">
-                              <span style={{fontWeight:600}}>{PATTERN_LABELS[c.pattern] || c.pattern}</span>
-                              <div className="flex gap-2" style={{alignItems:'center'}}>
-                                <span className={`badge ${c.status === 'forming' ? 'badge-blue' : c.status === 'invalidated' ? 'badge-red' : 'badge-green'}`} style={{fontSize:11}}>
-                                  {STATUS_LABELS[c.status] || c.status}
-                                </span>
-                                <span className="badge" style={{fontSize:11, color: confidenceColor(c.confidence), fontWeight:700}}>~{c.confidence}%</span>
-                              </div>
-                            </div>
-                            <div style={{color:'var(--text-muted)', marginTop:2}}>{c.detail}</div>
+                <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:6}}>Фигуры-кандидаты (алгоритмическая оценка, не мнение AI)</div>
+                {patterns.candidates?.length > 0 ? (
+                  <div className="flex flex-col gap-2" style={{maxWidth:640}}>
+                    {patterns.candidates.map((c, i) => (
+                      <div key={i} style={{padding:'8px 12px', background:'var(--bg-surface-3)', borderRadius:10, fontSize:13}}>
+                        <div className="flex justify-between items-center">
+                          <span style={{fontWeight:600}}>{PATTERN_LABELS[c.pattern] || c.pattern}</span>
+                          <div className="flex gap-2" style={{alignItems:'center'}}>
+                            <span className={`badge ${c.status === 'forming' ? 'badge-blue' : c.status === 'invalidated' ? 'badge-red' : 'badge-green'}`} style={{fontSize:11}}>
+                              {STATUS_LABELS[c.status] || c.status}
+                            </span>
+                            <span className="badge" style={{fontSize:11, color: confidenceColor(c.confidence), fontWeight:700}}>~{c.confidence}%</span>
                           </div>
-                        ))}
+                        </div>
+                        <div style={{color:'var(--text-muted)', marginTop:2}}>{c.detail}</div>
                       </div>
-                    ) : (
-                      <div style={{fontSize:13, color:'var(--text-muted)'}}>Формальных фигур не найдено.</div>
-                    )}
-                  </>
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{fontSize:13, color:'var(--text-muted)'}}>Формальных фигур не найдено.</div>
                 )}
               </>
             )}
