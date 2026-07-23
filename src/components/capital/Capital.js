@@ -3,8 +3,9 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, calcStats, computeLiveBalance } from '../../services/trades';
 import { formatCurrency, formatNumber, calcTrade } from '../../utils/calculator';
-import { CONDITION_CATALOG, defaultStrategy, STRATEGY_TEMPLATES, CUSTOM_CONDITION_PRESETS } from '../../services/analytics/strategy';
+import { CONDITION_CATALOG, defaultStrategy, getStrategies, STRATEGY_TEMPLATES, CUSTOM_CONDITION_PRESETS } from '../../services/analytics/strategy';
 import { PATTERN_LABELS, PATTERN_DIRECTIONS } from '../shared/TechnicalAnalysisBlock';
+import ExitRulesEditor from '../shared/ExitRulesEditor';
 import toast from 'react-hot-toast';
 import './Capital.css';
 
@@ -29,13 +30,52 @@ export default function Capital() {
   const [trades, setTrades] = useState([]);
   const [stats, setStats] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [strategy, setStrategy] = useState(defaultStrategy());
+  // Real user request: switch between a few saved strategies instead of typing numbers
+  // over every time. Lives as an ARRAY on the profile (not a separate Firestore
+  // collection — see strategy.js:getStrategies for why), `editingId` is whichever tab
+  // is open in this form; `activeStrategyId` is the one live everywhere else
+  // (Calculator/Radar/Journal) and doesn't have to be the same one you're editing.
+  const [strategies, setStrategies] = useState(() => getStrategies(userProfile));
+  const [activeStrategyId, setActiveStrategyId] = useState(userProfile?.activeStrategyId || null);
+  const [editingId, setEditingId] = useState(null);
   const [savingStrategy, setSavingStrategy] = useState(false);
   const [confirmTemplate, setConfirmTemplate] = useState(null); // template pending overwrite confirmation
+  const [confirmDeleteStrategyId, setConfirmDeleteStrategyId] = useState(null);
 
   useEffect(() => {
-    if (userProfile?.strategy) setStrategy(userProfile.strategy);
+    const list = getStrategies(userProfile);
+    setStrategies(list);
+    const active = userProfile?.activeStrategyId && list.some((s) => s.id === userProfile.activeStrategyId)
+      ? userProfile.activeStrategyId : list[0]?.id;
+    setActiveStrategyId(active);
+    setEditingId((cur) => (cur && list.some((s) => s.id === cur) ? cur : active));
   }, [userProfile]);
+
+  const strategy = strategies.find((s) => s.id === editingId) || strategies[0] || defaultStrategy();
+  // Every mutator below used to call setStrategy(s => ...) directly on a single object;
+  // now they all go through this so exactly one array entry (the one being edited)
+  // changes, the rest stay untouched.
+  const updateEditingStrategy = (updater) => {
+    setStrategies((list) => list.map((s) => (s.id === editingId ? updater(s) : s)));
+  };
+  const setStrategy = updateEditingStrategy; // drop-in for the existing `setStrategy(s => ({...s, ...}))` call sites below
+
+  const addStrategy = () => {
+    const next = defaultStrategy();
+    setStrategies((list) => [...list, next]);
+    setEditingId(next.id);
+  };
+  const renameStrategy = (id, name) => setStrategies((list) => list.map((s) => (s.id === id ? { ...s, name } : s)));
+  const deleteStrategy = (id) => {
+    setStrategies((list) => {
+      if (list.length <= 1) return list; // guarded by disabling the button too — never delete the last one
+      const next = list.filter((s) => s.id !== id);
+      if (editingId === id) setEditingId(next[0].id);
+      if (activeStrategyId === id) setActiveStrategyId(next[0].id);
+      return next;
+    });
+    setConfirmDeleteStrategyId(null);
+  };
 
   const [settings, setSettings] = useState({
     depositSize: userProfile?.depositSize ?? 0,
@@ -116,10 +156,11 @@ export default function Capital() {
 
   // Templates only ship catalog conditions — a trader's own "Свои условия" notes (news
   // checks, exotic indicators) aren't part of any template's formula, so loading one
-  // shouldn't wipe them out.
+  // shouldn't wipe them out. Same for `id`/`exitRules`: a template only ever describes
+  // entry conditions, so this strategy's identity and exit setup survive loading one.
   const applyTemplate = (tpl) => {
     setStrategy(s => ({
-      name: tpl.label, conditions: tpl.conditions.map(c => ({ ...c })),
+      ...s, name: tpl.label, conditions: tpl.conditions.map(c => ({ ...c })),
       readinessThreshold: tpl.readinessThreshold, customConditions: s.customConditions || [],
     }));
   };
@@ -156,8 +197,12 @@ export default function Capital() {
   const saveStrategy = async () => {
     setSavingStrategy(true);
     try {
-      await updateUserProfile({ strategy });
-      toast.success('Стратегия сохранена');
+      // The legacy singular `strategy` field is left alone (not written, not deleted) —
+      // getStrategies() only falls back to it when `strategies` is absent, so once this
+      // save lands, every future read on this account uses the array. No migration
+      // script, no rules redeploy.
+      await updateUserProfile({ strategies, activeStrategyId });
+      toast.success('Стратегии сохранены');
     } catch (e) {
       toast.error('Ошибка сохранения: ' + (e.message || 'неизвестная ошибка'));
     }
@@ -471,6 +516,33 @@ export default function Capital() {
           по тикеру) просто не учитывается в счёте — не считается ни выполненным, ни провальным.
         </p>
 
+        {/* Несколько стратегий — переключение вкладками вместо перезаписи одной каждый
+            раз (real user request). Активная (★) — та, что реально работает в
+            Калькуляторе/Радаре/Журнале; редактируемая вкладка может быть другой —
+            удобно доработать вариант, не трогая то, что уже используется вживую. */}
+        <div className="flex gap-2" style={{marginBottom:16, flexWrap:'wrap', alignItems:'center'}}>
+          {strategies.map((s) => (
+            <div key={s.id} style={{display:'flex', alignItems:'center', gap:2}}>
+              <button
+                className={`btn btn-sm ${editingId === s.id ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setEditingId(s.id)}
+                title={s.id === activeStrategyId ? 'Активна сейчас' : 'Кликните, чтобы редактировать'}
+              >
+                {s.id === activeStrategyId && '★ '}{s.name || 'Без названия'}
+              </button>
+              {editingId === s.id && s.id !== activeStrategyId && (
+                <button className="btn btn-ghost btn-sm" title="Сделать активной (будет работать в Калькуляторе/Радаре/Журнале)"
+                  onClick={() => setActiveStrategyId(s.id)}>☆</button>
+              )}
+              {editingId === s.id && strategies.length > 1 && (
+                <button className="btn btn-ghost btn-sm" style={{color:'var(--red)'}} title="Удалить стратегию"
+                  onClick={() => setConfirmDeleteStrategyId(s.id)}>🗑</button>
+              )}
+            </div>
+          ))}
+          <button className="btn btn-ghost btn-sm" onClick={addStrategy}>+ Новая стратегия</button>
+        </div>
+
         <div style={{marginBottom:20}}>
           <div className="text-xs text-muted" style={{marginBottom:8}}>
             Шаблоны — стартовый черновик, не проверенная временем формула. Загрузите один, дальше правьте
@@ -597,6 +669,24 @@ export default function Capital() {
         })}
 
         <div style={{marginBottom:20}}>
+          <div className="calc-section-title">🚪 Выход</div>
+          <div className="text-xs text-muted" style={{marginBottom:10}}>
+            Стоп и тейк каждый по своей логике: фиксированный %, множитель ATR, или у ближайшего уровня
+            S/R / EMA200 (пересчитывается на момент входа). Плюс два необязательных выхода без цены —
+            когда условия входа перестали выполняться, или по времени. В Калькуляторе кнопка «Подставить
+            по стратегии» предложит число из этих настроек, поле остаётся полностью редактируемым.
+          </div>
+          <ExitRulesEditor
+            value={strategy.exitRules}
+            onChange={(next) => setStrategy((s) => ({ ...s, exitRules: next }))}
+            maxBarsEnabled={strategy.exitRules?.maxBars != null}
+            onMaxBarsEnabledChange={(checked) => setStrategy((s) => ({
+              ...s, exitRules: { ...s.exitRules, maxBars: checked ? (s.exitRules.maxBars ?? 20) : null },
+            }))}
+          />
+        </div>
+
+        <div style={{marginBottom:20}}>
           <div className="calc-section-title">✍️ Свои условия</div>
           <div className="text-xs text-muted" style={{marginBottom:10}}>
             Для всего, чего нет в каталоге выше (экзотические индикаторы, проверка новостей) —
@@ -651,7 +741,7 @@ export default function Capital() {
         </div>
 
         <button className="btn btn-primary" onClick={saveStrategy} disabled={savingStrategy}>
-          {savingStrategy ? <><div className="spinner" style={{width:14,height:14}}/> Сохранение...</> : '💾 Сохранить стратегию'}
+          {savingStrategy ? <><div className="spinner" style={{width:14,height:14}}/> Сохранение...</> : '💾 Сохранить стратегии'}
         </button>
       </div>
 
@@ -687,6 +777,27 @@ export default function Capital() {
               <button className="btn btn-ghost" onClick={() => setConfirmTemplate(null)}>Отмена</button>
               <button className="btn btn-primary" onClick={() => { applyTemplate(confirmTemplate); setConfirmTemplate(null); }}>
                 Заменить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDeleteStrategyId && (
+        <div className="modal-overlay" onClick={() => setConfirmDeleteStrategyId(null)}>
+          <div className="modal" style={{maxWidth:420}} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">Удалить стратегию?</h3>
+              <button className="modal-close" onClick={() => setConfirmDeleteStrategyId(null)}>✕</button>
+            </div>
+            <div style={{padding:'16px 0', color:'var(--text-secondary)', fontSize:14, lineHeight:1.6}}>
+              «{strategies.find((s) => s.id === confirmDeleteStrategyId)?.name}» пропадёт из списка. Если передумаете —
+              просто не нажимайте «Сохранить стратегии» внизу страницы.
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setConfirmDeleteStrategyId(null)}>Отмена</button>
+              <button className="btn btn-primary" style={{background:'var(--red)'}} onClick={() => deleteStrategy(confirmDeleteStrategyId)}>
+                Удалить
               </button>
             </div>
           </div>

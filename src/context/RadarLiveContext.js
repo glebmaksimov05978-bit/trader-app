@@ -15,7 +15,7 @@ import { fetchDailyCandles } from '../services/marketData/candles';
 import { computeIndicatorsAtEntry } from '../services/analytics/indicators';
 import { computePatternsAtEntry } from '../services/analytics/patterns';
 import { computeMarketContextAtEntry } from '../services/analytics/marketContext';
-import { evaluateStrategy } from '../services/analytics/strategy';
+import { evaluateStrategy, getActiveStrategy } from '../services/analytics/strategy';
 
 const RadarLiveContext = createContext(null);
 
@@ -30,12 +30,16 @@ export function RadarLiveProvider({ children }) {
 
   // Turning the app account off, or the strategy being cleared, should turn Live off
   // too rather than keep silently polling with nothing meaningful to check.
+  // `getActiveStrategy` returns a fresh object every call (see strategy.js), so the
+  // effect depends on the stable underlying profile fields, not on its return value.
   useEffect(() => {
-    if (!user || !userProfile?.strategy?.conditions?.length) setRadarLive(false);
-  }, [user, userProfile?.strategy]);
+    if (!user || !getActiveStrategy(userProfile)?.conditions?.length) setRadarLive(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, userProfile?.strategy, userProfile?.strategies, userProfile?.activeStrategyId]);
 
   useEffect(() => {
-    if (!radarLive || !user || !userProfile?.strategy?.conditions?.length) return;
+    const activeStrategy = getActiveStrategy(userProfile);
+    if (!radarLive || !user || !activeStrategy?.conditions?.length) return;
     let cancelled = false;
 
     const checkOne = async (item) => {
@@ -52,7 +56,7 @@ export function RadarLiveProvider({ children }) {
         const patterns = computePatternsAtEntry(candles, now);
         const marketContext = computeMarketContextAtEntry(candles, now);
         if (!indicators) throw new Error('Нет исторических свечей по этому тикеру');
-        const result = evaluateStrategy(userProfile.strategy, { indicators, patterns, marketContext, plan: {} });
+        const result = evaluateStrategy(activeStrategy, { indicators, patterns, marketContext, plan: {} });
         return { result, error: null };
       } catch (e) {
         return { result: null, error: e.message || 'Не удалось загрузить данные' };
@@ -67,7 +71,7 @@ export function RadarLiveProvider({ children }) {
         setRadarResults((s) => ({ ...s, [item.id]: { result, error } }));
         if (!result?.total) continue;
         const pct = Math.round((result.passed / result.total) * 100);
-        const threshold = userProfile?.strategy?.readinessThreshold ?? 100;
+        const threshold = activeStrategy?.readinessThreshold ?? 100;
         const prev = prevPctRef.current[item.id];
         // Notify only on the crossing itself, not every poll a ticker stays ready —
         // and the first poll of a session just records the baseline silently, so

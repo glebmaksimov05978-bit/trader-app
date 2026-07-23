@@ -9,7 +9,7 @@ import { fetchDailyCandles } from '../../services/marketData/candles';
 import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { computeMarketContextAtEntry } from '../../services/analytics/marketContext';
-import { evaluateStrategy } from '../../services/analytics/strategy';
+import { evaluateStrategy, getActiveStrategy } from '../../services/analytics/strategy';
 import { useRadarLive } from '../../context/RadarLiveContext';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -39,6 +39,7 @@ function KpiCard({ className, front, onInfo }) {
 
 export default function Dashboard() {
   const { user, userProfile } = useAuth();
+  const activeStrategy = getActiveStrategy(userProfile);
   const [trades, setTrades] = useState([]);
   const [stats, setStats] = useState(null);
   const [equity, setEquity] = useState([]);
@@ -91,8 +92,8 @@ export default function Dashboard() {
       const patterns = computePatternsAtEntry(candles, now);
       const marketContext = computeMarketContextAtEntry(candles, now);
       if (!indicators) throw new Error('Нет исторических свечей по этому тикеру');
-      const result = userProfile?.strategy?.conditions?.length
-        ? evaluateStrategy(userProfile.strategy, { indicators, patterns, marketContext, plan: {} })
+      const result = activeStrategy?.conditions?.length
+        ? evaluateStrategy(activeStrategy, { indicators, patterns, marketContext, plan: {} })
         : null;
       setRadarState((s) => ({ ...s, [item.id]: { loading: false, result, error: null } }));
       return result;
@@ -316,7 +317,7 @@ export default function Dashboard() {
           <div className="section-title" style={{alignItems:'center'}}>
             <div className="section-title-icon">📡</div>
             Радар
-            {!userProfile?.strategy?.conditions?.length ? (
+            {!activeStrategy?.conditions?.length ? (
               <span style={{fontWeight:400, fontSize:12, color:'var(--text-muted)', marginLeft:8}}>
                 стратегия не настроена — <a href="/capital" style={{color:'var(--accent-primary)'}}>задать в Капитале</a>
               </span>
@@ -345,7 +346,7 @@ export default function Dashboard() {
             <div className="text-xs text-muted" style={{marginBottom:10}}>
               Автопроверка каждые 5 минут, пока открыта эта вкладка. Уведомление придёт, когда
               процент выполненных условий по тикеру достигнет порога готовности из вашей стратегии
-              {userProfile?.strategy?.readinessThreshold == null && ' (порог не задан — уведомим при 100%)'}
+              {activeStrategy?.readinessThreshold == null && ' (порог не задан — уведомим при 100%)'}
             </div>
           )}
           <div className="flex flex-col gap-2">

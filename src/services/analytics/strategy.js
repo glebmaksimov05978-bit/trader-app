@@ -9,6 +9,7 @@
 // A condition is EXCLUDED from the N/M count (not counted as failed) when the data it
 // needs isn't available yet (e.g. SMA/EMA200 on a freshly-listed ticker, or no plan
 // entered in the Calculator) — an honest "не хватает данных", not a silent fail.
+import { defaultExitRules } from './exitRules';
 
 // Price-relative conditions compare against the trader's own planned entry price when
 // one exists (limit order in the Calculator) — comparing a limit-order plan against the
@@ -232,7 +233,36 @@ export const CONDITION_CATALOG = [
 const CATALOG_BY_ID = Object.fromEntries(CONDITION_CATALOG.map((c) => [c.id, c]));
 
 export function defaultStrategy() {
-  return { name: 'Моя стратегия', conditions: [], customConditions: [] };
+  return {
+    id: `strategy_${Date.now()}`, name: 'Моя стратегия',
+    conditions: [], customConditions: [], exitRules: defaultExitRules(),
+  };
+}
+
+// Multiple saved strategies (real user request: switch between a few instead of typing
+// numbers over every time) live as an ARRAY on the profile (`userProfile.strategies`) —
+// not a separate Firestore collection, which would need its own security rules deployed
+// for no real benefit at the size a trader actually keeps (a handful, comfortably under
+// any document-size concern). `userProfile.activeStrategyId` marks which one drives the
+// Calculator/Radar/Journal live checks; Бэктест can run ANY saved one, not just active.
+//
+// Backward compatible with accounts that still only have the old singular
+// `userProfile.strategy` — synthesized into a one-item list here so every caller can
+// switch to this function without a migration script; the array is only actually
+// WRITTEN the next time Capital.js saves.
+export function getStrategies(userProfile) {
+  if (Array.isArray(userProfile?.strategies) && userProfile.strategies.length) {
+    return userProfile.strategies.map((s) => ({ ...s, exitRules: s.exitRules || defaultExitRules() }));
+  }
+  if (userProfile?.strategy) {
+    return [{ id: 'default', ...userProfile.strategy, exitRules: userProfile.strategy.exitRules || defaultExitRules() }];
+  }
+  return [defaultStrategy()];
+}
+
+export function getActiveStrategy(userProfile) {
+  const list = getStrategies(userProfile);
+  return list.find((s) => s.id === userProfile?.activeStrategyId) || list[0];
 }
 
 // Presets for the "Свои условия" free-form list in Capital.js — real user request: give

@@ -2,17 +2,20 @@
 //
 // Admin/trusted-only tool — the "internal instrument" phase agreed with the trader:
 // prove the engine's numbers are honest on real history before any client sees a
-// backtest result. Runs the trader's OWN saved strategy (from Капитал) against real
+// backtest result. Runs one of the trader's SAVED strategies (from Капитал) against real
 // candle history via runBacktest() (services/backtest/engine.js) — same evaluateStrategy
 // the Calculator/Radar/Journal already use, so every new condition added to the
 // constructor is backtestable for free, no changes needed here.
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { fetchDailyCandles, TIMEFRAMES } from '../../services/marketData/candles';
 import { runBacktest } from '../../services/backtest/engine';
+import { getStrategies, getActiveStrategy } from '../../services/analytics/strategy';
+import { defaultExitRules } from '../../services/analytics/exitRules';
 import { calcStats } from '../../services/trades';
 import { formatNumber } from '../../utils/calculator';
 import CandleChart from '../shared/CandleChart';
+import ExitRulesEditor from '../shared/ExitRulesEditor';
 import toast from 'react-hot-toast';
 
 const EXIT_REASON_LABELS = {
@@ -30,26 +33,32 @@ function StatCard({ label, value, tone }) {
 
 export default function Backtest() {
   const { userProfile } = useAuth();
-  const strategy = userProfile?.strategy;
+  const strategies = getStrategies(userProfile);
+  const activeStrategy = getActiveStrategy(userProfile);
+
+  const [selectedStrategyId, setSelectedStrategyId] = useState(activeStrategy?.id);
+  const selectedStrategy = strategies.find((s) => s.id === selectedStrategyId) || strategies[0];
 
   const [ticker, setTicker] = useState('');
   const [instrumentType, setInstrumentType] = useState('future');
   const [years, setYears] = useState(3);
-  const [exitMode, setExitMode] = useState('fixed'); // 'fixed' | 'atr'
-  const [stopPct, setStopPct] = useState(2);
-  const [takePct, setTakePct] = useState(4);
-  const [stopAtrMult, setStopAtrMult] = useState(1.5);
-  const [takeAtrMult, setTakeAtrMult] = useState(3);
-  const [onSignalLoss, setOnSignalLoss] = useState(true);
+  // Local, editable copy of the selected strategy's exit rules — the trader can crank
+  // these for a "what if" run right here without touching what's saved in Капитал (real
+  // user request: "можно временно крутить"). Resets to the strategy's saved rules
+  // whenever a different strategy is picked from the dropdown.
+  const [exitRules, setExitRules] = useState(selectedStrategy?.exitRules || defaultExitRules());
+  useEffect(() => {
+    setExitRules(selectedStrategy?.exitRules || defaultExitRules());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStrategy?.id]);
   const [maxBarsEnabled, setMaxBarsEnabled] = useState(false);
-  const [maxBars, setMaxBars] = useState(20);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null); // { trades, hadCustomConditions, barsEvaluated, ambiguousBars, candles }
   const [selectedTradeIdx, setSelectedTradeIdx] = useState(null);
 
-  const hasConditions = (strategy?.conditions?.length || 0) > 0;
+  const hasConditions = (selectedStrategy?.conditions?.length || 0) > 0;
 
   const run = async () => {
     if (!ticker.trim()) { toast.error('Введите тикер'); return; }
@@ -69,17 +78,9 @@ export default function Backtest() {
       });
       if (!candles?.length) throw new Error('Нет исторических свечей по этому тикеру');
 
-      const exitRules = {
-        stopPct: exitMode === 'fixed' ? stopPct : null,
-        takePct: exitMode === 'fixed' ? takePct : null,
-        stopAtrMult: exitMode === 'atr' ? stopAtrMult : null,
-        takeAtrMult: exitMode === 'atr' ? takeAtrMult : null,
-        onSignalLoss,
-        maxBars: maxBarsEnabled ? maxBars : null,
-      };
-
       const engineResult = runBacktest({
-        candles, strategy, timeframeMinutes: TIMEFRAMES.D1.minutes, exitRules,
+        candles, strategy: selectedStrategy, timeframeMinutes: TIMEFRAMES.D1.minutes,
+        exitRules: { ...exitRules, maxBars: maxBarsEnabled ? exitRules.maxBars : null },
       });
       setResult({ ...engineResult, candles });
       if (!engineResult.trades.length) {
@@ -101,19 +102,28 @@ export default function Backtest() {
         <div>
           <h1 className="page-title">🧪 Бэктест (внутренний инструмент)</h1>
           <p className="page-subtitle">
-            Прогон твоей стратегии из Капитала по реальной истории. Видно только тебе — цифры ещё калибруются, для клиентов пока не показываем.
+            Прогон сохранённой стратегии по реальной истории. Видно только тебе — цифры ещё калибруются, для клиентов пока не показываем.
           </p>
         </div>
       </div>
 
-      {!hasConditions && (
-        <div className="card" style={{marginBottom:16, borderColor:'var(--gold)'}}>
-          <div style={{color:'var(--gold)'}}>⚠️ В стратегии (вкладка «Капитал») нет ни одного включённого условия входа — сначала настрой её там.</div>
-        </div>
-      )}
-
       <div className="card" style={{marginBottom:16}}>
         <div className="section-title"><div className="section-title-icon">⚙️</div>Параметры прогона</div>
+
+        <div className="input-group" style={{maxWidth:320, marginBottom:12}}>
+          <label className="input-label">Стратегия</label>
+          <select className="input" value={selectedStrategyId} onChange={(e) => setSelectedStrategyId(e.target.value)}>
+            {strategies.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}{s.id === activeStrategy?.id ? ' (активная)' : ''}</option>
+            ))}
+          </select>
+        </div>
+
+        {!hasConditions && (
+          <div style={{marginBottom:12, color:'var(--gold)', fontSize:13}}>
+            ⚠️ У этой стратегии нет ни одного включённого условия входа — настрой её в «Капитале».
+          </div>
+        )}
 
         <div className="flex gap-2" style={{marginBottom:12, flexWrap:'wrap'}}>
           <button className={`btn ${instrumentType === 'future' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setInstrumentType('future')}>⚡ Фьючерс</button>
@@ -127,40 +137,11 @@ export default function Backtest() {
           </div>
         </div>
 
-        <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:6}}>Правила выхода (можно включить несколько — закрывается по тому, что сработает первым)</div>
-        <div className="flex gap-2" style={{marginBottom:10, flexWrap:'wrap'}}>
-          <button className={`btn btn-sm ${exitMode === 'fixed' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setExitMode('fixed')}>Стоп/тейк в %</button>
-          <button className={`btn btn-sm ${exitMode === 'atr' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setExitMode('atr')}>Стоп/тейк по ATR</button>
+        <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:8}}>
+          Правила выхода — подставлены из выбранной стратегии, можно временно подкрутить для этого прогона (в Капитале не сохранится)
         </div>
-        {exitMode === 'fixed' ? (
-          <div className="flex gap-2" style={{marginBottom:10, alignItems:'center', flexWrap:'wrap'}}>
-            <label style={{fontSize:12, color:'var(--text-muted)'}}>Стоп, %</label>
-            <input className="input" type="number" step="0.1" value={stopPct} onChange={(e) => setStopPct(parseFloat(e.target.value) || 0)} style={{width:80}} />
-            <label style={{fontSize:12, color:'var(--text-muted)'}}>Тейк, %</label>
-            <input className="input" type="number" step="0.1" value={takePct} onChange={(e) => setTakePct(parseFloat(e.target.value) || 0)} style={{width:80}} />
-          </div>
-        ) : (
-          <div className="flex gap-2" style={{marginBottom:10, alignItems:'center', flexWrap:'wrap'}}>
-            <label style={{fontSize:12, color:'var(--text-muted)'}}>Стоп, ×ATR</label>
-            <input className="input" type="number" step="0.1" value={stopAtrMult} onChange={(e) => setStopAtrMult(parseFloat(e.target.value) || 0)} style={{width:80}} />
-            <label style={{fontSize:12, color:'var(--text-muted)'}}>Тейк, ×ATR</label>
-            <input className="input" type="number" step="0.1" value={takeAtrMult} onChange={(e) => setTakeAtrMult(parseFloat(e.target.value) || 0)} style={{width:80}} />
-          </div>
-        )}
-        <div className="flex gap-2" style={{marginBottom:10, alignItems:'center', flexWrap:'wrap'}}>
-          <label className="flex gap-2" style={{alignItems:'center', fontSize:13, cursor:'pointer'}}>
-            <input type="checkbox" checked={onSignalLoss} onChange={(e) => setOnSignalLoss(e.target.checked)} />
-            Выйти, если условия стратегии перестали выполняться (сигнал пропал)
-          </label>
-        </div>
-        <div className="flex gap-2" style={{marginBottom:16, alignItems:'center', flexWrap:'wrap'}}>
-          <label className="flex gap-2" style={{alignItems:'center', fontSize:13, cursor:'pointer'}}>
-            <input type="checkbox" checked={maxBarsEnabled} onChange={(e) => setMaxBarsEnabled(e.target.checked)} />
-            Выйти по времени, макс. дней в сделке
-          </label>
-          {maxBarsEnabled && (
-            <input className="input" type="number" min="1" value={maxBars} onChange={(e) => setMaxBars(parseInt(e.target.value) || 1)} style={{width:80}} />
-          )}
+        <div style={{marginBottom:16}}>
+          <ExitRulesEditor value={exitRules} onChange={setExitRules} maxBarsEnabled={maxBarsEnabled} onMaxBarsEnabledChange={setMaxBarsEnabled} />
         </div>
 
         <button className="btn btn-primary" onClick={run} disabled={loading}>

@@ -11,7 +11,8 @@ import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { computeMarketContextAtEntry } from '../../services/analytics/marketContext';
 import { fetchActiveFutureCard, fetchMoexSecurityInfo } from '../../services/marketData/futuresSpecs';
-import { evaluateStrategy } from '../../services/analytics/strategy';
+import { evaluateStrategy, getActiveStrategy } from '../../services/analytics/strategy';
+import { computeStopPrice, computeTakePrice, exitTypeLabel } from '../../services/analytics/exitRules';
 import TechnicalAnalysisBlock, { PATTERN_LABELS, InfoTip } from '../shared/TechnicalAnalysisBlock';
 import CandleChart from '../shared/CandleChart';
 import StrategyChecklist from '../shared/StrategyChecklist';
@@ -61,6 +62,7 @@ function loadCalcDraft() {
 
 export default function Calculator() {
   const { user, userProfile } = useAuth();
+  const activeStrategy = getActiveStrategy(userProfile);
   const draft = useRef(loadCalcDraft()).current;
   const [instrumentType, setInstrumentType] = useState(draft?.instrumentType || 'future');
   const [priceSource, setPriceSource] = useState(draft?.priceSource || 'tinkoff'); // 'tinkoff' | 'moex'
@@ -259,11 +261,11 @@ export default function Calculator() {
   // itself — see strategy.js). Reset happens once `resolvedTicker` exists, below.
   const [manualChecks, setManualChecks] = useState({});
 
-  const hasAnyConditions = userProfile?.strategy?.conditions?.length || userProfile?.strategy?.customConditions?.length;
+  const hasAnyConditions = activeStrategy?.conditions?.length || activeStrategy?.customConditions?.length;
   const strategyResult = useMemo(() => {
     if (!hasAnyConditions) return null;
     if (!taState.data) return null;
-    return evaluateStrategy(userProfile.strategy, {
+    return evaluateStrategy(activeStrategy, {
       indicators: taState.data.indicators,
       patterns: taState.data.patterns,
       marketContext: taState.data.marketContext,
@@ -279,7 +281,8 @@ export default function Calculator() {
       },
       manualChecks,
     });
-  }, [hasAnyConditions, userProfile?.strategy, taState.data, displayResult, form.riskPercent, form.entryPrice, activeDirection, manualChecks]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasAnyConditions, userProfile?.strategy, userProfile?.strategies, userProfile?.activeStrategyId, taState.data, displayResult, form.riskPercent, form.entryPrice, activeDirection, manualChecks]);
 
   const rrColor = !displayResult ? '' : displayResult.rr >= 2 ? 'var(--green)' : displayResult.rr >= 1 ? 'var(--gold)' : 'var(--red)';
 
@@ -876,6 +879,44 @@ export default function Calculator() {
               </div>
             </div>
 
+            {/* Not auto-filled on load — the trader deliberately kept stop/take fully
+                manual ("слишком индивидуальная штука"). This button offers the active
+                strategy's saved exit rule as a starting number without touching the
+                field until asked; % и ATR compute instantly from entryPrice, "у уровня"
+                needs the тех.анализ panel loaded first (real EMA200/S-R data, not a
+                guess), and "сигнал"/"время" rules have no price at all — explained, not
+                silently skipped. */}
+            {activeStrategy?.exitRules && form.entryPrice && activeDirection && (
+              <div style={{marginBottom:16}}>
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => {
+                  const entry = parseFloat(form.entryPrice);
+                  const rules = activeStrategy.exitRules;
+                  const needsLiveData = rules.stopType === 'atr' || rules.takeType === 'atr' || rules.stopType === 'level' || rules.takeType === 'level';
+                  if (needsLiveData && !taState.data) {
+                    toast.error('Сначала загрузите «Технический анализ по тикеру» — ATR и уровни считаются оттуда');
+                    return;
+                  }
+                  const priceCtx = { atr: taState.data?.indicators?.atr14 ?? null, patterns: taState.data?.patterns ?? null };
+                  const stopPrice = computeStopPrice(activeDirection, entry, rules, priceCtx);
+                  const takePrice = computeTakePrice(activeDirection, entry, rules, priceCtx);
+                  const notes = [];
+                  // A plain `.`-decimal string, NOT formatNumber()'s ru-RU-locale output
+                  // (comma decimal, non-breaking-space thousands) — an <input type="number">
+                  // silently blanks itself on an invalid string like "2 646,00" (real bug
+                  // caught live: toast said the number computed, the field stayed empty).
+                  if (stopPrice != null) { set('stopLoss', stopPrice.toFixed(2)); }
+                  else notes.push(`стоп: ${rules.stopType === 'none' ? 'не задан в стратегии' : `«${exitTypeLabel(rules.stopType, rules.stopLevelSource)}» — нет фиксированной цены`}`);
+                  if (takePrice != null) { set('takeProfit', takePrice.toFixed(2)); }
+                  else notes.push(`тейк: ${rules.takeType === 'none' ? 'не задан в стратегии' : `«${exitTypeLabel(rules.takeType, rules.takeLevelSource)}» — нет фиксированной цены`}`);
+                  if (stopPrice == null && takePrice == null) toast.error('Ни для стопа, ни для тейка нет числа: ' + notes.join('; '));
+                  else if (notes.length) toast(`Подставлено частично — ${notes.join('; ')}`, { icon: 'ℹ️' });
+                  else toast.success('Стоп/тейк подставлены по стратегии — можно поправить руками');
+                }}>
+                  📐 Подставить по стратегии «{activeStrategy.name}»
+                </button>
+              </div>
+            )}
+
             <div className="divider" />
 
             {/* Управление риском */}
@@ -1130,13 +1171,13 @@ export default function Calculator() {
 
       {taOpen && strategyResult && (
         <StrategyChecklist
-          strategyName={userProfile?.strategy?.name}
+          strategyName={activeStrategy?.name}
           result={strategyResult}
-          readinessThreshold={userProfile?.strategy?.readinessThreshold}
+          readinessThreshold={activeStrategy?.readinessThreshold}
           onToggleManual={(id) => setManualChecks(m => ({ ...m, [id]: !m[id] }))}
         />
       )}
-      {taOpen && taState.data && !userProfile?.strategy?.conditions?.length && (
+      {taOpen && taState.data && !activeStrategy?.conditions?.length && (
         <div className="card" style={{marginTop:16, textAlign:'center', padding:'20px'}}>
           <div className="text-sm text-secondary">
             Стратегия ещё не настроена — соберите чек-лист условий во вкладке{' '}

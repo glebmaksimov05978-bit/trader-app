@@ -14,6 +14,7 @@ import { computeIndicatorsAtEntry } from '../analytics/indicators';
 import { computePatternsAtEntry } from '../analytics/patterns';
 import { computeMarketContextAtEntry } from '../analytics/marketContext';
 import { evaluateStrategy } from '../analytics/strategy';
+import { computeStopPrice, computeTakePrice } from '../analytics/exitRules';
 
 // Bars needed before the first entry check — mostly so SMA200/ATR-average windows have
 // real data instead of nulls flooding every condition as "na". Not a hard requirement
@@ -31,26 +32,6 @@ function buildCtx(candles, atDate, direction, timeframeMinutes) {
 function readinessPercent(strategy, ctx) {
   const { total, passed } = evaluateStrategy(strategy, ctx);
   return { total, passed, pct: total > 0 ? (passed / total) * 100 : 0 };
-}
-
-function computeStopPrice(direction, entryPrice, { stopPct, stopAtrMult, atr }) {
-  if (stopAtrMult != null && atr != null) {
-    return direction === 'long' ? entryPrice - atr * stopAtrMult : entryPrice + atr * stopAtrMult;
-  }
-  if (stopPct != null) {
-    return direction === 'long' ? entryPrice * (1 - stopPct / 100) : entryPrice * (1 + stopPct / 100);
-  }
-  return null;
-}
-
-function computeTakePrice(direction, entryPrice, { takePct, takeAtrMult, atr }) {
-  if (takeAtrMult != null && atr != null) {
-    return direction === 'long' ? entryPrice + atr * takeAtrMult : entryPrice - atr * takeAtrMult;
-  }
-  if (takePct != null) {
-    return direction === 'long' ? entryPrice * (1 + takePct / 100) : entryPrice * (1 - takePct / 100);
-  }
-  return null;
 }
 
 // Intrabar stop/take check using the bar's own high/low — the finest granularity daily/
@@ -104,13 +85,9 @@ function stripCustomConditions(strategy) {
  * @param {object} params
  * @param {Array<{date:Date,open:number,high:number,low:number,close:number,volume:number}>} params.candles
  *   Ascending by date. Must be REAL candles only — never include synthetic/future bars.
- * @param {object} params.strategy - same shape as userProfile.strategy (conditions, customConditions, readinessThreshold).
+ * @param {object} params.strategy - one saved strategy (conditions, customConditions, readinessThreshold, exitRules — see exitRules.js).
  * @param {number|null} [params.timeframeMinutes] - gates swing-pattern detectors, same as the live app.
- * @param {object} [params.exitRules]
- * @param {number|null} [params.exitRules.stopPct] - fixed stop distance, % of entry price.
- * @param {number|null} [params.exitRules.takePct] - fixed take distance, % of entry price.
- * @param {number|null} [params.exitRules.stopAtrMult] - stop distance as a multiple of ATR(14) at entry. Takes priority over stopPct if both set.
- * @param {number|null} [params.exitRules.takeAtrMult] - take distance as a multiple of ATR(14) at entry. Takes priority over takePct if both set.
+ * @param {object} [params.exitRules] - overrides strategy.exitRules for this run (see services/analytics/exitRules.js:defaultExitRules) — lets the Бэктест page experiment without saving.
  * @param {boolean} [params.exitRules.onSignalLoss] - exit when the strategy's own readiness % drops below its threshold.
  * @param {number|null} [params.exitRules.maxBars] - exit after N bars regardless of anything else.
  * @param {number} [params.warmupBars]
@@ -120,12 +97,13 @@ export function runBacktest({
   candles,
   strategy,
   timeframeMinutes = null,
-  exitRules = {},
+  exitRules = null, // defaults to strategy.exitRules if not given an explicit override
   warmupBars = DEFAULT_WARMUP_BARS,
 }) {
   const { strategy: backtestStrategy, hadCustom } = stripCustomConditions(strategy);
   const threshold = backtestStrategy.readinessThreshold ?? 60;
-  const { stopPct = null, takePct = null, stopAtrMult = null, takeAtrMult = null, onSignalLoss = false, maxBars = null } = exitRules;
+  const rules = exitRules || strategy.exitRules || {};
+  const { onSignalLoss = false, maxBars = null } = rules;
 
   const trades = [];
   let position = null;
@@ -191,9 +169,9 @@ export function runBacktest({
     if (!nextBar) continue; // signal on the last bar — nothing left to execute into
 
     const entryPrice = nextBar.open;
-    const atr = baseCtx.indicators.atr14 ?? null;
-    const stopPrice = computeStopPrice(direction, entryPrice, { stopPct, stopAtrMult, atr });
-    const takePrice = computeTakePrice(direction, entryPrice, { takePct, takeAtrMult, atr });
+    const priceCtx = { atr: baseCtx.indicators.atr14 ?? null, patterns: baseCtx.patterns };
+    const stopPrice = computeStopPrice(direction, entryPrice, rules, priceCtx);
+    const takePrice = computeTakePrice(direction, entryPrice, rules, priceCtx);
     position = {
       direction, entryIndex: i + 1, entryDate: nextBar.date, entryPrice, entryPercent,
       stopPrice, takePrice, barsHeld: 0,

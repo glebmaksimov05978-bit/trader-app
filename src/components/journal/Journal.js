@@ -7,6 +7,7 @@ import { fetchDailyCandles, availableTimeframes, recommendTimeframe, TIMEFRAMES,
 import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { computeMarketContextAtEntry } from '../../services/analytics/marketContext';
+import { getActiveStrategy } from '../../services/analytics/strategy';
 import { isFuturesCode, isCurrencyCode } from '../../services/import/instrumentResolver';
 import { addRadarItem, getRadarItems, deleteRadarItem } from '../../services/radar';
 import { useRadarLive } from '../../context/RadarLiveContext';
@@ -21,6 +22,7 @@ const COLS = ['Тикер', 'Дата', 'Направление', 'Вход', '�
 
 export default function Journal() {
   const { user, userProfile } = useAuth();
+  const activeStrategy = getActiveStrategy(userProfile);
   const { radarLive, setRadarLive, radarUpdatedAt, radarResults } = useRadarLive();
   const [trades, setTrades] = useState([]);
   const [stats, setStats] = useState(null);
@@ -461,7 +463,7 @@ export default function Journal() {
               {/* Same shared Live toggle as the Dashboard widget — real user request:
                   it only existed there, not here where the trader spends more time
                   managing the actual watchlist. */}
-              {userProfile?.strategy?.conditions?.length > 0 && (
+              {activeStrategy?.conditions?.length > 0 && (
                 <button
                   onClick={() => setRadarLive((v) => !v)}
                   title={radarLive ? 'Остановить автопроверку' : 'Проверять все тикеры каждые 5 минут и уведомлять, когда условия стратегии сойдутся (пока открыта вкладка)'}
