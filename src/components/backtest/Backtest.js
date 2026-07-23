@@ -6,16 +6,18 @@
 // candle history via runBacktest() (services/backtest/engine.js) — same evaluateStrategy
 // the Calculator/Radar/Journal already use, so every new condition added to the
 // constructor is backtestable for free, no changes needed here.
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { fetchDailyCandles, TIMEFRAMES } from '../../services/marketData/candles';
 import { runBacktest } from '../../services/backtest/engine';
 import { getStrategies, getActiveStrategy } from '../../services/analytics/strategy';
 import { defaultExitRules } from '../../services/analytics/exitRules';
+import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { calcStats } from '../../services/trades';
 import { formatNumber } from '../../utils/calculator';
 import CandleChart from '../shared/CandleChart';
 import ExitRulesEditor from '../shared/ExitRulesEditor';
+import EquityCurve from './EquityCurve';
 import toast from 'react-hot-toast';
 
 const EXIT_REASON_LABELS = {
@@ -56,7 +58,6 @@ export default function Backtest() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null); // { trades, hadCustomConditions, barsEvaluated, ambiguousBars, candles }
-  const [selectedTradeIdx, setSelectedTradeIdx] = useState(null);
 
   const hasConditions = (selectedStrategy?.conditions?.length || 0) > 0;
 
@@ -66,7 +67,6 @@ export default function Backtest() {
     setLoading(true);
     setError(null);
     setResult(null);
-    setSelectedTradeIdx(null);
     try {
       const candles = await fetchDailyCandles({
         ticker: ticker.trim().toUpperCase(),
@@ -94,7 +94,29 @@ export default function Backtest() {
   };
 
   const stats = result?.trades?.length ? calcStats(result.trades) : null;
-  const selectedTrade = selectedTradeIdx != null ? result?.trades?.[selectedTradeIdx] : null;
+
+  // Compounded equity curve — start at 100, multiply by (1 + trade%/100) for every
+  // CLOSED trade in chronological order. This is the only honest way to combine a
+  // sequence of per-trade % returns into one number when v1 has no real position sizing
+  // (see engine.js) — explicitly a "if you reinvested everything every time" simplification,
+  // not a claim about real risk-managed compounding, and labeled as such below.
+  const equity = useMemo(() => {
+    const closed = (result?.trades || []).filter((t) => t.status === 'closed').sort((a, b) => a.exitDate - b.exitDate);
+    let eq = 100;
+    const points = [{ x: 0, y: 100 }];
+    closed.forEach((t, i) => { eq *= 1 + t.pnlPct / 100; points.push({ x: i + 1, y: eq }); });
+    return { points, totalReturnPct: eq - 100 };
+  }, [result]);
+
+  // Уровни/фигуры для обзорного графика читаются "как сейчас" (на последнюю свечу) —
+  // это не то же самое, что видел движок на каждом баре при прогоне (там свой снимок на
+  // каждый день, без заглядывания вперёд), а быстрый визуальный чек: похожи ли текущие
+  // уровни/фигуры на что-то реальное на глаз.
+  const overviewPatterns = useMemo(() => {
+    if (!result?.candles?.length) return null;
+    const last = result.candles[result.candles.length - 1];
+    return computePatternsAtEntry(result.candles, last.date, { timeframeMinutes: TIMEFRAMES.D1.minutes });
+  }, [result]);
 
   return (
     <div className="page">
@@ -169,10 +191,10 @@ export default function Backtest() {
 
           {stats ? (
             <div className="grid-4" style={{gap:12, marginBottom:16}}>
+              <StatCard label="Накопленная доходность" value={`${equity.totalReturnPct >= 0 ? '+' : ''}${formatNumber(equity.totalReturnPct, 1)}%`} tone={equity.totalReturnPct >= 0 ? 'green' : 'red'} />
               <StatCard label="Сделок" value={stats.total} />
               <StatCard label="Винрейт" value={`${formatNumber(stats.winrate, 1)}%`} tone={stats.winrate >= 50 ? 'green' : 'red'} />
               <StatCard label="Профит-фактор" value={stats.profitFactor === Infinity ? '∞' : formatNumber(stats.profitFactor, 2)} tone={stats.profitFactor >= 1 ? 'green' : 'red'} />
-              <StatCard label="Средний P&L / сделку" value={`${stats.totalPnl >= 0 ? '+' : ''}${formatNumber(stats.totalPnl / stats.total, 2)}%`} tone={stats.totalPnl >= 0 ? 'green' : 'red'} />
             </div>
           ) : (
             <div className="card empty-state" style={{marginBottom:16}}>
@@ -180,8 +202,36 @@ export default function Backtest() {
             </div>
           )}
 
+          {equity.points.length > 1 && (
+            <div className="card" style={{marginBottom:16}}>
+              <div className="section-title"><div className="section-title-icon">📈</div>Кривая капитала</div>
+              <p className="text-xs text-muted" style={{marginBottom:8}}>
+                Если бы каждая сделка целиком реинвестировала прошлый результат — не реальный размер позиции
+                (в v1 его ещё нет), а честный способ свернуть цепочку % в одно число.
+              </p>
+              <EquityCurve points={equity.points} />
+            </div>
+          )}
+
           {result.trades?.length > 0 && (
             <div className="card" style={{marginBottom:16}}>
+              <div className="section-title"><div className="section-title-icon">📊</div>График сделок</div>
+              <p className="text-xs text-muted" style={{marginBottom:8}}>
+                Все сделки прогона сразу на графике — ▲/▼ вход, ● выход. Слои S/R/EMA/Боллинджер/RSI/MACD
+                считаются НА ПОСЛЕДНЮЮ свечу (как сейчас), не пересчитываются на каждый день прогона — это
+                визуальная проверка «похоже ли на правду», не то, что видел движок в момент каждой сделки.
+              </p>
+              <CandleChart
+                candles={result.candles}
+                patterns={overviewPatterns}
+                ticker={ticker.toUpperCase()}
+                trades={result.trades}
+              />
+            </div>
+          )}
+
+          {result.trades?.length > 0 && (
+            <div className="card">
               <div className="section-title"><div className="section-title-icon">📋</div>Сделки ({result.trades.length})</div>
               <div style={{overflowX:'auto'}}>
                 <table className="table" style={{fontSize:13}}>
@@ -193,8 +243,7 @@ export default function Backtest() {
                   </thead>
                   <tbody>
                     {result.trades.map((t, i) => (
-                      <tr key={i} onClick={() => setSelectedTradeIdx(i)}
-                        style={{cursor:'pointer', background: selectedTradeIdx === i ? 'var(--bg-surface-3)' : undefined}}>
+                      <tr key={i}>
                         <td><span className={`badge ${t.direction === 'long' ? 'badge-green' : 'badge-red'}`}>{t.direction === 'long' ? '📈 Лонг' : '📉 Шорт'}</span></td>
                         <td className="text-secondary">{t.entryDate.toLocaleDateString('ru-RU')}</td>
                         <td>{formatNumber(t.entryPrice, 2)}</td>
@@ -209,21 +258,6 @@ export default function Backtest() {
                   </tbody>
                 </table>
               </div>
-            </div>
-          )}
-
-          {selectedTrade && (
-            <div className="card">
-              <div className="section-title"><div className="section-title-icon">📊</div>Сделка на графике</div>
-              <CandleChart
-                candles={result.candles}
-                ticker={ticker.toUpperCase()}
-                direction={selectedTrade.direction}
-                entryPrice={selectedTrade.entryPrice}
-                exitPrice={selectedTrade.status === 'closed' ? selectedTrade.exitPrice : null}
-                entryMarker={{ date: selectedTrade.entryDate, price: selectedTrade.entryPrice, direction: selectedTrade.direction }}
-                exitMarker={{ date: selectedTrade.exitDate, price: selectedTrade.exitPrice }}
-              />
             </div>
           )}
         </>

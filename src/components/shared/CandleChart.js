@@ -170,6 +170,39 @@ function buildMarkersAndFills(legs, direction, candleTimes, colors) {
   return { markers, fillsByBar };
 }
 
+// All of a backtest's trades on one chart at once — different from buildMarkersAndFills
+// above, which groups the FILLS of a single real trade. Here each backtest trade is
+// already a clean single entry + single exit (the engine doesn't model partial fills),
+// so it's just two markers per trade: an arrow for the entry (up=long/down=short, like
+// "Покупка"/"Продажа" on a terminal) and a circle for the exit, colored by whether that
+// trade won or lost — the trader wants to eyeball "does a green circle actually land
+// where the chart looks like it should have worked out".
+function buildTradesMarkers(trades, colors) {
+  if (!trades?.length) return [];
+  const markers = [];
+  trades.forEach((t) => {
+    markers.push({
+      time: toChartTime(toDate(t.entryDate)),
+      position: t.direction === 'short' ? 'aboveBar' : 'belowBar',
+      color: t.direction === 'short' ? colors.red : colors.green,
+      shape: t.direction === 'short' ? 'arrowDown' : 'arrowUp',
+      text: t.direction === 'short' ? 'Продажа' : 'Покупка',
+    });
+    if (t.status === 'closed' && t.exitDate) {
+      const win = t.pnlPct >= 0;
+      markers.push({
+        time: toChartTime(toDate(t.exitDate)),
+        position: 'aboveBar',
+        color: win ? colors.green : colors.red,
+        shape: 'circle',
+        text: win ? `+${t.pnlPct.toFixed(1)}%` : `${t.pnlPct.toFixed(1)}%`,
+      });
+    }
+  });
+  markers.sort((a, b) => a.time - b.time);
+  return markers;
+}
+
 // Small circular color swatch + native color input — the trader picks each EMA/Bollinger
 // color themselves.
 function ColorPicker({ color, onChange }) {
@@ -203,6 +236,7 @@ export default function CandleChart({
   entryPrice,  // avg entry price — draws the entry line + P&L zone (Journal only)
   exitPrice,   // avg exit price — closes the P&L zone (null while the trade is open)
   planLines,   // { entry, stop, take } — Calculator plan
+  trades,      // Бэктест: [{ direction, entryDate, exitDate, status, pnlPct }, ...] — ALL trades on one chart, overrides legs/entryMarker/exitMarker
 }) {
   const containerRef = useRef(null);
   const tooltipRef = useRef(null);
@@ -300,13 +334,18 @@ export default function CandleChart({
       time: toChartTime(c.date), open: c.open, high: c.high, low: c.low, close: c.close,
     })));
     // Open on the most recent quarter of bars instead of `fitContent()`, which crammed
-    // the whole ~2.5-year lookback into one unreadable smear (real user report).
+    // the whole ~2.5-year lookback into one unreadable smear (real user report) — EXCEPT
+    // for a backtest's full-history overview (`trades` given), where seeing the whole
+    // run at once is the entire point.
     const n = candles.length;
-    if (n > 4) {
+    if (trades?.length) {
+      chartRef.current?.timeScale().fitContent();
+    } else if (n > 4) {
       chartRef.current?.timeScale().setVisibleLogicalRange({ from: n - Math.ceil(n / 4), to: n - 1 });
     } else {
       chartRef.current?.timeScale().fitContent();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candles]);
 
   // Overlays + markers + P&L + volume. Rebuilt whenever inputs change.
@@ -490,7 +529,10 @@ export default function CandleChart({
       gold: themeColor('--gold', '#f59e0b'), blue: themeColor('--blue', '#3b82f6'),
     };
     let markers = [];
-    if (layers.pnl || !isTrade) {
+    if (trades?.length) {
+      markers = buildTradesMarkers(trades, markerColors);
+      fillsByBarRef.current = new Map();
+    } else if (layers.pnl || !isTrade) {
       const built = buildMarkersAndFills(legs, direction, times, markerColors);
       markers = built.markers;
       fillsByBarRef.current = built.fillsByBar;
@@ -508,7 +550,7 @@ export default function CandleChart({
     } else {
       seriesRef.current.markersPlugin.setMarkers(markers);
     }
-  }, [candles, patterns, layers, entryMarker, exitMarker, legs, direction, entryPrice, exitPrice, planLines, colors, isTrade]);
+  }, [candles, patterns, layers, entryMarker, exitMarker, legs, direction, entryPrice, exitPrice, planLines, colors, isTrade, trades]);
 
   const rsiMacdPanes = (layers.rsi ? 110 : 0) + (layers.macd ? 110 : 0);
   const chartHeight = fullscreen ? `calc(100vh - 150px)` : `${300 + rsiMacdPanes}px`;
