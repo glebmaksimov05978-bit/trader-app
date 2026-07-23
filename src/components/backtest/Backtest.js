@@ -12,12 +12,15 @@ import { fetchDailyCandles, TIMEFRAMES } from '../../services/marketData/candles
 import { runBacktest } from '../../services/backtest/engine';
 import { getStrategies, getActiveStrategy } from '../../services/analytics/strategy';
 import { defaultExitRules } from '../../services/analytics/exitRules';
+import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
+import { computeMarketContextAtEntry } from '../../services/analytics/marketContext';
 import { calcStats } from '../../services/trades';
 import { formatNumber } from '../../utils/calculator';
 import CandleChart from '../shared/CandleChart';
 import ExitRulesEditor from '../shared/ExitRulesEditor';
 import EquityCurve from './EquityCurve';
+import TechnicalAnalysisBlock from '../shared/TechnicalAnalysisBlock';
 import toast from 'react-hot-toast';
 
 const EXIT_REASON_LABELS = {
@@ -58,6 +61,7 @@ export default function Backtest() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null); // { trades, hadCustomConditions, barsEvaluated, ambiguousBars, candles }
+  const [selectedTradeIdx, setSelectedTradeIdx] = useState(null);
 
   const hasConditions = (selectedStrategy?.conditions?.length || 0) > 0;
 
@@ -67,6 +71,7 @@ export default function Backtest() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setSelectedTradeIdx(null);
     try {
       const candles = await fetchDailyCandles({
         ticker: ticker.trim().toUpperCase(),
@@ -117,6 +122,24 @@ export default function Backtest() {
     const last = result.candles[result.candles.length - 1];
     return computePatternsAtEntry(result.candles, last.date, { timeframeMinutes: TIMEFRAMES.D1.minutes });
   }, [result]);
+
+  const selectedTrade = selectedTradeIdx != null ? result?.trades?.[selectedTradeIdx] : null;
+
+  // Exactly what the engine itself saw on the bar it decided to enter — same functions,
+  // same `entryDate`, no lookahead. This is the whole point of the drill-down (real user
+  // request): the arrow on the overview chart says "entered here", this says WHY —
+  // RSI/MACD/Bollinger numbers, the full list of support/resistance levels with touch
+  // counts, and the pattern candidates with their confidence — so the trader can compare
+  // what the algorithm claims against what they see with their own eyes, not just trust
+  // a green arrow.
+  const selectedTradeSnapshot = useMemo(() => {
+    if (!selectedTrade || !result?.candles?.length) return null;
+    const indicators = computeIndicatorsAtEntry(result.candles, selectedTrade.entryDate);
+    const patterns = computePatternsAtEntry(result.candles, selectedTrade.entryDate, { timeframeMinutes: TIMEFRAMES.D1.minutes });
+    const marketContext = computeMarketContextAtEntry(result.candles, selectedTrade.entryDate);
+    return { indicators, patterns, marketContext };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTradeIdx, result]);
 
   return (
     <div className="page">
@@ -231,8 +254,9 @@ export default function Backtest() {
           )}
 
           {result.trades?.length > 0 && (
-            <div className="card">
+            <div className="card" style={{marginBottom: selectedTrade ? 16 : 0}}>
               <div className="section-title"><div className="section-title-icon">📋</div>Сделки ({result.trades.length})</div>
+              <p className="text-xs text-muted" style={{marginBottom:8}}>Клик по строке — что именно алгоритм увидел на момент входа этой сделки.</p>
               <div style={{overflowX:'auto'}}>
                 <table className="table" style={{fontSize:13}}>
                   <thead>
@@ -243,7 +267,8 @@ export default function Backtest() {
                   </thead>
                   <tbody>
                     {result.trades.map((t, i) => (
-                      <tr key={i}>
+                      <tr key={i} onClick={() => setSelectedTradeIdx(i)}
+                        style={{cursor:'pointer', background: selectedTradeIdx === i ? 'var(--bg-surface-3)' : undefined}}>
                         <td><span className={`badge ${t.direction === 'long' ? 'badge-green' : 'badge-red'}`}>{t.direction === 'long' ? '📈 Лонг' : '📉 Шорт'}</span></td>
                         <td className="text-secondary">{t.entryDate.toLocaleDateString('ru-RU')}</td>
                         <td>{formatNumber(t.entryPrice, 2)}</td>
@@ -258,6 +283,31 @@ export default function Backtest() {
                   </tbody>
                 </table>
               </div>
+            </div>
+          )}
+
+          {selectedTrade && selectedTradeSnapshot && (
+            <div className="card">
+              <div className="section-title">
+                <div className="section-title-icon">🔍</div>
+                Сделка {selectedTrade.entryDate.toLocaleDateString('ru-RU')} — что видел алгоритм на момент входа
+              </div>
+              <div style={{marginBottom:16}}>
+                <CandleChart
+                  candles={result.candles}
+                  patterns={selectedTradeSnapshot.patterns}
+                  ticker={ticker.toUpperCase()}
+                  direction={selectedTrade.direction}
+                  entryPrice={selectedTrade.entryPrice}
+                  exitPrice={selectedTrade.status === 'closed' ? selectedTrade.exitPrice : null}
+                  entryMarker={{ date: selectedTrade.entryDate, price: selectedTrade.entryPrice, direction: selectedTrade.direction }}
+                  exitMarker={{ date: selectedTrade.exitDate, price: selectedTrade.exitPrice }}
+                />
+              </div>
+              <TechnicalAnalysisBlock
+                state={{ loading: false, error: null, data: selectedTradeSnapshot }}
+                title="Технический анализ на момент входа этой сделки"
+              />
             </div>
           )}
         </>
