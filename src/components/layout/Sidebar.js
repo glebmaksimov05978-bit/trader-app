@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
+import { TRUSTED_UIDS } from '../../constants/trustedUids';
 import './Sidebar.css';
 
 const NAV_ITEMS = [
@@ -18,13 +19,24 @@ const ADMIN_ITEMS = [
   { path: '/admin', icon: '🛡️', label: 'Админ-панель' },
 ];
 
+// Внутренний инструмент, не готовый для клиентов — виден админам и тому же списку
+// доверенных аккаунтов, что обходит стену верификации почты (см. TRUSTED_UIDS).
+const TRUSTED_ITEMS = [
+  { path: '/backtest', icon: '🧪', label: 'Бэктест' },
+];
+
 export default function Sidebar() {
-  const { userProfile, logout, isAdmin, isPro } = useAuth();
+  const { user, userProfile, logout, isAdmin, isPro } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [profileOpen, setProfileOpen] = useState(false);
   const location = useLocation();
 
-  const items = isAdmin ? [...NAV_ITEMS, ...ADMIN_ITEMS] : NAV_ITEMS;
+  const isTrusted = isAdmin || TRUSTED_UIDS.includes(user?.uid);
+  const items = [
+    ...NAV_ITEMS,
+    ...(isTrusted ? TRUSTED_ITEMS : []),
+    ...(isAdmin ? ADMIN_ITEMS : []),
+  ];
 
   return (
     <aside className="sidebar">

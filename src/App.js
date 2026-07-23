@@ -14,15 +14,10 @@ import Capital from './components/capital/Capital';
 import Advisor from './components/advisor/Advisor';
 import Settings from './components/settings/Settings';
 import AdminPanel from './components/admin/AdminPanel';
+import Backtest from './components/backtest/Backtest';
 import LoadingScreen from './components/LoadingScreen';
+import { TRUSTED_UIDS } from './constants/trustedUids';
 import './styles/globals.css';
-
-// Аккаунты созданные до включения верификации почты — пропускаем без проверки
-const TRUSTED_UIDS = [
-  'fuUAD1JLQ5VbfJRbajYgjhw5pCn2', // admin@trader.com
-  '1stzQToO77e61ubwLuo3g5KK1DI3', // gleb@trader.com
-  'SK2s0DtLAxNRtHhV3HwEwTVuK292', // radartest.20260710@example.com — QA test account
-];
 
 function ProtectedRoute({ children }) {
   const { user, loading, isEmailVerified } = useAuth();
@@ -39,6 +34,15 @@ function AdminRoute({ children }) {
   const { isAdmin, loading } = useAuth();
   if (loading) return <LoadingScreen />;
   if (!isAdmin) return <Navigate to="/" replace />;
+  return children;
+}
+
+// Бэктест — внутренний инструмент, пока не для клиентов (см. решение "сначала своя
+// калибровка, потом клиентский UI"). Открыт админам и доверенным аккаунтам.
+function TrustedRoute({ children }) {
+  const { user, isAdmin, loading } = useAuth();
+  if (loading) return <LoadingScreen />;
+  if (!isAdmin && !TRUSTED_UIDS.includes(user?.uid)) return <Navigate to="/" replace />;
   return children;
 }
 
@@ -65,6 +69,9 @@ function AppRoutes() {
         <Route path="settings" element={<Settings />} />
         <Route path="admin" element={
           <AdminRoute><AdminPanel /></AdminRoute>
+        } />
+        <Route path="backtest" element={
+          <TrustedRoute><Backtest /></TrustedRoute>
         } />
       </Route>
     </Routes>
