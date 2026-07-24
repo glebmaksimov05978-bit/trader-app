@@ -61,23 +61,45 @@ const ISS_ENGINE_MARKET = {
 function pad(n) { return String(n).padStart(2, '0'); }
 function toIsoDate(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
 
+// MOEX ISS candles.json caps every response at 500 rows and returns the OLDEST 500
+// from `from` — with no cursor in the payload when iss.meta=off. A single request was
+// therefore silently truncating any window longer than ~500 bars: a 3-year D1 request
+// (~750 trading days) came back with only the first ~2 years and dropped the most recent
+// year entirely (confirmed live against SBER). That's invisible in the UI — the backtest
+// just runs on a short, stale slice — and gets worse the more history you ask for. So we
+// page with &start=N (500 at a time, ascending) until a page comes back short, then stop.
+const MOEX_PAGE_SIZE = 500;
+const MOEX_MAX_PAGES = 60; // safety cap: 30k daily bars (~120 years) — we'll never hit it
+
 async function fetchCandlesFromMoex(ticker, instrumentType, from, to, moexInterval) {
   const em = ISS_ENGINE_MARKET[instrumentType] || ISS_ENGINE_MARKET.stock;
-  const url = `${ISS_BASE}/engines/${em.engine}/markets/${em.market}/securities/${encodeURIComponent(ticker)}/candles.json`
+  const base = `${ISS_BASE}/engines/${em.engine}/markets/${em.market}/securities/${encodeURIComponent(ticker)}/candles.json`
     + `?from=${toIsoDate(from)}&till=${toIsoDate(to)}&interval=${moexInterval}&iss.meta=off`;
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`MOEX ISS error ${resp.status}`);
-  const json = await resp.json();
-  const cols = json.candles?.columns || [];
-  const rows = json.candles?.data || [];
-  const idx = (name) => cols.indexOf(name);
-  const iOpen = idx('open'), iClose = idx('close'), iHigh = idx('high'), iLow = idx('low'),
-    iVolume = idx('volume'), iBegin = idx('begin');
 
-  return rows.map((r) => ({
-    date: new Date(r[iBegin]),
-    open: r[iOpen], high: r[iHigh], low: r[iLow], close: r[iClose], volume: r[iVolume],
-  })).filter((c) => Number.isFinite(c.close));
+  const out = [];
+  for (let page = 0; page < MOEX_MAX_PAGES; page++) {
+    const resp = await fetch(`${base}&start=${page * MOEX_PAGE_SIZE}`);
+    if (!resp.ok) throw new Error(`MOEX ISS error ${resp.status}`);
+    const json = await resp.json();
+    const cols = json.candles?.columns || [];
+    const rows = json.candles?.data || [];
+    const idx = (name) => cols.indexOf(name);
+    const iOpen = idx('open'), iClose = idx('close'), iHigh = idx('high'), iLow = idx('low'),
+      iVolume = idx('volume'), iBegin = idx('begin');
+
+    for (const r of rows) {
+      const close = r[iClose];
+      if (!Number.isFinite(close)) continue;
+      out.push({
+        date: new Date(r[iBegin]),
+        open: r[iOpen], high: r[iHigh], low: r[iLow], close, volume: r[iVolume],
+      });
+    }
+    // A short page means we've reached the end of available history — stop before firing
+    // an extra empty request.
+    if (rows.length < MOEX_PAGE_SIZE) break;
+  }
+  return out;
 }
 
 // Tinkoff's GetCandles rejects a single request spanning more than this many days for

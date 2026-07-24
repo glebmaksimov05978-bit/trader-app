@@ -225,7 +225,7 @@ export default function Backtest() {
             onChange={(e) => setTicker(e.target.value)} style={{maxWidth:220}} />
           <div className="flex gap-2" style={{alignItems:'center'}}>
             <span style={{fontSize:12, color:'var(--text-muted)'}}>Лет истории</span>
-            <input className="input" type="number" min="1" max="10" step="0.5" value={years}
+            <input className="input" type="number" min="1" max="20" step="0.5" value={years}
               onChange={(e) => setYears(parseFloat(e.target.value) || 1)} style={{width:70}} />
           </div>
         </div>
@@ -361,7 +361,7 @@ export default function Backtest() {
           )}
 
           {result.trades?.length > 0 && (
-            <div className="card" style={{marginBottom: selectedTrade ? 16 : 0}}>
+            <div className="card">
               <div className="section-title"><div className="section-title-icon">📋</div>Сделки ({result.trades.length})</div>
               <p className="text-xs text-muted" style={{marginBottom:8}}>Клик по строке — что именно алгоритм увидел на момент входа этой сделки.</p>
               <div style={{overflowX:'auto'}}>
@@ -373,48 +373,59 @@ export default function Backtest() {
                     </tr>
                   </thead>
                   <tbody>
-                    {result.trades.map((t, i) => (
-                      <tr key={i} onClick={() => setSelectedTradeIdx(i)}
-                        style={{cursor:'pointer', background: selectedTradeIdx === i ? 'var(--bg-surface-3)' : undefined}}>
-                        <td><span className={`badge ${t.direction === 'long' ? 'badge-green' : 'badge-red'}`}>{t.direction === 'long' ? '📈 Лонг' : '📉 Шорт'}</span></td>
-                        <td className="text-secondary">{t.entryDate.toLocaleDateString('ru-RU')}</td>
-                        <td>{formatNumber(t.entryPrice, 2)}</td>
-                        <td className="text-secondary">{formatNumber(t.entryPercent, 0)}%</td>
-                        <td className="text-secondary">{t.exitDate.toLocaleDateString('ru-RU')}</td>
-                        <td>{formatNumber(t.exitPrice, 2)}</td>
-                        <td>{t.status === 'open' ? <span className="badge badge-blue">Ещё открыта</span> : EXIT_REASON_LABELS[t.exitReason] || t.exitReason}</td>
-                        <td className="text-secondary">{t.barsHeld}</td>
-                        <td className={t.pnlPct >= 0 ? 'text-green' : 'text-red'}>{t.pnlPct >= 0 ? '+' : ''}{formatNumber(t.pnlPct, 2)}%</td>
-                      </tr>
-                    ))}
+                    {result.trades.map((t, i) => {
+                      const isSelected = selectedTradeIdx === i;
+                      return (
+                        <React.Fragment key={i}>
+                          <tr onClick={() => setSelectedTradeIdx(isSelected ? null : i)}
+                            style={{cursor:'pointer', background: isSelected ? 'var(--bg-surface-3)' : undefined}}>
+                            <td>
+                              <div className="flex gap-2" style={{alignItems:'center'}}>
+                                <span style={{fontSize:11, color:'var(--text-muted)', width:12, display:'inline-block'}}>{isSelected ? '▾' : '▸'}</span>
+                                <span className={`badge ${t.direction === 'long' ? 'badge-green' : 'badge-red'}`}>{t.direction === 'long' ? '📈 Лонг' : '📉 Шорт'}</span>
+                              </div>
+                            </td>
+                            <td className="text-secondary">{t.entryDate.toLocaleDateString('ru-RU')}</td>
+                            <td>{formatNumber(t.entryPrice, 2)}</td>
+                            <td className="text-secondary">{formatNumber(t.entryPercent, 0)}%</td>
+                            <td className="text-secondary">{t.exitDate.toLocaleDateString('ru-RU')}</td>
+                            <td>{formatNumber(t.exitPrice, 2)}</td>
+                            <td>{t.status === 'open' ? <span className="badge badge-blue">Ещё открыта</span> : EXIT_REASON_LABELS[t.exitReason] || t.exitReason}</td>
+                            <td className="text-secondary">{t.barsHeld}</td>
+                            <td className={t.pnlPct >= 0 ? 'text-green' : 'text-red'}>{t.pnlPct >= 0 ? '+' : ''}{formatNumber(t.pnlPct, 2)}%</td>
+                          </tr>
+                          {isSelected && selectedTradeSnapshot && (
+                            <tr>
+                              <td colSpan={9} style={{background:'var(--bg-surface-2)', padding:'12px 16px 16px'}}>
+                                <div className="section-title" style={{marginBottom:12}}>
+                                  <div className="section-title-icon">🔍</div>
+                                  Что видел алгоритм на момент входа {t.entryDate.toLocaleDateString('ru-RU')}
+                                </div>
+                                <div style={{marginBottom:16}}>
+                                  <CandleChart
+                                    candles={result.candles}
+                                    patterns={selectedTradeSnapshot.patterns}
+                                    ticker={ticker.toUpperCase()}
+                                    direction={t.direction}
+                                    entryPrice={t.entryPrice}
+                                    exitPrice={t.status === 'closed' ? t.exitPrice : null}
+                                    entryMarker={{ date: t.entryDate, price: t.entryPrice, direction: t.direction }}
+                                    exitMarker={{ date: t.exitDate, price: t.exitPrice }}
+                                  />
+                                </div>
+                                <TechnicalAnalysisBlock
+                                  state={{ loading: false, error: null, data: selectedTradeSnapshot }}
+                                  title="Технический анализ на момент входа этой сделки"
+                                />
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
-            </div>
-          )}
-
-          {selectedTrade && selectedTradeSnapshot && (
-            <div className="card">
-              <div className="section-title">
-                <div className="section-title-icon">🔍</div>
-                Сделка {selectedTrade.entryDate.toLocaleDateString('ru-RU')} — что видел алгоритм на момент входа
-              </div>
-              <div style={{marginBottom:16}}>
-                <CandleChart
-                  candles={result.candles}
-                  patterns={selectedTradeSnapshot.patterns}
-                  ticker={ticker.toUpperCase()}
-                  direction={selectedTrade.direction}
-                  entryPrice={selectedTrade.entryPrice}
-                  exitPrice={selectedTrade.status === 'closed' ? selectedTrade.exitPrice : null}
-                  entryMarker={{ date: selectedTrade.entryDate, price: selectedTrade.entryPrice, direction: selectedTrade.direction }}
-                  exitMarker={{ date: selectedTrade.exitDate, price: selectedTrade.exitPrice }}
-                />
-              </div>
-              <TechnicalAnalysisBlock
-                state={{ loading: false, error: null, data: selectedTradeSnapshot }}
-                title="Технический анализ на момент входа этой сделки"
-              />
             </div>
           )}
         </>
