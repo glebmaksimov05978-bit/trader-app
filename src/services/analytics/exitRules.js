@@ -11,6 +11,12 @@
 // targets at all: closing when the strategy's own checklist readiness drops below its
 // threshold ("сигнал пропал"), and closing after a fixed number of bars regardless.
 
+// Fallback distance for a 'level' exit when no support/resistance/EMA200 exists on the
+// right side of price — matches the ATR-type exit's own defaults (stopAtrMult: 1.5,
+// takeAtrMult: 3 below) so the fallback isn't an arbitrary new number.
+const LEVEL_FALLBACK_STOP_ATR_MULT = 1.5;
+const LEVEL_FALLBACK_TAKE_ATR_MULT = 3;
+
 export function defaultExitRules() {
   return {
     stopType: 'pct', stopPct: 2, stopAtrMult: 1.5, stopLevelSource: 'sr', stopLevelTolerancePct: 0.3,
@@ -68,7 +74,20 @@ function computeOne(direction, side, entryPrice, type, params, ctx) {
   }
   if (type === 'level') {
     const raw = levelPrice(direction, side, params.levelSource, ctx.patterns);
-    return applyTolerance(direction, side, raw, params.tolerancePct ?? 0.3);
+    const withTolerance = applyTolerance(direction, side, raw, params.tolerancePct ?? 0.3);
+    if (withTolerance != null) return withTolerance;
+    // No support/resistance (or EMA200) on the right side of price right now — e.g. price
+    // has run well past every known swing level. Without this fallback the position would
+    // silently carry NO exit at all on that side (real backtest finding: a "У уровня" stop
+    // that never got a level stayed open 730+ days, −31% to −36%, because nearestLevelPrice
+    // kept returning null every single bar). ATR is volatility a real number, not a guess —
+    // fall back to the same multipliers the ATR exit type already defaults to, so a
+    // level-based rule always has SOME distance once ATR itself is available.
+    if (ctx.atr != null) {
+      const fallbackMult = side === 'stop' ? LEVEL_FALLBACK_STOP_ATR_MULT : LEVEL_FALLBACK_TAKE_ATR_MULT;
+      return entryPrice + directionalSign(direction, side) * ctx.atr * fallbackMult;
+    }
+    return null;
   }
   return null; // type === 'none'
 }
