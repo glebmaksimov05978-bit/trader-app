@@ -57,10 +57,20 @@ export default function Backtest() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedStrategy?.id]);
   const [maxBarsEnabled, setMaxBarsEnabled] = useState(false);
+  // Out-of-sample check (real user request, after finding that widening stop/take from
+  // 2%/4% to 3%/5% jumped returns from +19% to +59% on one instrument — a huge swing
+  // from a tiny tweak, and the classic warning sign of curve-fitting: tuning until a
+  // random stretch of history looks good, not finding a real edge). Splits the fetched
+  // history into an "тренировочный" slice (tune against freely) and a "отложенный" slice
+  // that isn't touched during tuning — only checked once, honestly, at the end.
+  const [holdoutEnabled, setHoldoutEnabled] = useState(false);
+  const [holdoutPct, setHoldoutPct] = useState(20);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null); // { trades, hadCustomConditions, barsEvaluated, ambiguousBars, candles }
+  const [holdoutResult, setHoldoutResult] = useState(null); // same shape, out-of-sample slice
+  const [holdoutSplitDate, setHoldoutSplitDate] = useState(null);
   const [selectedTradeIdx, setSelectedTradeIdx] = useState(null);
 
   const hasConditions = (selectedStrategy?.conditions?.length || 0) > 0;
@@ -71,6 +81,8 @@ export default function Backtest() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setHoldoutResult(null);
+    setHoldoutSplitDate(null);
     setSelectedTradeIdx(null);
     try {
       const candles = await fetchDailyCandles({
@@ -83,13 +95,38 @@ export default function Backtest() {
       });
       if (!candles?.length) throw new Error('Нет исторических свечей по этому тикеру');
 
-      const engineResult = runBacktest({
-        candles, strategy: selectedStrategy, timeframeMinutes: TIMEFRAMES.D1.minutes,
-        exitRules: { ...exitRules, maxBars: maxBarsEnabled ? exitRules.maxBars : null },
-      });
-      setResult({ ...engineResult, candles });
-      if (!engineResult.trades.length) {
-        toast('Ни одной сделки не найдено — стратегия ни разу не набрала нужный % за этот период', { icon: 'ℹ️' });
+      const rules = { ...exitRules, maxBars: maxBarsEnabled ? exitRules.maxBars : null };
+
+      if (holdoutEnabled && candles.length > 60) {
+        // Split point: the last `holdoutPct`% of bars is the отложенный кусок. The
+        // тренировочный run only ever sees candles BEFORE the split (can't leak future
+        // data even by accident). The отложенный run walks the FULL candle array but
+        // its `warmupBars` is set to the split index, so indicators/patterns still have
+        // real history to compute from (no cold start) while trades can only open AT or
+        // AFTER the split — same "no lookahead" contract as the engine already enforces
+        // bar-by-bar, just moving where entries are allowed to start.
+        const splitIndex = Math.floor(candles.length * (1 - holdoutPct / 100));
+        const trainCandles = candles.slice(0, splitIndex);
+        const trainResult = runBacktest({
+          candles: trainCandles, strategy: selectedStrategy, timeframeMinutes: TIMEFRAMES.D1.minutes, exitRules: rules,
+        });
+        const testResult = runBacktest({
+          candles, strategy: selectedStrategy, timeframeMinutes: TIMEFRAMES.D1.minutes, exitRules: rules, warmupBars: splitIndex,
+        });
+        setResult({ ...trainResult, candles: trainCandles });
+        setHoldoutResult({ ...testResult, candles });
+        setHoldoutSplitDate(candles[splitIndex]?.date || null);
+        if (!trainResult.trades.length && !testResult.trades.length) {
+          toast('Ни одной сделки не найдено ни на тренировочном, ни на отложенном периоде', { icon: 'ℹ️' });
+        }
+      } else {
+        const engineResult = runBacktest({
+          candles, strategy: selectedStrategy, timeframeMinutes: TIMEFRAMES.D1.minutes, exitRules: rules,
+        });
+        setResult({ ...engineResult, candles });
+        if (!engineResult.trades.length) {
+          toast('Ни одной сделки не найдено — стратегия ни разу не набрала нужный % за этот период', { icon: 'ℹ️' });
+        }
       }
     } catch (e) {
       setError(e.message || 'Не удалось запустить бэктест');
@@ -97,6 +134,17 @@ export default function Backtest() {
       setLoading(false);
     }
   };
+
+  // Same shape-computation as the main `equity`/`stats` below, reused for the holdout
+  // slice so both periods are judged by identical math — see the comment on `equity`.
+  function computeSummary(res) {
+    if (!res) return null;
+    const st = res.trades?.length ? calcStats(res.trades) : null;
+    const closed = (res.trades || []).filter((t) => t.status === 'closed').sort((a, b) => a.exitDate - b.exitDate);
+    let eq = 100;
+    closed.forEach((t) => { eq *= 1 + t.pnlPct / 100; });
+    return { stats: st, totalReturnPct: eq - 100 };
+  }
 
   const stats = result?.trades?.length ? calcStats(result.trades) : null;
 
@@ -189,6 +237,26 @@ export default function Backtest() {
           <ExitRulesEditor value={exitRules} onChange={setExitRules} maxBarsEnabled={maxBarsEnabled} onMaxBarsEnabledChange={setMaxBarsEnabled} />
         </div>
 
+        <div className="flex gap-2" style={{marginBottom:16, alignItems:'center', flexWrap:'wrap'}}>
+          <label className="flex gap-2" style={{alignItems:'center', fontSize:13, cursor:'pointer'}}>
+            <input type="checkbox" checked={holdoutEnabled} onChange={(e) => setHoldoutEnabled(e.target.checked)} />
+            Отложить конец истории для честной проверки (не подглядывать при настройке)
+          </label>
+          {holdoutEnabled && (
+            <>
+              <input className="input" type="number" min="5" max="50" step="5" value={holdoutPct}
+                onChange={(e) => setHoldoutPct(parseInt(e.target.value) || 20)} style={{width:70}} />
+              <span style={{fontSize:12, color:'var(--text-muted)'}}>% истории — отложенный кусок в конце</span>
+            </>
+          )}
+        </div>
+        {holdoutEnabled && (
+          <p className="text-xs text-muted" style={{marginTop:-10, marginBottom:16}}>
+            Крути параметры сколько угодно, глядя только на «Тренировочный период» ниже. «Отложенный период» смотри
+            в последнюю очередь и только один раз — если стратегия там тоже в плюсе, доверия к ней сильно больше.
+          </p>
+        )}
+
         <button className="btn btn-primary" onClick={run} disabled={loading}>
           {loading ? <span className="spinner" style={{width:14,height:14}}/> : '▶️'} Запустить бэктест
         </button>
@@ -212,6 +280,11 @@ export default function Backtest() {
             </div>
           )}
 
+          {holdoutResult && (
+            <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:8}}>
+              📗 Тренировочный период {holdoutSplitDate ? `(до ${holdoutSplitDate.toLocaleDateString('ru-RU')})` : ''} — на нём можно крутить параметры
+            </div>
+          )}
           {stats ? (
             <div className="grid-4" style={{gap:12, marginBottom:16}}>
               <StatCard label="Накопленная доходность" value={`${equity.totalReturnPct >= 0 ? '+' : ''}${formatNumber(equity.totalReturnPct, 1)}%`} tone={equity.totalReturnPct >= 0 ? 'green' : 'red'} />
@@ -224,6 +297,40 @@ export default function Backtest() {
               <div className="empty-state-text">Ни одной завершённой сделки за этот период — стратегия ни разу не набрала нужный % готовности.</div>
             </div>
           )}
+
+          {holdoutResult && (() => {
+            const h = computeSummary(holdoutResult);
+            return (
+              <>
+                <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:8, display:'flex', alignItems:'center', gap:8}}>
+                  📕 Отложенный период {holdoutSplitDate ? `(с ${holdoutSplitDate.toLocaleDateString('ru-RU')})` : ''} — стратегия эти данные не видела при настройке
+                </div>
+                {h.stats ? (
+                  <div className="grid-4" style={{gap:12, marginBottom:16}}>
+                    <StatCard label="Накопленная доходность" value={`${h.totalReturnPct >= 0 ? '+' : ''}${formatNumber(h.totalReturnPct, 1)}%`} tone={h.totalReturnPct >= 0 ? 'green' : 'red'} />
+                    <StatCard label="Сделок" value={h.stats.total} />
+                    <StatCard label="Винрейт" value={`${formatNumber(h.stats.winrate, 1)}%`} tone={h.stats.winrate >= 50 ? 'green' : 'red'} />
+                    <StatCard label="Профит-фактор" value={h.stats.profitFactor === Infinity ? '∞' : formatNumber(h.stats.profitFactor, 2)} tone={h.stats.profitFactor >= 1 ? 'green' : 'red'} />
+                  </div>
+                ) : (
+                  <div className="card empty-state" style={{marginBottom:16}}>
+                    <div className="empty-state-text">Ни одной сделки на отложенном периоде — слишком короткий кусок или стратегия там ни разу не сработала.</div>
+                  </div>
+                )}
+                {stats && h.stats && (
+                  <div className="card" style={{marginBottom:16, borderColor: (h.totalReturnPct >= 0) === (equity.totalReturnPct >= 0) ? 'var(--green)' : 'var(--red)'}}>
+                    <div style={{fontSize:13}}>
+                      {h.totalReturnPct >= 0 && equity.totalReturnPct >= 0
+                        ? '✅ Плюс на обоих периодах — хороший знак, стратегия не развалилась на данных, которые не участвовали в настройке.'
+                        : h.totalReturnPct < 0 && equity.totalReturnPct >= 0
+                        ? '⚠️ На тренировочном плюс, на отложенном минус — характерный признак подгонки под конкретный отрезок истории, не настоящего преимущества.'
+                        : 'Оба периода в минусе — стратегия последовательно не работает, это тоже честный и полезный результат.'}
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
 
           {equity.points.length > 1 && (
             <div className="card" style={{marginBottom:16}}>
