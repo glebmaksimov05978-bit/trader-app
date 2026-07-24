@@ -6,12 +6,13 @@
 // candle history via runBacktest() (services/backtest/engine.js) — same evaluateStrategy
 // the Calculator/Radar/Journal already use, so every new condition added to the
 // constructor is backtestable for free, no changes needed here.
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { fetchDailyCandles, TIMEFRAMES } from '../../services/marketData/candles';
 import { runBacktest } from '../../services/backtest/engine';
-import { getStrategies, getActiveStrategy } from '../../services/analytics/strategy';
+import { getStrategies, getActiveStrategy, CONDITION_CATALOG } from '../../services/analytics/strategy';
 import { defaultExitRules } from '../../services/analytics/exitRules';
+import { backtestPageCache as cache } from '../../services/backtest/pageStateCache';
 import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { computeMarketContextAtEntry } from '../../services/analytics/marketContext';
@@ -41,37 +42,65 @@ export default function Backtest() {
   const strategies = getStrategies(userProfile);
   const activeStrategy = getActiveStrategy(userProfile);
 
-  const [selectedStrategyId, setSelectedStrategyId] = useState(activeStrategy?.id);
+  const [selectedStrategyId, setSelectedStrategyId] = useState(cache.selectedStrategyId ?? activeStrategy?.id);
   const selectedStrategy = strategies.find((s) => s.id === selectedStrategyId) || strategies[0];
 
-  const [ticker, setTicker] = useState('');
-  const [instrumentType, setInstrumentType] = useState('future');
-  const [years, setYears] = useState(3);
+  const [ticker, setTicker] = useState(cache.ticker ?? '');
+  const [instrumentType, setInstrumentType] = useState(cache.instrumentType ?? 'future');
+  const [years, setYears] = useState(cache.years ?? 3);
   // Local, editable copy of the selected strategy's exit rules — the trader can crank
   // these for a "what if" run right here without touching what's saved in Капитал (real
   // user request: "можно временно крутить"). Resets to the strategy's saved rules
-  // whenever a different strategy is picked from the dropdown.
-  const [exitRules, setExitRules] = useState(selectedStrategy?.exitRules || defaultExitRules());
+  // whenever a different strategy is picked from the dropdown — but only once per mount
+  // (cache restore below shouldn't get immediately overwritten by this same-id effect).
+  const [exitRules, setExitRules] = useState(cache.exitRules ?? selectedStrategy?.exitRules ?? defaultExitRules());
+  const skipNextExitRulesReset = useRef(cache.exitRules != null);
   useEffect(() => {
+    if (skipNextExitRulesReset.current) { skipNextExitRulesReset.current = false; return; }
     setExitRules(selectedStrategy?.exitRules || defaultExitRules());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedStrategy?.id]);
-  const [maxBarsEnabled, setMaxBarsEnabled] = useState(false);
+  const [maxBarsEnabled, setMaxBarsEnabled] = useState(cache.maxBarsEnabled ?? false);
+  // Ticking the checkbox alone must not leave a phantom null behind. The number field
+  // shows "20" as a PLACEHOLDER (`value.maxBars ?? 20`) whenever exitRules.maxBars is null
+  // — real, common, since defaultExitRules() sets maxBars:null — so the field LOOKS filled
+  // in even though the underlying value the run actually reads is still null, and the
+  // limit silently never applies unless the trader also retypes the number (real user
+  // report: "если ничего не тыкаю... он как будто не считает"). Capital.js's own handler
+  // already backfills a real default on check; this page's handler was just the raw
+  // setter with no backfill — mirror Capital's fix here.
+  const handleMaxBarsEnabledChange = (checked) => {
+    setMaxBarsEnabled(checked);
+    if (checked) setExitRules((r) => ({ ...r, maxBars: r.maxBars ?? 20 }));
+  };
   // Out-of-sample check (real user request, after finding that widening stop/take from
   // 2%/4% to 3%/5% jumped returns from +19% to +59% on one instrument — a huge swing
   // from a tiny tweak, and the classic warning sign of curve-fitting: tuning until a
   // random stretch of history looks good, not finding a real edge). Splits the fetched
   // history into an "тренировочный" slice (tune against freely) and a "отложенный" slice
   // that isn't touched during tuning — only checked once, honestly, at the end.
-  const [holdoutEnabled, setHoldoutEnabled] = useState(false);
-  const [holdoutPct, setHoldoutPct] = useState(20);
+  const [holdoutEnabled, setHoldoutEnabled] = useState(cache.holdoutEnabled ?? false);
+  const [holdoutPct, setHoldoutPct] = useState(cache.holdoutPct ?? 20);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [result, setResult] = useState(null); // { trades, hadCustomConditions, barsEvaluated, ambiguousBars, candles }
-  const [holdoutResult, setHoldoutResult] = useState(null); // same shape, out-of-sample slice
-  const [holdoutSplitDate, setHoldoutSplitDate] = useState(null);
-  const [selectedTradeIdx, setSelectedTradeIdx] = useState(null);
+  // { trades, hadCustomConditions, barsEvaluated, ambiguousBars, candles } — restored from
+  // cache so switching to Капитал and back doesn't force a re-run just to see the same
+  // numbers again (real user report).
+  const [result, setResult] = useState(cache.result ?? null);
+  const [holdoutResult, setHoldoutResult] = useState(cache.holdoutResult ?? null); // same shape, out-of-sample slice
+  const [holdoutSplitDate, setHoldoutSplitDate] = useState(cache.holdoutSplitDate ?? null);
+  const [selectedTradeIdx, setSelectedTradeIdx] = useState(cache.selectedTradeIdx ?? null);
+
+  // Write every field that should survive a route change back into the shared cache
+  // object on each render — cheap (plain property assignment, no serialization) since
+  // it's a real in-memory object, not JSON/localStorage.
+  useEffect(() => {
+    Object.assign(cache, {
+      selectedStrategyId, ticker, instrumentType, years, exitRules, maxBarsEnabled,
+      holdoutEnabled, holdoutPct, result, holdoutResult, holdoutSplitDate, selectedTradeIdx,
+    });
+  });
 
   const hasConditions = (selectedStrategy?.conditions?.length || 0) > 0;
 
@@ -189,6 +218,29 @@ export default function Backtest() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTradeIdx, result]);
 
+  // Compact read-only summary of the selected strategy's conditions, shown right on this
+  // page — real user report: had to leave for Капитал just to remember what a strategy
+  // actually checks, losing whatever was on screen here in the process (now moot thanks
+  // to the cache above, but this removes the round-trip entirely for the common case of
+  // "what does this strategy even test").
+  const strategySummary = useMemo(() => {
+    if (!selectedStrategy) return [];
+    const catalogById = Object.fromEntries(CONDITION_CATALOG.map((c) => [c.id, c]));
+    const dirSuffix = (d) => (d === 'long' ? ' — только лонг' : d === 'short' ? ' — только шорт' : '');
+    const lines = (selectedStrategy.conditions || [])
+      .filter((c) => c.enabled && catalogById[c.id])
+      .map((c) => {
+        const def = catalogById[c.id];
+        const param = c.param ?? def.defaultParam;
+        const label = param != null ? def.label.replace('X', param) : def.label;
+        return label + dirSuffix(c.direction);
+      });
+    const customLines = (selectedStrategy.customConditions || []).map(
+      (c) => `${c.label}${dirSuffix(c.direction)} (своё условие — в бэктесте не проверяется)`
+    );
+    return [...lines, ...customLines];
+  }, [selectedStrategy]);
+
   return (
     <div className="page">
       <div className="page-header">
@@ -217,6 +269,16 @@ export default function Backtest() {
             ⚠️ У этой стратегии нет ни одного включённого условия входа — настрой её в «Капитале».
           </div>
         )}
+        {hasConditions && (
+          <details style={{marginBottom:12}}>
+            <summary style={{cursor:'pointer', fontSize:12, color:'var(--text-muted)'}}>
+              Условия входа ({strategySummary.length}), порог готовности {selectedStrategy.readinessThreshold ?? 60}% — не уходя в Капитал
+            </summary>
+            <ul style={{margin:'8px 0 0', paddingLeft:18, fontSize:13, color:'var(--text-secondary)'}}>
+              {strategySummary.map((line, i) => <li key={i} style={{marginBottom:2}}>{line}</li>)}
+            </ul>
+          </details>
+        )}
 
         <div className="flex gap-2" style={{marginBottom:12, flexWrap:'wrap'}}>
           <button className={`btn ${instrumentType === 'future' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setInstrumentType('future')}>⚡ Фьючерс</button>
@@ -234,7 +296,7 @@ export default function Backtest() {
           Правила выхода — подставлены из выбранной стратегии, можно временно подкрутить для этого прогона (в Капитале не сохранится)
         </div>
         <div style={{marginBottom:16}}>
-          <ExitRulesEditor value={exitRules} onChange={setExitRules} maxBarsEnabled={maxBarsEnabled} onMaxBarsEnabledChange={setMaxBarsEnabled} />
+          <ExitRulesEditor value={exitRules} onChange={setExitRules} maxBarsEnabled={maxBarsEnabled} onMaxBarsEnabledChange={handleMaxBarsEnabledChange} />
         </div>
 
         <div className="flex gap-2" style={{marginBottom:16, alignItems:'center', flexWrap:'wrap'}}>

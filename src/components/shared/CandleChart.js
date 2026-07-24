@@ -25,6 +25,12 @@ const LAYER_DEFS = [
   { key: 'volume', label: 'Объём', defaultOn: false },
   { key: 'pnl', label: 'Вход/выход', defaultOn: true, tradeOnly: true },
   { key: 'rightValues', label: 'Цифры справа', defaultOn: false },
+  // Overview-only (backtest's all-trades-at-once chart): with hundreds of trades, a text
+  // label under every single arrow/circle (Покупка/Продажа/+X.X%) overlaps into an
+  // unreadable smear (real user report — "глаза мозолит, ничего толком не видно"). Off
+  // by default so the overview is just clean arrows/circles; flip on to read exact %/side
+  // when zoomed into a small stretch.
+  { key: 'tradeLabels', label: 'Подписи на сделках (Покупка/%)', defaultOn: false, overviewOnly: true },
 ];
 
 const DEFAULT_COLORS_KEY = 'traderpro-chart-colors';
@@ -88,6 +94,19 @@ function barTimeForLeg(legTime, candleTimes) {
   while (lo <= hi) {
     const mid = (lo + hi) >> 1;
     if (candleTimes[mid] <= legTime) { ans = candleTimes[mid]; lo = mid + 1; }
+    else hi = mid - 1;
+  }
+  return ans;
+}
+
+// Same snap-to-bar search as barTimeForLeg, but returns the INDEX into candleTimes rather
+// than the time value itself — what setVisibleLogicalRange needs to center the viewport
+// on a specific trade instead of always showing the tail of the array.
+function barIndexForTime(targetTime, candleTimes) {
+  let lo = 0, hi = candleTimes.length - 1, ans = 0;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (candleTimes[mid] <= targetTime) { ans = mid; lo = mid + 1; }
     else hi = mid - 1;
   }
   return ans;
@@ -177,7 +196,7 @@ function buildMarkersAndFills(legs, direction, candleTimes, colors) {
 // "Покупка"/"Продажа" on a terminal) and a circle for the exit, colored by whether that
 // trade won or lost — the trader wants to eyeball "does a green circle actually land
 // where the chart looks like it should have worked out".
-function buildTradesMarkers(trades, colors) {
+function buildTradesMarkers(trades, colors, showLabels) {
   if (!trades?.length) return [];
   const markers = [];
   trades.forEach((t) => {
@@ -186,7 +205,7 @@ function buildTradesMarkers(trades, colors) {
       position: t.direction === 'short' ? 'aboveBar' : 'belowBar',
       color: t.direction === 'short' ? colors.red : colors.green,
       shape: t.direction === 'short' ? 'arrowDown' : 'arrowUp',
-      text: t.direction === 'short' ? 'Продажа' : 'Покупка',
+      text: showLabels ? (t.direction === 'short' ? 'Продажа' : 'Покупка') : '',
     });
     if (t.status === 'closed' && t.exitDate) {
       const win = t.pnlPct >= 0;
@@ -195,7 +214,7 @@ function buildTradesMarkers(trades, colors) {
         position: 'aboveBar',
         color: win ? colors.green : colors.red,
         shape: 'circle',
-        text: win ? `+${t.pnlPct.toFixed(1)}%` : `${t.pnlPct.toFixed(1)}%`,
+        text: showLabels ? (win ? `+${t.pnlPct.toFixed(1)}%` : `${t.pnlPct.toFixed(1)}%`) : '',
       });
     }
   });
@@ -333,20 +352,45 @@ export default function CandleChart({
     series.setData(candles.map((c) => ({
       time: toChartTime(c.date), open: c.open, high: c.high, low: c.low, close: c.close,
     })));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [candles]);
+
+  // Visible range — separate from the data-load effect above because it must ALSO
+  // re-run when just the selected trade changes with the SAME candle array (backtest
+  // drill-down: `result.candles` stays constant while clicking through different trades
+  // in the table, only entryMarker/exitMarker/legs change per click).
+  useEffect(() => {
+    if (!chartRef.current || !candles?.length) return;
     // Open on the most recent quarter of bars instead of `fitContent()`, which crammed
     // the whole ~2.5-year lookback into one unreadable smear (real user report) — EXCEPT
     // for a backtest's full-history overview (`trades` given), where seeing the whole
-    // run at once is the entire point.
+    // run at once is the entire point, and EXCEPT for a single trade with a known
+    // entry/exit date (backtest drill-down, Journal) — "most recent quarter" is only
+    // right by coincidence for Journal (real trades cluster near now); a backtest drill-
+    // down trade can sit anywhere in a 10-year history, and this used to always show the
+    // tail end of the array regardless of when the trade actually happened (real user
+    // report — screenshot of a January 2024 entry showing an unrelated later stretch).
     const n = candles.length;
+    const singleTradeDate = entryMarker?.date ?? (legs?.length ? toDate(legs[0].timestampUtc) : null);
     if (trades?.length) {
-      chartRef.current?.timeScale().fitContent();
+      chartRef.current.timeScale().fitContent();
+    } else if (singleTradeDate && n > 4) {
+      const times = candles.map((c) => toChartTime(c.date));
+      const entryT = toChartTime(singleTradeDate);
+      const exitT = exitMarker?.date ? toChartTime(exitMarker.date)
+        : (legs?.length ? toChartTime(toDate(legs[legs.length - 1].timestampUtc)) : entryT);
+      const entryIdx = barIndexForTime(entryT, times);
+      const exitIdx = barIndexForTime(exitT, times);
+      const from = Math.max(0, Math.min(entryIdx, exitIdx) - 20);
+      const to = Math.min(n - 1, Math.max(entryIdx, exitIdx) + 20);
+      chartRef.current.timeScale().setVisibleLogicalRange({ from, to });
     } else if (n > 4) {
-      chartRef.current?.timeScale().setVisibleLogicalRange({ from: n - Math.ceil(n / 4), to: n - 1 });
+      chartRef.current.timeScale().setVisibleLogicalRange({ from: n - Math.ceil(n / 4), to: n - 1 });
     } else {
-      chartRef.current?.timeScale().fitContent();
+      chartRef.current.timeScale().fitContent();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [candles]);
+  }, [candles, entryMarker, exitMarker, legs, trades]);
 
   // Overlays + markers + P&L + volume. Rebuilt whenever inputs change.
   useEffect(() => {
@@ -530,7 +574,7 @@ export default function CandleChart({
     };
     let markers = [];
     if (trades?.length) {
-      markers = buildTradesMarkers(trades, markerColors);
+      markers = buildTradesMarkers(trades, markerColors, layers.tradeLabels);
       fillsByBarRef.current = new Map();
     } else if (layers.pnl || !isTrade) {
       const built = buildMarkersAndFills(legs, direction, times, markerColors);
@@ -554,7 +598,7 @@ export default function CandleChart({
 
   const rsiMacdPanes = (layers.rsi ? 110 : 0) + (layers.macd ? 110 : 0);
   const chartHeight = fullscreen ? `calc(100vh - 150px)` : `${300 + rsiMacdPanes}px`;
-  const visibleLayers = LAYER_DEFS.filter((l) => !l.tradeOnly || isTrade);
+  const visibleLayers = LAYER_DEFS.filter((l) => (!l.tradeOnly || isTrade) && (!l.overviewOnly || trades?.length));
 
   return (
     <div style={fullscreen ? { position:'fixed', inset:0, zIndex:9998, background:'var(--bg-surface)', padding:16, overflow:'auto' } : undefined}>
