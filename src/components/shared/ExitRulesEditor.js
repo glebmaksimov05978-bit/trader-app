@@ -36,16 +36,23 @@ function ExitSlot({ side, value, onChange }) {
         </div>
       )}
       {value[`${prefix}Type`] === 'level' && (
-        <div className="flex gap-2" style={{alignItems:'center', flexWrap:'wrap'}}>
-          <select className="input" style={{width:'auto'}} value={value[`${prefix}LevelSource`] || 'sr'}
-            onChange={(e) => set({ [`${prefix}LevelSource`]: e.target.value })}>
-            <option value="sr">Ближайший уровень S/R</option>
-            <option value="ema200">EMA200</option>
-          </select>
-          <span style={{fontSize:12, color:'var(--text-muted)'}}>запас ±</span>
-          <input className="input" type="number" step="0.1" value={value[`${prefix}LevelTolerancePct`] ?? ''}
-            onChange={(e) => set({ [`${prefix}LevelTolerancePct`]: parseFloat(e.target.value) || 0 })} style={{width:70}} />
-          <span style={{fontSize:12, color:'var(--text-muted)'}}>%</span>
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-2" style={{alignItems:'center', flexWrap:'wrap'}}>
+            <select className="input" style={{width:'auto'}} value={value[`${prefix}LevelSource`] || 'sr'}
+              onChange={(e) => set({ [`${prefix}LevelSource`]: e.target.value })}>
+              <option value="sr">Ближайший уровень S/R</option>
+              <option value="ema200">EMA200</option>
+            </select>
+            <span style={{fontSize:12, color:'var(--text-muted)'}}>запас ±</span>
+            <input className="input" type="number" step="0.1" value={value[`${prefix}LevelTolerancePct`] ?? ''}
+              onChange={(e) => set({ [`${prefix}LevelTolerancePct`]: parseFloat(e.target.value) || 0 })} style={{width:70}} />
+            <span style={{fontSize:12, color:'var(--text-muted)'}}>%</span>
+          </div>
+          <div className="flex gap-2" style={{alignItems:'center', flexWrap:'wrap'}}>
+            <span style={{fontSize:12, color:'var(--text-muted)'}}>Если уровня нет рядом — запасной выход, % от цены входа</span>
+            <input className="input" type="number" step="0.1" value={value[`${prefix}LevelFallbackPct`] ?? ''}
+              onChange={(e) => set({ [`${prefix}LevelFallbackPct`]: parseFloat(e.target.value) || 0 })} style={{width:70}} />
+          </div>
         </div>
       )}
       {value[`${prefix}Type`] === 'none' && (

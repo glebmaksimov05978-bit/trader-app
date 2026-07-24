@@ -19,8 +19,8 @@ const LEVEL_FALLBACK_TAKE_ATR_MULT = 3;
 
 export function defaultExitRules() {
   return {
-    stopType: 'pct', stopPct: 2, stopAtrMult: 1.5, stopLevelSource: 'sr', stopLevelTolerancePct: 0.3,
-    takeType: 'pct', takePct: 4, takeAtrMult: 3, takeLevelSource: 'sr', takeLevelTolerancePct: 0.3,
+    stopType: 'pct', stopPct: 2, stopAtrMult: 1.5, stopLevelSource: 'sr', stopLevelTolerancePct: 0.3, stopLevelFallbackPct: 2,
+    takeType: 'pct', takePct: 4, takeAtrMult: 3, takeLevelSource: 'sr', takeLevelTolerancePct: 0.3, takeLevelFallbackPct: 4,
     onSignalLoss: false,
     maxBars: null,
   };
@@ -77,12 +77,18 @@ function computeOne(direction, side, entryPrice, type, params, ctx) {
     const withTolerance = applyTolerance(direction, side, raw, params.tolerancePct ?? 0.3);
     if (withTolerance != null) return withTolerance;
     // No support/resistance (or EMA200) on the right side of price right now — e.g. price
-    // has run well past every known swing level. Without this fallback the position would
+    // has run well past every known swing level. Without a fallback the position would
     // silently carry NO exit at all on that side (real backtest finding: a "У уровня" stop
     // that never got a level stayed open 730+ days, −31% to −36%, because nearestLevelPrice
-    // kept returning null every single bar). ATR is volatility a real number, not a guess —
-    // fall back to the same multipliers the ATR exit type already defaults to, so a
-    // level-based rule always has SOME distance once ATR itself is available.
+    // kept returning null every single bar).
+    // Primary fallback: the trader's own "если уровня нет — запасной %" number (real user
+    // request — visible/editable in Capital.js's ExitRulesEditor, not a hidden number).
+    if (params.levelFallbackPct != null) {
+      return entryPrice * (1 + (directionalSign(direction, side) * params.levelFallbackPct) / 100);
+    }
+    // Secondary fallback for strategies SAVED BEFORE this field existed (their exitRules
+    // has no stopLevelFallbackPct/takeLevelFallbackPct at all) — same ATR multipliers the
+    // ATR exit type itself defaults to, so old strategies don't regress back to "no exit".
     if (ctx.atr != null) {
       const fallbackMult = side === 'stop' ? LEVEL_FALLBACK_STOP_ATR_MULT : LEVEL_FALLBACK_TAKE_ATR_MULT;
       return entryPrice + directionalSign(direction, side) * ctx.atr * fallbackMult;
@@ -105,6 +111,7 @@ export function computeStopPrice(direction, entryPrice, exitRules, ctx) {
   return computeOne(direction, 'stop', entryPrice, exitRules.stopType, {
     pct: exitRules.stopPct, atrMult: exitRules.stopAtrMult,
     levelSource: exitRules.stopLevelSource, tolerancePct: exitRules.stopLevelTolerancePct,
+    levelFallbackPct: exitRules.stopLevelFallbackPct,
   }, ctx);
 }
 
@@ -112,6 +119,7 @@ export function computeTakePrice(direction, entryPrice, exitRules, ctx) {
   return computeOne(direction, 'take', entryPrice, exitRules.takeType, {
     pct: exitRules.takePct, atrMult: exitRules.takeAtrMult,
     levelSource: exitRules.takeLevelSource, tolerancePct: exitRules.takeLevelTolerancePct,
+    levelFallbackPct: exitRules.takeLevelFallbackPct,
   }, ctx);
 }
 
