@@ -268,7 +268,82 @@
 .mobile-nav-item.active { color: var(--accent-primary); }
 .mobile-nav-icon { font-size: 20px; }
 
+/* Hamburger + slide-out drawer — only rendered when the account has extra (trusted/
+   admin) items that don't fit the fixed bottom bar (Бэктест etc.), see MobileNav.js */
+.mobile-hamburger {
+  display: none;
+  position: fixed;
+  top: calc(12px + env(safe-area-inset-top));
+  left: 12px;
+  z-index: 101;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-primary);
+  font-size: 18px;
+  backdrop-filter: blur(20px);
+}
+
+.mobile-drawer-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 200;
+}
+
+.mobile-drawer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 240px;
+  max-width: 80vw;
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border-subtle);
+  padding: calc(16px + env(safe-area-inset-top)) 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.mobile-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.mobile-drawer-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  padding: 4px;
+}
+
+.mobile-drawer-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 8px;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.mobile-drawer-item.active { color: var(--accent-primary); background: var(--bg-surface-2); }
+
 @media (max-width: 768px) {
   .sidebar { display: none; }
   .mobile-nav { display: block; }
+  .mobile-hamburger { display: flex; align-items: center; justify-content: center; }
+  .mobile-drawer-overlay { display: block; }
 }

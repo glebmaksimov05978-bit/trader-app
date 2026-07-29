@@ -4,26 +4,8 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { TRUSTED_UIDS } from '../../constants/trustedUids';
+import { NAV_ITEMS, ADMIN_ITEMS, TRUSTED_ITEMS } from '../../constants/navItems';
 import './Sidebar.css';
-
-const NAV_ITEMS = [
-  { path: '/', icon: '📊', label: 'Дашборд' },
-  { path: '/calculator', icon: '🧮', label: 'Калькулятор' },
-  { path: '/journal', icon: '📓', label: 'Журнал' },
-  { path: '/capital', icon: '💰', label: 'Капитал' },
-  { path: '/advisor', icon: '🤖', label: 'AI Советник' },
-  { path: '/settings', icon: '⚙️', label: 'Настройки' },
-];
-
-const ADMIN_ITEMS = [
-  { path: '/admin', icon: '🛡️', label: 'Админ-панель' },
-];
-
-// Внутренний инструмент, не готовый для клиентов — виден админам и тому же списку
-// доверенных аккаунтов, что обходит стену верификации почты (см. TRUSTED_UIDS).
-const TRUSTED_ITEMS = [
-  { path: '/backtest', icon: '🧪', label: 'Бэктест' },
-];
 
 export default function Sidebar() {
   const { user, userProfile, logout, isAdmin, isPro } = useAuth();
