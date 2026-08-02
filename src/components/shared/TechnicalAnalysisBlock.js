@@ -7,7 +7,12 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { formatNumber } from '../../utils/calculator';
 import RangeGauge from './RangeGauge';
-import { markStrongestLevel } from '../../services/analytics/patterns';
+import { markStrongestLevel, PATTERN_LABELS, STATUS_LABELS, PATTERN_DIRECTIONS } from '../../services/analytics/patterns';
+
+// Re-exported for existing callers (Calculator.js, Capital.js) that import these from
+// here — the definitions themselves moved to patterns.js so strategy.js (a service
+// module) could use PATTERN_DIRECTIONS too without depending on a UI component.
+export { PATTERN_LABELS, STATUS_LABELS, PATTERN_DIRECTIONS };
 
 // Click-to-reveal explainer for indicator jargon (RSI, %B, Bollinger, ...) — a trader
 // asked for exactly this instead of us trying to reword formulas into plain language
@@ -78,45 +83,6 @@ export function InfoTip({ text }) {
     </span>
   );
 }
-
-export const PATTERN_LABELS = {
-  double_top: 'Двойная вершина',
-  double_bottom: 'Двойное дно',
-  breakout_up: 'Пробой вверх',
-  breakout_down: 'Пробой вниз',
-  triangle_symmetric: 'Симметричный треугольник',
-  triangle_ascending: 'Восходящий треугольник',
-  triangle_descending: 'Нисходящий треугольник',
-  wedge_rising: 'Восходящий клин',
-  wedge_falling: 'Нисходящий клин',
-  flag_ascending: 'Флаг восходящий',
-  flag_descending: 'Флаг нисходящий',
-  flag_horizontal: 'Флаг горизонтальный',
-  pennant_bullish: 'Вымпел (бычий)',
-  pennant_bearish: 'Вымпел (медвежий)',
-  head_shoulders_top: 'Голова-плечи',
-  head_shoulders_bottom: 'Перевёрнутые голова-плечи',
-  pin_bar_bullish: 'Пин-бар (бычий)',
-  pin_bar_bearish: 'Пин-бар (медвежий)',
-  engulfing_bullish: 'Поглощение (бычье)',
-  engulfing_bearish: 'Поглощение (медвежье)',
-  impulse_up_5wave: '5-волновая структура вверх (упрощённо)',
-  impulse_down_5wave: '5-волновая структура вниз (упрощённо)',
-};
-
-export const STATUS_LABELS = { confirmed: 'сформирована', forming: 'формируется', invalidated: 'отменилась' };
-
-// Textbook direction of each detectable figure — used by the strategy constructor's
-// reference list (real user request: показать перечень фигур, разделённый на бычьи/
-// медвежьи/нейтральные). Classification follows the common convention: falling wedge
-// and ascending triangle are bullish, their mirrors bearish; symmetric triangle and
-// horizontal flag break either way. Flags/pennants are named here by the direction of
-// the move they continue (восходящий флаг = бычий).
-export const PATTERN_DIRECTIONS = {
-  bullish: ['double_bottom', 'head_shoulders_bottom', 'triangle_ascending', 'wedge_falling', 'breakout_up', 'flag_ascending', 'pennant_bullish', 'pin_bar_bullish', 'engulfing_bullish', 'impulse_up_5wave'],
-  bearish: ['double_top', 'head_shoulders_top', 'triangle_descending', 'wedge_rising', 'breakout_down', 'flag_descending', 'pennant_bearish', 'pin_bar_bearish', 'engulfing_bearish', 'impulse_down_5wave'],
-  neutral: ['triangle_symmetric', 'flag_horizontal'],
-};
 
 // Color-by-confidence instead of a separate icon system — the number already carries
 // the meaning, no need for extra visual clutter next to it (agreed with the trader,

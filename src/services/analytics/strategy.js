@@ -10,6 +10,7 @@
 // needs isn't available yet (e.g. SMA/EMA200 on a freshly-listed ticker, or no plan
 // entered in the Calculator) — an honest "не хватает данных", not a silent fail.
 import { defaultExitRules } from './exitRules';
+import { PATTERN_DIRECTIONS } from './patterns';
 
 // Price-relative conditions compare against the trader's own planned entry price when
 // one exists (limit order in the Calculator) — comparing a limit-order plan against the
@@ -114,7 +115,21 @@ export const CONDITION_CATALOG = [
     evaluate: (ctx, param, cond) => {
       const candidates = ctx.patterns?.candidates;
       if (!candidates) return { na: true };
-      const wanted = cond?.patterns?.length ? candidates.filter((c) => cond.patterns.includes(c.pattern)) : candidates;
+      let wanted = cond?.patterns?.length ? candidates.filter((c) => cond.patterns.includes(c.pattern)) : candidates;
+      // A pattern only counts toward THIS side's readiness if it actually points that
+      // way. Real bug caught live (trader's own trade-by-trade review): a bullish
+      // double_bottom used to satisfy a SHORT evaluation just as easily as a long one,
+      // because nothing here checked the figure's own textbook direction against
+      // ctx.direction — e.g. "сделка в шорт, хотя двойное дно — сигнал в лонг". Neutral
+      // figures (symmetric triangle, horizontal flag) still count for either side, same
+      // as before.
+      if (ctx.direction) {
+        wanted = wanted.filter((c) => {
+          if (PATTERN_DIRECTIONS.neutral.includes(c.pattern)) return true;
+          const list = ctx.direction === 'long' ? PATTERN_DIRECTIONS.bullish : PATTERN_DIRECTIONS.bearish;
+          return list.includes(c.pattern);
+        });
+      }
       const best = wanted.filter((c) => c.status === 'confirmed').sort((a, b) => b.confidence - a.confidence)[0];
       if (!best) return { passed: false, detail: 'Подтверждённых фигур нет' };
       return { passed: best.confidence >= param, detail: `Лучшая фигура — ${best.confidence}%` };

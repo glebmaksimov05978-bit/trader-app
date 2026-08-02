@@ -20,6 +20,50 @@ import { detectCandlestickPatterns } from './candlestickPatterns';
 
 const EMA_PERIODS = [9, 100, 200];
 
+export const PATTERN_LABELS = {
+  double_top: 'Двойная вершина',
+  double_bottom: 'Двойное дно',
+  breakout_up: 'Пробой вверх',
+  breakout_down: 'Пробой вниз',
+  triangle_symmetric: 'Симметричный треугольник',
+  triangle_ascending: 'Восходящий треугольник',
+  triangle_descending: 'Нисходящий треугольник',
+  wedge_rising: 'Восходящий клин',
+  wedge_falling: 'Нисходящий клин',
+  flag_ascending: 'Флаг восходящий',
+  flag_descending: 'Флаг нисходящий',
+  flag_horizontal: 'Флаг горизонтальный',
+  pennant_bullish: 'Вымпел (бычий)',
+  pennant_bearish: 'Вымпел (медвежий)',
+  head_shoulders_top: 'Голова-плечи',
+  head_shoulders_bottom: 'Перевёрнутые голова-плечи',
+  pin_bar_bullish: 'Пин-бар (бычий)',
+  pin_bar_bearish: 'Пин-бар (медвежий)',
+  engulfing_bullish: 'Поглощение (бычье)',
+  engulfing_bearish: 'Поглощение (медвежье)',
+  impulse_up_5wave: '5-волновая структура вверх (упрощённо)',
+  impulse_down_5wave: '5-волновая структура вниз (упрощённо)',
+};
+
+export const STATUS_LABELS = { confirmed: 'сформирована', forming: 'формируется', invalidated: 'отменилась' };
+
+// Textbook direction of each detectable figure. Classification follows the common
+// convention: falling wedge and ascending triangle are bullish, their mirrors bearish;
+// symmetric triangle and horizontal flag break either way. Flags/pennants are named here
+// by the direction of the move they continue (восходящий флаг = бычий).
+//
+// Lives here (not in the UI component that first needed it) because strategy.js's
+// `pattern_confirmed` condition needs it too, to fix a real bug caught live: the
+// condition used to count ANY confirmed pattern ≥ threshold toward BOTH long and short
+// readiness, regardless of which way that specific pattern actually points — a bullish
+// double_bottom could satisfy a SHORT entry just as easily as a long one. See
+// evaluate() in strategy.js.
+export const PATTERN_DIRECTIONS = {
+  bullish: ['double_bottom', 'head_shoulders_bottom', 'triangle_ascending', 'wedge_falling', 'breakout_up', 'flag_ascending', 'pennant_bullish', 'pin_bar_bullish', 'engulfing_bullish', 'impulse_up_5wave'],
+  bearish: ['double_top', 'head_shoulders_top', 'triangle_descending', 'wedge_rising', 'breakout_down', 'flag_descending', 'pennant_bearish', 'pin_bar_bearish', 'engulfing_bearish', 'impulse_down_5wave'],
+  neutral: ['triangle_symmetric', 'flag_horizontal'],
+};
+
 // Below this confidence, a pattern is more coincidence than shape — the geometric rules
 // technically matched (that's why `status` still says "confirmed": the swings genuinely
 // exist), but showing every 30%-match double top buries the handful that are actually
@@ -330,15 +374,33 @@ function detectFormingDoubleTopBottom(swings, visibleCandles, swingLookback, mat
   }];
 }
 
+// Double-top/bottom candidates whose SECOND point (swing C) is this many bars old
+// relative to the entry bar no longer count. Real bug, caught live: `sinceSwingIndex`
+// below windows by SWING COUNT ("last 15 swings"), which was meant as a recency filter
+// ("otherwise a year of history throws off dozens of coincidental matches") — but in a
+// quiet stretch where few new swings form, "the last 15 swings" can still span many
+// MONTHS, so a single high-confidence pair never ages out and keeps winning the
+// readiness score against far fresher setups. Confirmed via the trader's own trade-by-
+// trade review: a 90%-confidence double-bottom/double-top pair from ~July 2024 kept
+// getting cited as the deciding pattern all the way through March 2025 — 7+ months after
+// its own move had already played out — simply because too few swings had formed since
+// to push it out of the count-based window. Bar-age and swing-count are complementary,
+// not redundant: swing-count keeps the scan cheap, bar-age is what actually bounds
+// staleness in calendar time.
+const MAX_DOUBLE_PATTERN_AGE_BARS = 60;
+
 // Double top/bottom: swing A and C are the same type and close in price (within
 // `matchTolerancePct`), with swing B between them retracing at least `minDepthPct`.
 // `sinceSwingIndex` restricts the scan to recent swings only — otherwise a year of
 // history throws off dozens of coincidental matches nobody was actually looking at.
-function detectDoubleTopBottom(swings, matchTolerancePct = 2, minDepthPct = 2, sinceSwingIndex = 0) {
+// `currentIndex` (the entry bar's own index) additionally gates on real calendar/bar
+// recency — see MAX_DOUBLE_PATTERN_AGE_BARS above for why both are needed.
+function detectDoubleTopBottom(swings, matchTolerancePct = 2, minDepthPct = 2, sinceSwingIndex = 0, currentIndex = null) {
   const out = [];
   for (let i = Math.max(0, sinceSwingIndex); i + 2 < swings.length; i++) {
     const [a, b, c] = swings.slice(i, i + 3);
     if (a.type !== c.type || a.type === b.type) continue;
+    if (currentIndex != null && (currentIndex - c.index) > MAX_DOUBLE_PATTERN_AGE_BARS) continue;
     const diffPct = (Math.abs(a.price - c.price) / a.price) * 100;
     const depthPct = (Math.abs(a.price - b.price) / a.price) * 100;
     if (diffPct <= matchTolerancePct && depthPct >= minDepthPct) {
@@ -568,8 +630,12 @@ export function computePatternsAtEntry(candles, atDate, { swingLookback = 3, tim
   const volumeRatio = avgVol20 ? volumes[volumes.length - 1] / avgVol20 : null;
 
   // Only scan the most recent swings for double top/bottom — otherwise a year of history
-  // throws off dozens of coincidental matches nobody was actually watching form.
-  const recentDoubles = swingsAllowed ? detectDoubleTopBottom(swings, 2, 2, swings.length - 15) : [];
+  // throws off dozens of coincidental matches nobody was actually watching form. Also
+  // gated on real bar-age (see MAX_DOUBLE_PATTERN_AGE_BARS) so a stale pair can't keep
+  // winning just because too few new swings have formed to push it out of the count window.
+  const recentDoubles = swingsAllowed
+    ? detectDoubleTopBottom(swings, 2, 2, swings.length - 15, visibleCandles.length - 1)
+    : [];
 
   const rawCandidates = [
     ...recentDoubles,
