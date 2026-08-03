@@ -15,21 +15,30 @@ export function detectPinBar(candle) {
 
   const upperWick = candle.high - Math.max(candle.open, candle.close);
   const lowerWick = Math.min(candle.open, candle.close) - candle.low;
+  // Real user report: "нижняя тень 76%, тело 18% — если сложить проценты, 100% не
+  // получается, непонятно где эта свеча". Both gaps had the same root cause — only two
+  // of the three parts (the wick that matters + the body) were ever shown, and no date —
+  // so a reader couldn't locate the exact candle or see where the missing % went. Now
+  // states all three parts (both wicks + body, always summing to 100%) plus the date.
+  const dateLabel = candle.date instanceof Date
+    ? candle.date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })
+    : null;
+  const pct = (v) => Math.round((v / range) * 100);
 
   if (lowerWick >= 2 * body && lowerWick / range >= 0.6) {
     return {
       pattern: 'pin_bar_bullish',
       confidence: Math.round(Math.min(90, 40 + (lowerWick / range) * 60)),
-      detail: `Пин-бар (бычий): нижняя тень ${Math.round((lowerWick / range) * 100)}% свечи, `
-        + `тело всего ${Math.round(bodyRatio * 100)}% — отказ от более низких цен.`,
+      detail: `Пин-бар (бычий)${dateLabel ? ` — свеча ${dateLabel}` : ''}: нижняя тень ${pct(lowerWick)}%, `
+        + `тело ${pct(body)}%, верхняя тень ${pct(upperWick)}% (в сумме 100% диапазона свечи) — отказ от более низких цен.`,
     };
   }
   if (upperWick >= 2 * body && upperWick / range >= 0.6) {
     return {
       pattern: 'pin_bar_bearish',
       confidence: Math.round(Math.min(90, 40 + (upperWick / range) * 60)),
-      detail: `Пин-бар (медвежий): верхняя тень ${Math.round((upperWick / range) * 100)}% свечи, `
-        + `тело всего ${Math.round(bodyRatio * 100)}% — отказ от более высоких цен.`,
+      detail: `Пин-бар (медвежий)${dateLabel ? ` — свеча ${dateLabel}` : ''}: верхняя тень ${pct(upperWick)}%, `
+        + `тело ${pct(body)}%, нижняя тень ${pct(lowerWick)}% (в сумме 100% диапазона свечи) — отказ от более высоких цен.`,
     };
   }
   return null;
@@ -50,11 +59,17 @@ export function detectEngulfing(prevCandle, candle) {
   if (!engulfs) return null;
 
   const sizeRatio = body / prevBody;
+  const fmt = (c) => c.date instanceof Date ? c.date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' }) : null;
+  const prevDate = fmt(prevCandle), curDate = fmt(candle);
   return {
     pattern: bullish ? 'engulfing_bullish' : 'engulfing_bearish',
     confidence: Math.round(Math.min(90, 40 + Math.min(sizeRatio, 3) * 15)),
-    detail: `Поглощение (${bullish ? 'бычье' : 'медвежье'}): тело текущей свечи в ${sizeRatio.toFixed(1)}× `
-      + `больше предыдущей и полностью её перекрывает.`,
+    // Two dates spelled out — real user confusion: "тут эта фигура состоит из трёх
+    // свечей, а мы видели только ту, на которой вошли, и предыдущую" — knowing exactly
+    // which two calendar days are meant removes the guessing.
+    detail: `Поглощение (${bullish ? 'бычье' : 'медвежье'})${prevDate && curDate ? ` — свечи ${prevDate} → ${curDate}` : ''}: `
+      + `${prevBullish ? 'бычью' : 'медвежью'} свечу ${prevDate || 'до'} перекрывает ${bullish ? 'бычья' : 'медвежья'} свеча ${curDate || 'после'}, `
+      + `тело в ${sizeRatio.toFixed(1)}× больше и полностью её перекрывает.`,
   };
 }
 

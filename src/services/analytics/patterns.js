@@ -20,6 +20,17 @@ import { detectCandlestickPatterns } from './candlestickPatterns';
 
 const EMA_PERIODS = [9, 100, 200];
 
+// Shared date formatter for pattern detail text — real, repeated user feedback across
+// many reviewed trades ("нужна дата и точная координата второго дна... глаза мозолишь")
+// that price-only descriptions left the trader hunting the chart for which candle a
+// pattern point actually was. Every multi-point detector below now names dates, not just
+// prices, for each key point.
+function fmtSwingDate(swing) {
+  return swing?.date instanceof Date
+    ? swing.date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' })
+    : null;
+}
+
 export const PATTERN_LABELS = {
   double_top: 'Двойная вершина',
   double_bottom: 'Двойное дно',
@@ -436,7 +447,10 @@ function detectDoubleTopBottom(swings, matchTolerancePct = 2, minDepthPct = 2, s
         confidence: Math.min(90, baseConfidence + sizeBonus),
         points: [a, b, c],
         levelPrice: a.price, // same identity field detectFormingDoubleTopBottom uses — lets a caller match "this forming setup confirmed"
-        detail: `${a.type === 'high' ? 'Два пика' : 'Два дна'} на уровне ~${a.price.toFixed(2)} `
+        detail: `${a.type === 'high' ? 'Два пика' : 'Два дна'} на уровне ~${a.price.toFixed(2)}: `
+          + `первая точка ${a.price.toFixed(2)}${fmtSwingDate(a) ? ` (${fmtSwingDate(a)})` : ''}, `
+          + `${a.type === 'high' ? 'впадина' : 'вершина'} между ними ${b.price.toFixed(2)}${fmtSwingDate(b) ? ` (${fmtSwingDate(b)})` : ''}, `
+          + `вторая точка ${c.price.toFixed(2)}${fmtSwingDate(c) ? ` (${fmtSwingDate(c)})` : ''} `
           + `(расхождение ${diffPct.toFixed(1)}%), между ними откат ${depthPct.toFixed(1)}%, фигура на ${barsSpan} свечах.`,
       });
     }
@@ -500,41 +514,46 @@ function classifyConsolidation(swings) {
   // can't dominate the base geometry score.
   const barsSpan = last5[last5.length - 1].index - last5[0].index;
   const sizeBonus = Math.min(10, Math.round(barsSpan / 5));
+  // "from date → to date" of the whole 5-swing window — real user feedback: descriptions
+  // gave a % move or a shape but never said WHEN, leaving the trader to guess which part
+  // of the chart was meant ("непонятно от какого момента он считает").
+  const fromDate = fmtSwingDate(last5[0]), toDate = fmtSwingDate(last5[last5.length - 1]);
+  const dateRange = fromDate && toDate ? ` (${fromDate} → ${toDate})` : '';
 
   if (highSlopePct < -1 && lowSlopePct > 1 && isNarrowing) {
     if (hasPole) {
       return {
         pattern: poleDirection === 'up' ? 'pennant_bullish' : 'pennant_bearish', confidence: 55 + sizeBonus, points: last5,
-        detail: `Вымпел после ${poleLabel} на ${poleMovePct.toFixed(1)}% — небольшой симметрично сужающийся диапазон, ${barsSpan} свечей.`,
+        detail: `Вымпел после ${poleLabel} на ${poleMovePct.toFixed(1)}% — небольшой симметрично сужающийся диапазон, ${barsSpan} свечей${dateRange}.`,
       };
     }
     return {
       pattern: 'triangle_symmetric', confidence: 50 + sizeBonus, points: last5,
-      detail: `Симметричный треугольник — максимумы понижаются, минимумы повышаются, без выраженного импульса перед этим, ${barsSpan} свечей.`,
+      detail: `Симметричный треугольник — максимумы понижаются, минимумы повышаются, без выраженного импульса перед этим, ${barsSpan} свечей${dateRange}.`,
     };
   }
   if (flat(highSlopePct) && lowSlopePct > 1) {
     return {
       pattern: 'triangle_ascending', confidence: 55 + sizeBonus, points: last5,
-      detail: `Восходящий треугольник — сопротивление держится на месте, поддержка последовательно растёт, ${barsSpan} свечей.`,
+      detail: `Восходящий треугольник — сопротивление держится на месте, поддержка последовательно растёт, ${barsSpan} свечей${dateRange}.`,
     };
   }
   if (flat(lowSlopePct) && highSlopePct < -1) {
     return {
       pattern: 'triangle_descending', confidence: 55 + sizeBonus, points: last5,
-      detail: `Нисходящий треугольник — поддержка держится на месте, сопротивление последовательно снижается, ${barsSpan} свечей.`,
+      detail: `Нисходящий треугольник — поддержка держится на месте, сопротивление последовательно снижается, ${barsSpan} свечей${dateRange}.`,
     };
   }
   if (highSlopePct > 1 && lowSlopePct > 1 && isNarrowing) {
     return {
       pattern: 'wedge_rising', confidence: 50 + sizeBonus, points: last5,
-      detail: `Восходящий клин — обе границы растут, но диапазон сужается. Чаще медвежий разворотный сигнал, не продолжение, ${barsSpan} свечей.`,
+      detail: `Восходящий клин — обе границы растут, но диапазон сужается. Чаще медвежий разворотный сигнал, не продолжение, ${barsSpan} свечей${dateRange}.`,
     };
   }
   if (highSlopePct < -1 && lowSlopePct < -1 && isNarrowing) {
     return {
       pattern: 'wedge_falling', confidence: 50 + sizeBonus, points: last5,
-      detail: `Нисходящий клин — обе границы падают, но диапазон сужается. Чаще бычий разворотный сигнал, не продолжение, ${barsSpan} свечей.`,
+      detail: `Нисходящий клин — обе границы падают, но диапазон сужается. Чаще бычий разворотный сигнал, не продолжение, ${barsSpan} свечей${dateRange}.`,
     };
   }
   if (hasPole && !isNarrowing) {
@@ -543,7 +562,8 @@ function classifyConsolidation(swings) {
     const labels = { ascending: 'восходящий', descending: 'нисходящий', horizontal: 'горизонтальный' };
     return {
       pattern: `flag_${channelDirection}`, confidence: 50 + sizeBonus, points: last5,
-      detail: `Флаг (${labels[channelDirection]}) после ${poleLabel} на ${poleMovePct.toFixed(1)}%, ${barsSpan} свечей.`,
+      detail: `Флаг (${labels[channelDirection]}) после ${poleLabel} на ${poleMovePct.toFixed(1)}% `
+        + `(флагшток от ${fmtSwingDate(pole) || '?'}), сам флаг ${barsSpan} свечей${dateRange}.`,
     };
   }
   return null;
@@ -580,9 +600,11 @@ function detectHeadAndShoulders(swings, shoulderTolerancePct = 6) {
   return {
     pattern: isTop ? 'head_shoulders_top' : 'head_shoulders_bottom',
     confidence, points: last5, neckline,
-    detail: `${isTop ? 'Голова-плечи' : 'Перевёрнутые голова-плечи'}: плечи ${leftShoulder.price.toFixed(2)} / `
-      + `${rightShoulder.price.toFixed(2)} (расхождение ${shoulderDiffPct.toFixed(1)}%), `
-      + `голова ${head.price.toFixed(2)}, линия шеи ~${neckline.toFixed(2)}, фигура на ${barsSpan} свечах.`,
+    detail: `${isTop ? 'Голова-плечи' : 'Перевёрнутые голова-плечи'}: `
+      + `левое плечо ${leftShoulder.price.toFixed(2)}${fmtSwingDate(leftShoulder) ? ` (${fmtSwingDate(leftShoulder)})` : ''}, `
+      + `голова ${head.price.toFixed(2)}${fmtSwingDate(head) ? ` (${fmtSwingDate(head)})` : ''}, `
+      + `правое плечо ${rightShoulder.price.toFixed(2)}${fmtSwingDate(rightShoulder) ? ` (${fmtSwingDate(rightShoulder)})` : ''} `
+      + `(расхождение плеч ${shoulderDiffPct.toFixed(1)}%), линия шеи ~${neckline.toFixed(2)}, фигура на ${barsSpan} свечах.`,
   };
 }
 
