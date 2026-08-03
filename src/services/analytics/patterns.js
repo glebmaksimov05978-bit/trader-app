@@ -389,29 +389,55 @@ function detectFormingDoubleTopBottom(swings, visibleCandles, swingLookback, mat
 // staleness in calendar time.
 const MAX_DOUBLE_PATTERN_AGE_BARS = 60;
 
+// Has the pattern's own implied move already played out? Real user idea, and the
+// principled way to retire a pattern instead of just aging it out by bar count: once
+// price (any time after point C) has traded back to point B's level, the formation is
+// done its job — a double-top's bearish signal stops mattering once price has already
+// fallen to the base between the two peaks; a double-bottom's bullish signal stops
+// mattering once price has already risen back to the peak between the two troughs. The
+// trader's own example: "видит две вершины, входит в шорт, потом видит сигнал когда
+// цена дошла до основания этой фигуры" — this is exactly that check, scoped to double
+// top/bottom for now (a full per-pattern lifecycle tracker for every figure type is a
+// bigger, separate project, agreed as a later step).
+function doubleTopBottomTargetReached(a, b, c, candles, upToIndex) {
+  const after = candles.slice(c.index + 1, upToIndex + 1);
+  return after.some((bar) => (a.type === 'high' ? bar.low <= b.price : bar.high >= b.price));
+}
+
 // Double top/bottom: swing A and C are the same type and close in price (within
 // `matchTolerancePct`), with swing B between them retracing at least `minDepthPct`.
 // `sinceSwingIndex` restricts the scan to recent swings only — otherwise a year of
 // history throws off dozens of coincidental matches nobody was actually looking at.
 // `currentIndex` (the entry bar's own index) additionally gates on real calendar/bar
 // recency — see MAX_DOUBLE_PATTERN_AGE_BARS above for why both are needed.
-function detectDoubleTopBottom(swings, matchTolerancePct = 2, minDepthPct = 2, sinceSwingIndex = 0, currentIndex = null) {
+// `visibleCandles`, when given, also excludes a pattern whose target already hit — see
+// doubleTopBottomTargetReached above.
+function detectDoubleTopBottom(swings, matchTolerancePct = 2, minDepthPct = 2, sinceSwingIndex = 0, currentIndex = null, visibleCandles = null) {
   const out = [];
   for (let i = Math.max(0, sinceSwingIndex); i + 2 < swings.length; i++) {
     const [a, b, c] = swings.slice(i, i + 3);
     if (a.type !== c.type || a.type === b.type) continue;
     if (currentIndex != null && (currentIndex - c.index) > MAX_DOUBLE_PATTERN_AGE_BARS) continue;
+    if (visibleCandles && currentIndex != null && doubleTopBottomTargetReached(a, b, c, visibleCandles, currentIndex)) continue;
     const diffPct = (Math.abs(a.price - c.price) / a.price) * 100;
     const depthPct = (Math.abs(a.price - b.price) / a.price) * 100;
     if (diffPct <= matchTolerancePct && depthPct >= minDepthPct) {
-      const confidence = Math.round(Math.max(0, 100 - diffPct * 25) * Math.min(1, depthPct / 5));
+      const baseConfidence = Math.round(Math.max(0, 100 - diffPct * 25) * Math.min(1, depthPct / 5));
+      // Size bonus — repeated, explicit user feedback ("фигура из всего 11 свечей...
+      // фигуры из гораздо большего количества свечей с большой амплитудой явно имеют
+      // силу") that a tiny, barely-there pattern scored the same as a large, clearly
+      // meaningful one. Same spirit as markStrongestLevel's reversal-amplitude bonus — a
+      // modest bonus ON TOP of the geometry score, not a replacement for it. +1 per 5
+      // bars the pattern spans (A to C), capped so it can't dominate the base score.
+      const barsSpan = c.index - a.index;
+      const sizeBonus = Math.min(10, Math.round(barsSpan / 5));
       out.push({
         pattern: a.type === 'high' ? 'double_top' : 'double_bottom',
-        confidence: Math.min(confidence, 90),
+        confidence: Math.min(90, baseConfidence + sizeBonus),
         points: [a, b, c],
         levelPrice: a.price, // same identity field detectFormingDoubleTopBottom uses — lets a caller match "this forming setup confirmed"
         detail: `${a.type === 'high' ? 'Два пика' : 'Два дна'} на уровне ~${a.price.toFixed(2)} `
-          + `(расхождение ${diffPct.toFixed(1)}%), между ними откат ${depthPct.toFixed(1)}%.`,
+          + `(расхождение ${diffPct.toFixed(1)}%), между ними откат ${depthPct.toFixed(1)}%, фигура на ${barsSpan} свечах.`,
       });
     }
   }
@@ -468,40 +494,47 @@ function classifyConsolidation(swings) {
   const poleDirection = last5[0].price > pole.price ? 'up' : 'down';
   const poleLabel = poleDirection === 'up' ? 'роста' : 'падения';
 
+  // Size bonus — same reasoning as detectDoubleTopBottom's (repeated user feedback that
+  // a small, barely-there consolidation was scored the same as a large, clearly
+  // meaningful one): +1 confidence per 5 bars the 5-swing window spans, capped so it
+  // can't dominate the base geometry score.
+  const barsSpan = last5[last5.length - 1].index - last5[0].index;
+  const sizeBonus = Math.min(10, Math.round(barsSpan / 5));
+
   if (highSlopePct < -1 && lowSlopePct > 1 && isNarrowing) {
     if (hasPole) {
       return {
-        pattern: poleDirection === 'up' ? 'pennant_bullish' : 'pennant_bearish', confidence: 55, points: last5,
-        detail: `Вымпел после ${poleLabel} на ${poleMovePct.toFixed(1)}% — небольшой симметрично сужающийся диапазон.`,
+        pattern: poleDirection === 'up' ? 'pennant_bullish' : 'pennant_bearish', confidence: 55 + sizeBonus, points: last5,
+        detail: `Вымпел после ${poleLabel} на ${poleMovePct.toFixed(1)}% — небольшой симметрично сужающийся диапазон, ${barsSpan} свечей.`,
       };
     }
     return {
-      pattern: 'triangle_symmetric', confidence: 50, points: last5,
-      detail: 'Симметричный треугольник — максимумы понижаются, минимумы повышаются, без выраженного импульса перед этим.',
+      pattern: 'triangle_symmetric', confidence: 50 + sizeBonus, points: last5,
+      detail: `Симметричный треугольник — максимумы понижаются, минимумы повышаются, без выраженного импульса перед этим, ${barsSpan} свечей.`,
     };
   }
   if (flat(highSlopePct) && lowSlopePct > 1) {
     return {
-      pattern: 'triangle_ascending', confidence: 55, points: last5,
-      detail: 'Восходящий треугольник — сопротивление держится на месте, поддержка последовательно растёт.',
+      pattern: 'triangle_ascending', confidence: 55 + sizeBonus, points: last5,
+      detail: `Восходящий треугольник — сопротивление держится на месте, поддержка последовательно растёт, ${barsSpan} свечей.`,
     };
   }
   if (flat(lowSlopePct) && highSlopePct < -1) {
     return {
-      pattern: 'triangle_descending', confidence: 55, points: last5,
-      detail: 'Нисходящий треугольник — поддержка держится на месте, сопротивление последовательно снижается.',
+      pattern: 'triangle_descending', confidence: 55 + sizeBonus, points: last5,
+      detail: `Нисходящий треугольник — поддержка держится на месте, сопротивление последовательно снижается, ${barsSpan} свечей.`,
     };
   }
   if (highSlopePct > 1 && lowSlopePct > 1 && isNarrowing) {
     return {
-      pattern: 'wedge_rising', confidence: 50, points: last5,
-      detail: 'Восходящий клин — обе границы растут, но диапазон сужается. Чаще медвежий разворотный сигнал, не продолжение.',
+      pattern: 'wedge_rising', confidence: 50 + sizeBonus, points: last5,
+      detail: `Восходящий клин — обе границы растут, но диапазон сужается. Чаще медвежий разворотный сигнал, не продолжение, ${barsSpan} свечей.`,
     };
   }
   if (highSlopePct < -1 && lowSlopePct < -1 && isNarrowing) {
     return {
-      pattern: 'wedge_falling', confidence: 50, points: last5,
-      detail: 'Нисходящий клин — обе границы падают, но диапазон сужается. Чаще бычий разворотный сигнал, не продолжение.',
+      pattern: 'wedge_falling', confidence: 50 + sizeBonus, points: last5,
+      detail: `Нисходящий клин — обе границы падают, но диапазон сужается. Чаще бычий разворотный сигнал, не продолжение, ${barsSpan} свечей.`,
     };
   }
   if (hasPole && !isNarrowing) {
@@ -509,8 +542,8 @@ function classifyConsolidation(swings) {
       : (highSlopePct < -1 && lowSlopePct < -1) ? 'descending' : 'horizontal';
     const labels = { ascending: 'восходящий', descending: 'нисходящий', horizontal: 'горизонтальный' };
     return {
-      pattern: `flag_${channelDirection}`, confidence: 50, points: last5,
-      detail: `Флаг (${labels[channelDirection]}) после ${poleLabel} на ${poleMovePct.toFixed(1)}%.`,
+      pattern: `flag_${channelDirection}`, confidence: 50 + sizeBonus, points: last5,
+      detail: `Флаг (${labels[channelDirection]}) после ${poleLabel} на ${poleMovePct.toFixed(1)}%, ${barsSpan} свечей.`,
     };
   }
   return null;
@@ -536,14 +569,20 @@ function detectHeadAndShoulders(swings, shoulderTolerancePct = 6) {
   const shoulderDiffPct = (Math.abs(leftShoulder.price - rightShoulder.price) / leftShoulder.price) * 100;
   if (shoulderDiffPct > shoulderTolerancePct) return null;
   const neckline = (neck1.price + neck2.price) / 2;
-  const confidence = Math.min(85, Math.round(Math.max(0, 80 - shoulderDiffPct * 6)));
+  // Size bonus — same reasoning as the other swing-based detectors: a tiny H&S squeezed
+  // into a few candles isn't as meaningful as one spanning a real stretch of the chart
+  // (repeated user feedback). +1 per 5 bars the whole 5-swing span covers, capped at +5
+  // here (smaller than the other detectors' +10 since this one already caps at 85).
+  const barsSpan = rightShoulder.index - leftShoulder.index;
+  const sizeBonus = Math.min(5, Math.round(barsSpan / 8));
+  const confidence = Math.min(85, Math.round(Math.max(0, 80 - shoulderDiffPct * 6)) + sizeBonus);
 
   return {
     pattern: isTop ? 'head_shoulders_top' : 'head_shoulders_bottom',
     confidence, points: last5, neckline,
     detail: `${isTop ? 'Голова-плечи' : 'Перевёрнутые голова-плечи'}: плечи ${leftShoulder.price.toFixed(2)} / `
       + `${rightShoulder.price.toFixed(2)} (расхождение ${shoulderDiffPct.toFixed(1)}%), `
-      + `голова ${head.price.toFixed(2)}, линия шеи ~${neckline.toFixed(2)}.`,
+      + `голова ${head.price.toFixed(2)}, линия шеи ~${neckline.toFixed(2)}, фигура на ${barsSpan} свечах.`,
   };
 }
 
@@ -634,7 +673,7 @@ export function computePatternsAtEntry(candles, atDate, { swingLookback = 3, tim
   // gated on real bar-age (see MAX_DOUBLE_PATTERN_AGE_BARS) so a stale pair can't keep
   // winning just because too few new swings have formed to push it out of the count window.
   const recentDoubles = swingsAllowed
-    ? detectDoubleTopBottom(swings, 2, 2, swings.length - 15, visibleCandles.length - 1)
+    ? detectDoubleTopBottom(swings, 2, 2, swings.length - 15, visibleCandles.length - 1, visibleCandles)
     : [];
 
   const rawCandidates = [
