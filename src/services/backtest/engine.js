@@ -15,6 +15,29 @@ import { computePatternsAtEntry } from '../analytics/patterns';
 import { computeMarketContextAtEntry } from '../analytics/marketContext';
 import { evaluateStrategy } from '../analytics/strategy';
 import { computeStopPrice, computeTakePrice } from '../analytics/exitRules';
+import { calcTrade } from '../../utils/calculator';
+
+// Real position sizing (optional — see runBacktest's `riskSizing` param). Reuses the
+// EXACT same math the Calculator uses for a real trade (real user request: "зачем ты
+// придумываешь, если это уже в стратегии указано" — риск% и загрузка депозита are
+// strategy settings that already exist, not something to invent separately). Returns
+// null when there's no stop distance to size against (exitRules.stopType === 'none'),
+// since "risk % of deposit" is meaningless without a defined risk distance.
+function sizePosition(entryPrice, stopPrice, riskSizing) {
+  if (!riskSizing || stopPrice == null) return null;
+  const sizing = calcTrade({
+    entryPrice, stopLoss: stopPrice,
+    depositSize: riskSizing.depositSize, riskPercent: riskSizing.riskPercent,
+    lot: riskSizing.lot, minStep: riskSizing.minStep, minStepAmount: riskSizing.minStepAmount,
+    initialMargin: riskSizing.initialMargin, commissionRate: riskSizing.commissionRate,
+    maxMarginPercent: riskSizing.maxMarginPercent, instrumentType: riskSizing.instrumentType,
+  });
+  if (!sizing || !sizing.contracts) return null;
+  // Rubles moved per 1 point of price, derived from calcTrade's own lossPerContract
+  // rather than re-deriving the stock-vs-future branching a second time here.
+  const rubPerPoint = sizing.lossPerContract / Math.abs(entryPrice - stopPrice);
+  return { contracts: sizing.contracts, rubPerPoint, commission: sizing.commission };
+}
 
 // Bars needed before the first entry check — mostly so SMA200/ATR-average windows have
 // real data instead of nulls flooding every condition as "na". Not a hard requirement
@@ -52,6 +75,10 @@ function finalizeTrade(position, exitIndex, exitDate, exitPrice, exitReason) {
   const sign = position.direction === 'long' ? 1 : -1;
   const pnlPoints = (exitPrice - position.entryPrice) * sign;
   const pnlPct = (pnlPoints / position.entryPrice) * 100;
+  // Real ruble P&L, only when the caller asked for risk-based sizing (see sizePosition
+  // above) — null otherwise, so callers that don't care about this can keep using pnlPct
+  // exactly as before, untouched.
+  const pnlRub = position.sizing ? pnlPoints * position.sizing.contracts * position.sizing.rubPerPoint - position.sizing.commission : null;
   return {
     direction: position.direction,
     entryIndex: position.entryIndex, entryDate: position.entryDate, entryPrice: position.entryPrice,
@@ -59,11 +86,12 @@ function finalizeTrade(position, exitIndex, exitDate, exitPrice, exitReason) {
     exitIndex, exitDate, exitPrice, exitReason,
     barsHeld: position.barsHeld,
     pnlPoints, pnlPct,
+    pnlRub, contracts: position.sizing?.contracts ?? null,
     status: 'closed',
     pnl: pnlPct, // calcStats() only needs a numeric `pnl` + `date` + status:'closed' — we
-    // feed it % return per trade (no real position sizing in v1), so profit factor /
-    // win-loss averages come out scale-invariant and honest without pretending we've
-    // modeled contract size or ruble risk.
+    // feed it % return per trade by default (no real position sizing unless riskSizing
+    // was given), so profit factor / win-loss averages come out scale-invariant and
+    // honest without pretending we've modeled contract size or ruble risk.
     date: exitDate,
   };
 }
@@ -91,6 +119,21 @@ function stripCustomConditions(strategy) {
  * @param {boolean} [params.exitRules.onSignalLoss] - exit when the strategy's own readiness % drops below its threshold.
  * @param {number|null} [params.exitRules.maxBars] - exit after N bars regardless of anything else.
  * @param {number} [params.warmupBars]
+ * @param {object} [params.riskSizing] - real position sizing (real user request — "зачем
+ *   придумывать, если это уже в стратегии указано"). When given, each trade also gets a
+ *   real pnlRub computed via the same calcTrade() the Calculator uses for a live trade,
+ *   using the trader's OWN max_risk_percent/max_margin_usage strategy settings — not a
+ *   separate invented number. Trades whose stop type is 'none' (no risk distance to size
+ *   against) get pnlRub: null, same as when riskSizing isn't given at all.
+ * @param {number} [params.riskSizing.depositSize]
+ * @param {number} [params.riskSizing.riskPercent]
+ * @param {number} [params.riskSizing.maxMarginPercent]
+ * @param {'future'|'stock'} [params.riskSizing.instrumentType]
+ * @param {number} [params.riskSizing.lot]
+ * @param {number} [params.riskSizing.minStep]
+ * @param {number} [params.riskSizing.minStepAmount]
+ * @param {number} [params.riskSizing.initialMargin]
+ * @param {number} [params.riskSizing.commissionRate]
  * @returns {{ trades: object[], hadCustomConditions: boolean, barsEvaluated: number, ambiguousBars: number }}
  */
 export function runBacktest({
@@ -99,6 +142,7 @@ export function runBacktest({
   timeframeMinutes = null,
   exitRules = null, // defaults to strategy.exitRules if not given an explicit override
   warmupBars = DEFAULT_WARMUP_BARS,
+  riskSizing = null,
 }) {
   const { strategy: backtestStrategy, hadCustom } = stripCustomConditions(strategy);
   const threshold = backtestStrategy.readinessThreshold ?? 60;
@@ -175,6 +219,7 @@ export function runBacktest({
     position = {
       direction, entryIndex: i + 1, entryDate: nextBar.date, entryPrice, entryPercent,
       stopPrice, takePrice, barsHeld: 0,
+      sizing: sizePosition(entryPrice, stopPrice, riskSizing),
     };
   }
 
@@ -185,6 +230,7 @@ export function runBacktest({
     const last = candles[n - 1];
     const sign = position.direction === 'long' ? 1 : -1;
     const pnlPoints = (last.close - position.entryPrice) * sign;
+    const pnlRub = position.sizing ? pnlPoints * position.sizing.contracts * position.sizing.rubPerPoint - position.sizing.commission : null;
     trades.push({
       direction: position.direction,
       entryIndex: position.entryIndex, entryDate: position.entryDate, entryPrice: position.entryPrice,
@@ -192,6 +238,7 @@ export function runBacktest({
       exitIndex: n - 1, exitDate: last.date, exitPrice: last.close, exitReason: 'end_of_data',
       barsHeld: position.barsHeld,
       pnlPoints, pnlPct: (pnlPoints / position.entryPrice) * 100,
+      pnlRub, contracts: position.sizing?.contracts ?? null,
       status: 'open',
     });
   }

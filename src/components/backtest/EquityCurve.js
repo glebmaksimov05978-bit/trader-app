@@ -6,7 +6,7 @@
 // each trade's % onto the running total) — see Backtest.js for how they're built.
 import React from 'react';
 
-export default function EquityCurve({ points, height = 140 }) {
+export default function EquityCurve({ points, height = 140, baseline = 100 }) {
   if (!points?.length) return null;
   const width = 760;
   const pad = 8;
@@ -19,7 +19,7 @@ export default function EquityCurve({ points, height = 140 }) {
   const areaPath = `${path} L${toX(points.length - 1).toFixed(1)},${height - pad} L${toX(0).toFixed(1)},${height - pad} Z`;
   const up = points[points.length - 1].y >= points[0].y;
   const color = up ? 'var(--green)' : 'var(--red)';
-  const zeroY = minY < 100 && maxY > 100 ? toY(100) : null;
+  const zeroY = minY < baseline && maxY > baseline ? toY(baseline) : null;
 
   return (
     <svg viewBox={`0 0 ${width} ${height}`} style={{ width: '100%', height, display: 'block' }} preserveAspectRatio="none">

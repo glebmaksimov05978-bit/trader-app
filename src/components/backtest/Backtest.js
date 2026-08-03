@@ -82,6 +82,34 @@ export default function Backtest() {
   const [holdoutEnabled, setHoldoutEnabled] = useState(cache.holdoutEnabled ?? false);
   const [holdoutPct, setHoldoutPct] = useState(cache.holdoutPct ?? 20);
 
+  // Real-risk position sizing (real user request — "мы это в стратегии указываем, зачем
+  // придумывать"). Default risk%/margin% come from the strategy's OWN max_risk_percent /
+  // max_margin_usage conditions when it has them enabled — those are already the numbers
+  // the trader configured, not a separate setting invented for this page. Falls back to
+  // the account-wide risk setting (Капитал → Настройки риск-менеджмента), then a plain
+  // default, only when the strategy itself doesn't specify one.
+  const [realRiskEnabled, setRealRiskEnabled] = useState(cache.realRiskEnabled ?? false);
+  const strategyRiskPercent = selectedStrategy?.conditions?.find((c) => c.id === 'max_risk_percent' && c.enabled)?.param;
+  const strategyMarginPercent = selectedStrategy?.conditions?.find((c) => c.id === 'max_margin_usage' && c.enabled)?.param;
+  const [riskSizing, setRiskSizing] = useState(cache.riskSizing ?? {
+    depositSize: userProfile?.depositSize || 100000,
+    riskPercent: strategyRiskPercent ?? userProfile?.maxRiskPerTrade ?? 1,
+    maxMarginPercent: strategyMarginPercent ?? 30,
+    lot: 1, minStep: 1, minStepAmount: 0, initialMargin: 0,
+  });
+  // Re-derive risk%/margin% from the newly selected strategy — same "reset on strategy
+  // switch, but not on cache restore" guard as exitRules above.
+  const skipNextRiskSizingReset = useRef(cache.riskSizing != null);
+  useEffect(() => {
+    if (skipNextRiskSizingReset.current) { skipNextRiskSizingReset.current = false; return; }
+    setRiskSizing((r) => ({
+      ...r,
+      riskPercent: strategyRiskPercent ?? userProfile?.maxRiskPerTrade ?? 1,
+      maxMarginPercent: strategyMarginPercent ?? 30,
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStrategy?.id]);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   // { trades, hadCustomConditions, barsEvaluated, ambiguousBars, candles } — restored from
@@ -99,6 +127,7 @@ export default function Backtest() {
     Object.assign(cache, {
       selectedStrategyId, ticker, instrumentType, years, exitRules, maxBarsEnabled,
       holdoutEnabled, holdoutPct, result, holdoutResult, holdoutSplitDate, selectedTradeIdx,
+      realRiskEnabled, riskSizing,
     });
   });
 
@@ -125,6 +154,7 @@ export default function Backtest() {
       if (!candles?.length) throw new Error('Нет исторических свечей по этому тикеру');
 
       const rules = { ...exitRules, maxBars: maxBarsEnabled ? exitRules.maxBars : null };
+      const sizing = realRiskEnabled ? { ...riskSizing, instrumentType } : null;
 
       if (holdoutEnabled && candles.length > 60) {
         // Split point: the last `holdoutPct`% of bars is the отложенный кусок. The
@@ -137,10 +167,10 @@ export default function Backtest() {
         const splitIndex = Math.floor(candles.length * (1 - holdoutPct / 100));
         const trainCandles = candles.slice(0, splitIndex);
         const trainResult = runBacktest({
-          candles: trainCandles, strategy: selectedStrategy, timeframeMinutes: TIMEFRAMES.D1.minutes, exitRules: rules,
+          candles: trainCandles, strategy: selectedStrategy, timeframeMinutes: TIMEFRAMES.D1.minutes, exitRules: rules, riskSizing: sizing,
         });
         const testResult = runBacktest({
-          candles, strategy: selectedStrategy, timeframeMinutes: TIMEFRAMES.D1.minutes, exitRules: rules, warmupBars: splitIndex,
+          candles, strategy: selectedStrategy, timeframeMinutes: TIMEFRAMES.D1.minutes, exitRules: rules, warmupBars: splitIndex, riskSizing: sizing,
         });
         setResult({ ...trainResult, candles: trainCandles });
         setHoldoutResult({ ...testResult, candles });
@@ -150,7 +180,7 @@ export default function Backtest() {
         }
       } else {
         const engineResult = runBacktest({
-          candles, strategy: selectedStrategy, timeframeMinutes: TIMEFRAMES.D1.minutes, exitRules: rules,
+          candles, strategy: selectedStrategy, timeframeMinutes: TIMEFRAMES.D1.minutes, exitRules: rules, riskSizing: sizing,
         });
         setResult({ ...engineResult, candles });
         if (!engineResult.trades.length) {
@@ -164,31 +194,51 @@ export default function Backtest() {
     }
   };
 
-  // Same shape-computation as the main `equity`/`stats` below, reused for the holdout
-  // slice so both periods are judged by identical math — see the comment on `equity`.
-  function computeSummary(res) {
-    if (!res) return null;
-    const st = res.trades?.length ? calcStats(res.trades) : null;
-    const closed = (res.trades || []).filter((t) => t.status === 'closed').sort((a, b) => a.exitDate - b.exitDate);
-    let eq = 100;
-    closed.forEach((t) => { eq *= 1 + t.pnlPct / 100; });
-    return { stats: st, totalReturnPct: eq - 100 };
+  // Two ways to turn a sequence of closed trades into one equity curve:
+  // - % COMPOUNDING (default): start at 100, multiply by (1 + trade%/100) each trade —
+  //   the only honest way to combine per-trade % returns into one number when there's no
+  //   real position sizing. Explicitly "if you reinvested 100% of the deposit every
+  //   single trade" — not a claim about real risk-managed trading.
+  // - REAL RISK (opt-in, real user request): sum each trade's real pnlRub (computed by
+  //   the engine via the trader's own strategy risk%/margin% — see engine.js's
+  //   riskSizing) onto the starting deposit. This is what would actually have happened
+  //   trading this strategy with the risk settings already configured in Капитал — the
+  //   number the trader can actually compare against real trading. Trades the engine
+  //   couldn't size (stop type 'none' — no risk distance to size against) are EXCLUDED
+  //   rather than silently falling back to %, which would mix two different units into
+  //   one number; `skippedCount` surfaces how many were dropped so this isn't silent.
+  function buildEquity(trades) {
+    const closed = (trades || []).filter((t) => t.status === 'closed').sort((a, b) => a.exitDate - b.exitDate);
+    if (!realRiskEnabled) {
+      let eq = 100;
+      const points = [{ x: 0, y: 100 }];
+      closed.forEach((t, i) => { eq *= 1 + t.pnlPct / 100; points.push({ x: i + 1, y: eq }); });
+      return { points, totalReturnPct: eq - 100, statsTrades: closed, skippedCount: 0 };
+    }
+    const sized = closed.filter((t) => t.pnlRub != null);
+    const skippedCount = closed.length - sized.length;
+    let deposit = riskSizing.depositSize;
+    const points = [{ x: 0, y: deposit }];
+    sized.forEach((t, i) => { deposit += t.pnlRub; points.push({ x: i + 1, y: deposit }); });
+    return {
+      points, totalReturnPct: ((deposit - riskSizing.depositSize) / riskSizing.depositSize) * 100,
+      finalDepositRub: deposit, statsTrades: sized.map((t) => ({ ...t, pnl: t.pnlRub })), skippedCount,
+    };
   }
 
-  const stats = result?.trades?.length ? calcStats(result.trades) : null;
+  // Same shape-computation as the main `equity`/`stats` below, reused for the holdout
+  // slice so both periods are judged by identical math.
+  function computeSummary(res) {
+    if (!res) return null;
+    const eq = buildEquity(res.trades);
+    const st = eq.statsTrades.length ? calcStats(eq.statsTrades) : null;
+    return { stats: st, totalReturnPct: eq.totalReturnPct, finalDepositRub: eq.finalDepositRub, skippedCount: eq.skippedCount };
+  }
 
-  // Compounded equity curve — start at 100, multiply by (1 + trade%/100) for every
-  // CLOSED trade in chronological order. This is the only honest way to combine a
-  // sequence of per-trade % returns into one number when v1 has no real position sizing
-  // (see engine.js) — explicitly a "if you reinvested everything every time" simplification,
-  // not a claim about real risk-managed compounding, and labeled as such below.
-  const equity = useMemo(() => {
-    const closed = (result?.trades || []).filter((t) => t.status === 'closed').sort((a, b) => a.exitDate - b.exitDate);
-    let eq = 100;
-    const points = [{ x: 0, y: 100 }];
-    closed.forEach((t, i) => { eq *= 1 + t.pnlPct / 100; points.push({ x: i + 1, y: eq }); });
-    return { points, totalReturnPct: eq - 100 };
-  }, [result]);
+  const equity = useMemo(() => buildEquity(result?.trades),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [result, realRiskEnabled, riskSizing]);
+  const stats = equity.statsTrades?.length ? calcStats(equity.statsTrades) : null;
 
   // Уровни/фигуры для обзорного графика читаются "как сейчас" (на последнюю свечу) —
   // это не то же самое, что видел движок на каждом баре при прогоне (там свой снимок на
@@ -319,6 +369,69 @@ export default function Backtest() {
           </p>
         )}
 
+        <div className="flex gap-2" style={{marginBottom:8, alignItems:'center', flexWrap:'wrap'}}>
+          <label className="flex gap-2" style={{alignItems:'center', fontSize:13, cursor:'pointer'}}>
+            <input type="checkbox" checked={realRiskEnabled} onChange={(e) => setRealRiskEnabled(e.target.checked)} />
+            Реальный риск-менеджмент вместо 100% реинвестирования
+          </label>
+        </div>
+        {!realRiskEnabled && (
+          <p className="text-xs text-muted" style={{marginTop:-4, marginBottom:16}}>
+            Сейчас: «Накопленная доходность» ниже — это если бы каждая сделка ставила ВЕСЬ депозит целиком. Не про
+            реальные деньги, просто «сколько можно было бы заработать в идеале».
+          </p>
+        )}
+        {realRiskEnabled && (
+          <div style={{marginBottom:16, padding:'12px 14px', borderRadius:10, background:'var(--bg-surface-2)', border:'1px solid var(--border-subtle)'}}>
+            <p className="text-xs text-muted" style={{marginTop:0, marginBottom:10}}>
+              Риск% и загрузка ГО% подставлены из условий «Риск на сделку»/«Загрузка депозита» этой стратегии (если они
+              включены) — можно поправить только для этого прогона. Нужен реальный стоп (не «Нет») — иначе позицию
+              нечем сайзить по риску.
+            </p>
+            <div className="flex gap-3" style={{flexWrap:'wrap'}}>
+              <div className="input-group" style={{width:130}}>
+                <label className="input-label">Депозит, ₽</label>
+                <input className="input" type="number" value={riskSizing.depositSize}
+                  onChange={(e) => setRiskSizing((r) => ({ ...r, depositSize: parseFloat(e.target.value) || 0 }))} />
+              </div>
+              <div className="input-group" style={{width:100}}>
+                <label className="input-label">Риск, %</label>
+                <input className="input" type="number" step="0.1" value={riskSizing.riskPercent}
+                  onChange={(e) => setRiskSizing((r) => ({ ...r, riskPercent: parseFloat(e.target.value) || 0 }))} />
+              </div>
+              <div className="input-group" style={{width:100}}>
+                <label className="input-label">Загрузка ГО, %</label>
+                <input className="input" type="number" value={riskSizing.maxMarginPercent}
+                  onChange={(e) => setRiskSizing((r) => ({ ...r, maxMarginPercent: parseFloat(e.target.value) || 0 }))} />
+              </div>
+              <div className="input-group" style={{width:90}}>
+                <label className="input-label">Лот</label>
+                <input className="input" type="number" value={riskSizing.lot}
+                  onChange={(e) => setRiskSizing((r) => ({ ...r, lot: parseFloat(e.target.value) || 1 }))} />
+              </div>
+              {instrumentType === 'future' && (
+                <>
+                  <div className="input-group" style={{width:100}}>
+                    <label className="input-label">Шаг цены</label>
+                    <input className="input" type="number" value={riskSizing.minStep}
+                      onChange={(e) => setRiskSizing((r) => ({ ...r, minStep: parseFloat(e.target.value) || 1 }))} />
+                  </div>
+                  <div className="input-group" style={{width:120}}>
+                    <label className="input-label">Стоим. шага, ₽</label>
+                    <input className="input" type="number" value={riskSizing.minStepAmount}
+                      onChange={(e) => setRiskSizing((r) => ({ ...r, minStepAmount: parseFloat(e.target.value) || 0 }))} />
+                  </div>
+                  <div className="input-group" style={{width:100}}>
+                    <label className="input-label">ГО, ₽/контр.</label>
+                    <input className="input" type="number" value={riskSizing.initialMargin}
+                      onChange={(e) => setRiskSizing((r) => ({ ...r, initialMargin: parseFloat(e.target.value) || 0 }))} />
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         <button className="btn btn-primary" onClick={run} disabled={loading}>
           {loading ? <span className="spinner" style={{width:14,height:14}}/> : '▶️'} Запустить бэктест
         </button>
@@ -348,15 +461,22 @@ export default function Backtest() {
             </div>
           )}
           {stats ? (
-            <div className="grid-4" style={{gap:12, marginBottom:16}}>
+            <div className="grid-4" style={{gap:12, marginBottom:8}}>
               <StatCard label="Накопленная доходность" value={`${equity.totalReturnPct >= 0 ? '+' : ''}${formatNumber(equity.totalReturnPct, 1)}%`} tone={equity.totalReturnPct >= 0 ? 'green' : 'red'} />
-              <StatCard label="Сделок" value={stats.total} />
+              {realRiskEnabled && equity.finalDepositRub != null
+                ? <StatCard label="Итоговый депозит" value={`${formatNumber(equity.finalDepositRub, 0)} ₽`} tone={equity.totalReturnPct >= 0 ? 'green' : 'red'} />
+                : <StatCard label="Сделок" value={stats.total} />}
               <StatCard label="Винрейт" value={`${formatNumber(stats.winrate, 1)}%`} tone={stats.winrate >= 50 ? 'green' : 'red'} />
               <StatCard label="Профит-фактор" value={stats.profitFactor === Infinity ? '∞' : formatNumber(stats.profitFactor, 2)} tone={stats.profitFactor >= 1 ? 'green' : 'red'} />
             </div>
           ) : (
             <div className="card empty-state" style={{marginBottom:16}}>
               <div className="empty-state-text">Ни одной завершённой сделки за этот период — стратегия ни разу не набрала нужный % готовности.</div>
+            </div>
+          )}
+          {realRiskEnabled && equity.skippedCount > 0 && (
+            <div style={{marginBottom:16, color:'var(--gold)', fontSize:12}}>
+              ⚠️ {equity.skippedCount} {equity.skippedCount === 1 ? 'сделка исключена' : 'сделок исключено'} из расчёта реального риска — нет стопа, нечем сайзить позицию по риску (тип выхода «Нет»).
             </div>
           )}
 
@@ -370,7 +490,9 @@ export default function Backtest() {
                 {h.stats ? (
                   <div className="grid-4" style={{gap:12, marginBottom:16}}>
                     <StatCard label="Накопленная доходность" value={`${h.totalReturnPct >= 0 ? '+' : ''}${formatNumber(h.totalReturnPct, 1)}%`} tone={h.totalReturnPct >= 0 ? 'green' : 'red'} />
-                    <StatCard label="Сделок" value={h.stats.total} />
+                    {realRiskEnabled && h.finalDepositRub != null
+                      ? <StatCard label="Итоговый депозит" value={`${formatNumber(h.finalDepositRub, 0)} ₽`} tone={h.totalReturnPct >= 0 ? 'green' : 'red'} />
+                      : <StatCard label="Сделок" value={h.stats.total} />}
                     <StatCard label="Винрейт" value={`${formatNumber(h.stats.winrate, 1)}%`} tone={h.stats.winrate >= 50 ? 'green' : 'red'} />
                     <StatCard label="Профит-фактор" value={h.stats.profitFactor === Infinity ? '∞' : formatNumber(h.stats.profitFactor, 2)} tone={h.stats.profitFactor >= 1 ? 'green' : 'red'} />
                   </div>
@@ -398,10 +520,11 @@ export default function Backtest() {
             <div className="card" style={{marginBottom:16}}>
               <div className="section-title"><div className="section-title-icon">📈</div>Кривая капитала</div>
               <p className="text-xs text-muted" style={{marginBottom:8}}>
-                Если бы каждая сделка целиком реинвестировала прошлый результат — не реальный размер позиции
-                (в v1 его ещё нет), а честный способ свернуть цепочку % в одно число.
+                {realRiskEnabled
+                  ? `Реальные рубли: каждая сделка сайзится по риску ${riskSizing.riskPercent}% от депозита (условие «Риск на сделку» этой стратегии), как если бы ты правда так торговал.`
+                  : 'Если бы каждая сделка целиком реинвестировала прошлый результат — не реальный размер позиции, а честный способ свернуть цепочку % в одно число.'}
               </p>
-              <EquityCurve points={equity.points} />
+              <EquityCurve points={equity.points} baseline={realRiskEnabled ? riskSizing.depositSize : 100} />
             </div>
           )}
 
@@ -454,7 +577,11 @@ export default function Backtest() {
                             <td>{formatNumber(t.exitPrice, 2)}</td>
                             <td>{t.status === 'open' ? <span className="badge badge-blue">Ещё открыта</span> : EXIT_REASON_LABELS[t.exitReason] || t.exitReason}</td>
                             <td className="text-secondary">{t.barsHeld}</td>
-                            <td className={t.pnlPct >= 0 ? 'text-green' : 'text-red'}>{t.pnlPct >= 0 ? '+' : ''}{formatNumber(t.pnlPct, 2)}%</td>
+                            <td className={t.pnlPct >= 0 ? 'text-green' : 'text-red'}>
+                              {realRiskEnabled && t.pnlRub != null
+                                ? `${t.pnlRub >= 0 ? '+' : ''}${formatNumber(t.pnlRub, 0)} ₽`
+                                : `${t.pnlPct >= 0 ? '+' : ''}${formatNumber(t.pnlPct, 2)}%`}
+                            </td>
                           </tr>
                           {isSelected && selectedTradeSnapshot && (
                             <tr>
