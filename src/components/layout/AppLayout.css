@@ -17,6 +17,10 @@
 @media (max-width: 768px) {
   .main-content {
     margin-left: 0;
-    padding-bottom: calc(80px + env(safe-area-inset-bottom));
+    /* Top bar (hamburger + logo) replaced the old bottom nav bar — page content needs
+       top clearance instead of bottom now, real user report: hamburger button used to
+       float over page content and partially cover the "Дашборд" heading. */
+    padding-top: calc(52px + env(safe-area-inset-top));
+    padding-bottom: env(safe-area-inset-bottom);
   }
 }

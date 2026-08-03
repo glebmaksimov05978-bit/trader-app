@@ -232,58 +232,47 @@
 .dropdown-item.danger { color: var(--red); }
 .dropdown-divider { height: 1px; background: var(--border-subtle); }
 
-/* Mobile bottom nav */
-.mobile-nav {
+/* Mobile top bar — replaced the old bottom nav bar (real user report: bottom bar +
+   floating hamburger overlapped page content and only held the trusted-only extras,
+   confusing). Now the ONLY mobile chrome is this slim top bar; the drawer it opens
+   holds the FULL nav (see MobileNav.js), not just Бэктест/admin. */
+.mobile-topbar {
   display: none;
   position: fixed;
-  bottom: 0;
+  top: 0;
   left: 0;
   right: 0;
+  height: calc(52px + env(safe-area-inset-top));
+  padding-top: env(safe-area-inset-top);
+  align-items: center;
+  gap: 10px;
+  padding-left: 12px;
   background: var(--bg-surface);
-  border-top: 1px solid var(--border-subtle);
-  padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
+  border-bottom: 1px solid var(--border-subtle);
   z-index: 100;
   backdrop-filter: blur(20px);
 }
 
-.mobile-nav-items {
-  display: flex;
-  justify-content: space-around;
+.mobile-topbar-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
 }
 
-.mobile-nav-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-  padding: 4px 12px;
-  font-size: 10px;
-  font-weight: 500;
-  color: var(--text-muted);
-  text-decoration: none;
-  border-radius: 8px;
-  transition: color var(--transition);
-}
-
-.mobile-nav-item.active { color: var(--accent-primary); }
 .mobile-nav-icon { font-size: 20px; }
 
-/* Hamburger + slide-out drawer — only rendered when the account has extra (trusted/
-   admin) items that don't fit the fixed bottom bar (Бэктест etc.), see MobileNav.js */
 .mobile-hamburger {
-  display: none;
-  position: fixed;
-  top: calc(12px + env(safe-area-inset-top));
-  left: 12px;
-  z-index: 101;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border-radius: 10px;
-  background: var(--bg-surface);
+  background: var(--bg-surface-2);
   border: 1px solid var(--border-subtle);
   color: var(--text-primary);
   font-size: 18px;
-  backdrop-filter: blur(20px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .mobile-drawer-overlay {
@@ -343,7 +332,6 @@
 
 @media (max-width: 768px) {
   .sidebar { display: none; }
-  .mobile-nav { display: block; }
-  .mobile-hamburger { display: flex; align-items: center; justify-content: center; }
+  .mobile-topbar { display: flex; }
   .mobile-drawer-overlay { display: block; }
 }

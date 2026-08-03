@@ -6,66 +6,52 @@ import { TRUSTED_UIDS } from '../../constants/trustedUids';
 import { NAV_ITEMS, ADMIN_ITEMS, TRUSTED_ITEMS } from '../../constants/navItems';
 import './Sidebar.css';
 
+// Real user report on the FIRST version of this (bottom bar + hamburger for extras
+// only): the hamburger button was fixed-position over page content and partially
+// covered the "Дашборд" heading, and the drawer only ever held Бэктест — confusing,
+// looked broken. Redesigned per the trader's own original ask: no bottom bar on mobile
+// at all, a slim top bar with the hamburger is the only mobile chrome, and the drawer
+// holds the FULL nav (not just the trusted-only extras) — Sidebar.css gives
+// .main-content top padding on mobile so page content never sits under the bar.
 export default function MobileNav() {
   const { user, isAdmin } = useAuth();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  // Same gate as the desktop Sidebar — internal tools (Бэктест, admin panel) stay off
-  // the bottom bar for everyone else, so ordinary traders never see an empty-looking
-  // hamburger menu (real user report was specifically "у меня, доверенного, нет
-  // Бэктеста на телефоне" — not "add a general menu for everyone").
   const isTrusted = isAdmin || TRUSTED_UIDS.includes(user?.uid);
-  const extraItems = [...(isTrusted ? TRUSTED_ITEMS : []), ...(isAdmin ? ADMIN_ITEMS : [])];
+  const items = [
+    ...NAV_ITEMS,
+    ...(isTrusted ? TRUSTED_ITEMS : []),
+    ...(isAdmin ? ADMIN_ITEMS : []),
+  ];
 
   return (
     <>
-      {extraItems.length > 0 && (
-        <>
-          <button
-            className="mobile-hamburger"
-            onClick={() => setDrawerOpen(true)}
-            aria-label="Ещё разделы"
-          >
-            ☰
-          </button>
-          {drawerOpen && (
-            <div className="mobile-drawer-overlay" onClick={() => setDrawerOpen(false)}>
-              <div className="mobile-drawer" onClick={(e) => e.stopPropagation()}>
-                <div className="mobile-drawer-header">
-                  <span>Ещё</span>
-                  <button className="mobile-drawer-close" onClick={() => setDrawerOpen(false)}>✕</button>
-                </div>
-                {extraItems.map((item) => (
-                  <NavLink
-                    key={item.path}
-                    to={item.path}
-                    className={({ isActive }) => `mobile-drawer-item ${isActive ? 'active' : ''}`}
-                    onClick={() => setDrawerOpen(false)}
-                  >
-                    <span className="mobile-nav-icon">{item.icon}</span>
-                    <span>{item.label}</span>
-                  </NavLink>
-                ))}
-              </div>
+      <div className="mobile-topbar">
+        <button className="mobile-hamburger" onClick={() => setDrawerOpen(true)} aria-label="Меню">☰</button>
+        <span className="mobile-topbar-title">TraderPro</span>
+      </div>
+      {drawerOpen && (
+        <div className="mobile-drawer-overlay" onClick={() => setDrawerOpen(false)}>
+          <div className="mobile-drawer" onClick={(e) => e.stopPropagation()}>
+            <div className="mobile-drawer-header">
+              <span>Меню</span>
+              <button className="mobile-drawer-close" onClick={() => setDrawerOpen(false)}>✕</button>
             </div>
-          )}
-        </>
-      )}
-      <nav className="mobile-nav">
-        <div className="mobile-nav-items">
-          {NAV_ITEMS.map((item) => (
-            <NavLink
-              key={item.path}
-              to={item.path}
-              end={item.path === '/'}
-              className={({ isActive }) => `mobile-nav-item ${isActive ? 'active' : ''}`}
-            >
-              <span className="mobile-nav-icon">{item.icon}</span>
-              <span>{item.mobileLabel || item.label}</span>
-            </NavLink>
-          ))}
+            {items.map((item) => (
+              <NavLink
+                key={item.path}
+                to={item.path}
+                end={item.path === '/'}
+                className={({ isActive }) => `mobile-drawer-item ${isActive ? 'active' : ''}`}
+                onClick={() => setDrawerOpen(false)}
+              >
+                <span className="mobile-nav-icon">{item.icon}</span>
+                <span>{item.label}</span>
+              </NavLink>
+            ))}
+          </div>
         </div>
-      </nav>
+      )}
     </>
   );
 }
