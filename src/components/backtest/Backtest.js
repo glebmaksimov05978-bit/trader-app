@@ -9,6 +9,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { fetchDailyCandles, TIMEFRAMES } from '../../services/marketData/candles';
+import { fetchActiveFutureCard, resolveFuturesSpecFromMoex, fetchStockLot } from '../../services/marketData/futuresSpecs';
 import { runBacktest } from '../../services/backtest/engine';
 import { getStrategies, getActiveStrategy, CONDITION_CATALOG } from '../../services/analytics/strategy';
 import { defaultExitRules } from '../../services/analytics/exitRules';
@@ -109,6 +110,51 @@ export default function Backtest() {
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedStrategy?.id]);
+
+  // Auto-fetch real contract specs from MOEX — real user request after finding that
+  // leaving "ГО за контракт" at its manual default (0) SILENTLY disables the margin cap
+  // for futures entirely (calcTrade's maxContractsByMargin only applies when
+  // `iMargin > 0`), so the "Загрузка ГО" field looked configured but did nothing. Reuses
+  // the exact same MOEX lookups already used elsewhere in this app (fetchActiveFutureCard
+  // for a currently-listed future, resolveFuturesSpecFromMoex as a fallback for an
+  // expired series, fetchStockLot for a stock's real lot size) — an explicit button, not
+  // automatic-on-every-run, so it never silently overwrites a value the trader typed in
+  // by hand on purpose.
+  const [specsLoading, setSpecsLoading] = useState(false);
+  const fetchSpecs = async () => {
+    if (!ticker.trim()) { toast.error('Сначала введи тикер'); return; }
+    setSpecsLoading(true);
+    try {
+      if (instrumentType === 'stock') {
+        const lot = await fetchStockLot(ticker.trim().toUpperCase());
+        if (lot == null) { toast.error('Не нашёл лот на бирже — введи вручную'); return; }
+        setRiskSizing((r) => ({ ...r, lot }));
+        toast.success(`Лот: ${lot}`);
+      } else {
+        let card = await fetchActiveFutureCard(ticker.trim().toUpperCase());
+        if (!card) {
+          // Expired/inactive series — same fallback Journal already uses, tick size/value
+          // is a property of the contract TYPE, not the specific expiry.
+          const fallback = await resolveFuturesSpecFromMoex(ticker.trim().toUpperCase());
+          if (fallback) card = { ...fallback, initialMargin: null, lot: null };
+        }
+        if (!card) { toast.error('Не нашёл спецификацию на бирже — введи вручную'); return; }
+        setRiskSizing((r) => ({
+          ...r,
+          minStep: card.minPriceIncrement ?? r.minStep,
+          minStepAmount: card.minPriceIncrementAmount ?? r.minStepAmount,
+          initialMargin: card.initialMargin ?? r.initialMargin,
+          lot: card.lot ?? r.lot,
+        }));
+        toast.success(
+          `Шаг ${card.minPriceIncrement ?? '?'} / ${formatNumber(card.minPriceIncrementAmount ?? 0, 2)}₽`
+          + (card.initialMargin ? `, ГО ${formatNumber(card.initialMargin, 0)}₽` : ', ГО не нашёл — введи вручную')
+        );
+      }
+    } finally {
+      setSpecsLoading(false);
+    }
+  };
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -386,8 +432,12 @@ export default function Backtest() {
             <p className="text-xs text-muted" style={{marginTop:0, marginBottom:10}}>
               Риск% и загрузка ГО% подставлены из условий «Риск на сделку»/«Загрузка депозита» этой стратегии (если они
               включены) — можно поправить только для этого прогона. Нужен реальный стоп (не «Нет») — иначе позицию
-              нечем сайзить по риску.
+              нечем сайзить по риску. Лот/шаг цены/ГО за контракт — введи вручную или подтяни с биржи кнопкой ниже
+              (⚠️ пока ГО за контракт = 0, «Загрузка ГО» ничего не ограничивает для фьючерса — считает только по риску).
             </p>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={fetchSpecs} disabled={specsLoading} style={{marginBottom:12}}>
+              {specsLoading ? <span className="spinner" style={{width:12,height:12}}/> : '🔄'} Подтянуть с биржи
+            </button>
             <div className="flex gap-3" style={{flexWrap:'wrap'}}>
               <div className="input-group" style={{width:130}}>
                 <label className="input-label">Депозит, ₽</label>

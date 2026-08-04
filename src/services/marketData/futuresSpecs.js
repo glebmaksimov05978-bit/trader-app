@@ -87,6 +87,29 @@ export async function fetchMoexSecurityInfo(ticker) {
   }
 }
 
+// Lot size (shares per lot) for a stock — real user request for the Бэктест page's
+// real-risk sizing mode: leaving specs at manual defaults (lot=1 for a stock that
+// actually trades in lots of 10, say) silently mis-sizes every position, same class of
+// "looks configured but isn't" trap as the futures ГО=0 case below. MOEX ISS publishes
+// LOTSIZE directly on the shares securities endpoint.
+export async function fetchStockLot(ticker) {
+  try {
+    const resp = await fetch(
+      `${ISS_BASE}/engines/stock/markets/shares/securities/${encodeURIComponent(ticker)}.json?iss.meta=off`
+      + `&securities.columns=SECID,LOTSIZE`
+    );
+    if (!resp.ok) return null;
+    const json = await resp.json();
+    const cols = json.securities?.columns || [];
+    const row = json.securities?.data?.[0];
+    if (!row) return null;
+    const lot = row[cols.indexOf('LOTSIZE')];
+    return lot > 0 ? lot : null;
+  } catch {
+    return null;
+  }
+}
+
 // Full contract card (tick size, tick value, margin requirement, lot) for a ticker
 // that's currently traded — used by the Calculator's MOEX price source (no Tinkoff
 // token) so ГО/шаг цены don't have to be typed in by hand. Unlike
