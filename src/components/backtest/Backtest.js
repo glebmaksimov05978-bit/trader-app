@@ -94,8 +94,8 @@ export default function Backtest() {
   const strategyMarginPercent = selectedStrategy?.conditions?.find((c) => c.id === 'max_margin_usage' && c.enabled)?.param;
   const [riskSizing, setRiskSizing] = useState(cache.riskSizing ?? {
     depositSize: userProfile?.depositSize || 100000,
-    riskPercent: strategyRiskPercent ?? userProfile?.maxRiskPerTrade ?? 1,
-    maxMarginPercent: strategyMarginPercent ?? 30,
+    riskPercent: strategyRiskPercent || userProfile?.maxRiskPerTrade || 1,
+    maxMarginPercent: strategyMarginPercent || 30,
     lot: 1, minStep: 1, minStepAmount: 0, initialMargin: 0,
   });
   // Re-derive risk%/margin% from the newly selected strategy — same "reset on strategy
@@ -139,12 +139,22 @@ export default function Backtest() {
           if (fallback) card = { ...fallback, initialMargin: null, lot: null };
         }
         if (!card) { toast.error('Не нашёл спецификацию на бирже — введи вручную'); return; }
+        // NOT setting `lot` here — real bug, caught live: MOEX's LOTVOLUME for a futures
+        // contract describes the underlying asset (e.g. "10 index points per contract"),
+        // not a P&L multiplier the way a stock's lot is. calcTrade's futures branch
+        // MULTIPLIES lossPerContract by `lot` (same formula as stocks) — feeding
+        // LOTVOLUME=10 into it inflated the risk-per-contract 10×, which floored
+        // contractsByRisk to 0 on every trade whenever risk% was on the lower end (0.5-1%,
+        // like several of the trader's own strategy templates) — "сделки как бы находят,
+        // но результат не показывает" was exactly this: every trade silently un-sizeable.
+        // For futures, one contract IS the tradeable unit — STEPPRICE already gives the
+        // correct ruble value per tick for that one contract, so lot stays at whatever the
+        // trader typed (default 1), never auto-filled from LOTVOLUME.
         setRiskSizing((r) => ({
           ...r,
           minStep: card.minPriceIncrement ?? r.minStep,
           minStepAmount: card.minPriceIncrementAmount ?? r.minStepAmount,
           initialMargin: card.initialMargin ?? r.initialMargin,
-          lot: card.lot ?? r.lot,
         }));
         toast.success(
           `Шаг ${card.minPriceIncrement ?? '?'} / ${formatNumber(card.minPriceIncrementAmount ?? 0, 2)}₽`
@@ -519,12 +529,26 @@ export default function Backtest() {
               <StatCard label="Винрейт" value={`${formatNumber(stats.winrate, 1)}%`} tone={stats.winrate >= 50 ? 'green' : 'red'} />
               <StatCard label="Профит-фактор" value={stats.profitFactor === Infinity ? '∞' : formatNumber(stats.profitFactor, 2)} tone={stats.profitFactor >= 1 ? 'green' : 'red'} />
             </div>
+          ) : result.trades?.length > 0 ? (
+            // Real bug, caught live: this used to show the SAME "стратегия не набрала
+            // нужный %" text as genuinely zero trades, even when the engine found and
+            // closed real trades — realRiskEnabled just couldn't SIZE any of them (риск%
+            // came out 0/falsy, or contractsByRisk floored to 0 given how tight the risk%
+            // is relative to the stop distance). That message was actively false here —
+            // the strategy DID trigger, the trades just aren't priced in rubles.
+            <div className="card empty-state" style={{marginBottom:16, borderColor:'var(--gold)'}}>
+              <div className="empty-state-text">
+                Стратегия нашла {result.trades.length} {result.trades.length === 1 ? 'сделку' : 'сделок'}, но ни одну не
+                удалось посчитать по реальному риску — проверь риск% (не 0?), стоп (не «Нет»?) и лот/шаг цены/ГО в
+                настройках выше. Отключи галочку «Реальный риск-менеджмент», чтобы увидеть сами сделки без сайзинга.
+              </div>
+            </div>
           ) : (
             <div className="card empty-state" style={{marginBottom:16}}>
               <div className="empty-state-text">Ни одной завершённой сделки за этот период — стратегия ни разу не набрала нужный % готовности.</div>
             </div>
           )}
-          {realRiskEnabled && equity.skippedCount > 0 && (
+          {realRiskEnabled && equity.skippedCount > 0 && equity.statsTrades?.length > 0 && (
             <div style={{marginBottom:16, color:'var(--gold)', fontSize:12}}>
               ⚠️ {equity.skippedCount} {equity.skippedCount === 1 ? 'сделка исключена' : 'сделок исключено'} из расчёта реального риска — нет стопа, нечем сайзить позицию по риску (тип выхода «Нет»).
             </div>
