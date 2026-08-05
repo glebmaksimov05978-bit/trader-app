@@ -425,25 +425,35 @@ export default function Backtest() {
           </p>
         )}
 
-        <div className="flex gap-2" style={{marginBottom:8, alignItems:'center', flexWrap:'wrap'}}>
-          <label className="flex gap-2" style={{alignItems:'center', fontSize:13, cursor:'pointer'}}>
-            <input type="checkbox" checked={realRiskEnabled} onChange={(e) => setRealRiskEnabled(e.target.checked)} />
-            Реальный риск-менеджмент вместо 100% реинвестирования
-          </label>
+        {/* Real user report: the old checkbox wording ("Реальный риск-менеджмент вместо
+            100% реинвестирования") was confusing enough that the trader couldn't tell
+            what it actually meant. Two clearly-named buttons instead — same pattern
+            already used for Фьючерс/Акция above, not a checkbox with a wall of text. */}
+        <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:6}}>Как считать доходность</div>
+        <div className="flex gap-2" style={{marginBottom:8, flexWrap:'wrap'}}>
+          <button type="button" className={`btn ${!realRiskEnabled ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setRealRiskEnabled(false)}>
+            📊 Теоретический максимум
+          </button>
+          <button type="button" className={`btn ${realRiskEnabled ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setRealRiskEnabled(true)}>
+            💰 Реальные деньги (риск + ГО)
+          </button>
         </div>
         {!realRiskEnabled && (
           <p className="text-xs text-muted" style={{marginTop:-4, marginBottom:16}}>
-            Сейчас: «Накопленная доходность» ниже — это если бы каждая сделка ставила ВЕСЬ депозит целиком. Не про
-            реальные деньги, просто «сколько можно было бы заработать в идеале».
+            Каждая сделка ставит ВЕСЬ депозит целиком. Не про реальные деньги — просто «сколько можно было бы
+            заработать в идеале, если реинвестировать абсолютно всё».
           </p>
         )}
         {realRiskEnabled && (
           <div style={{marginBottom:16, padding:'12px 14px', borderRadius:10, background:'var(--bg-surface-2)', border:'1px solid var(--border-subtle)'}}>
             <p className="text-xs text-muted" style={{marginTop:0, marginBottom:10}}>
-              Риск% и загрузка ГО% подставлены из условий «Риск на сделку»/«Загрузка депозита» этой стратегии (если они
-              включены) — можно поправить только для этого прогона. Нужен реальный стоп (не «Нет») — иначе позицию
-              нечем сайзить по риску. Лот/шаг цены/ГО за контракт — введи вручную или подтяни с биржи кнопкой ниже
+              Позиция сайзится по твоему реальному риску на сделку и загрузке ГО — как в жизни. Риск%/ГО% подставлены
+              из условий «Риск на сделку»/«Загрузка депозита» этой стратегии (если они включены), можно поправить
+              только для этого прогона. Нужен реальный стоп (не «Нет») — иначе позицию нечем сайзить. Лот/шаг
+              цены/ГО за контракт — введи вручную или подтяни с биржи кнопкой ниже
               (⚠️ пока ГО за контракт = 0, «Загрузка ГО» ничего не ограничивает для фьючерса — считает только по риску).
+              Ещё упрощение: ГО берётся СЕГОДНЯШНЕЕ и применяется на всю историю — у биржи оно меняется вместе с
+              ценой инструмента, на далёкой истории может быть не совсем точным.
             </p>
             <button type="button" className="btn btn-secondary btn-sm" onClick={fetchSpecs} disabled={specsLoading} style={{marginBottom:12}}>
               {specsLoading ? <span className="spinner" style={{width:12,height:12}}/> : '🔄'} Подтянуть с биржи
@@ -540,7 +550,7 @@ export default function Backtest() {
               <div className="empty-state-text">
                 Стратегия нашла {result.trades.length} {result.trades.length === 1 ? 'сделку' : 'сделок'}, но ни одну не
                 удалось посчитать по реальному риску — проверь риск% (не 0?), стоп (не «Нет»?) и лот/шаг цены/ГО в
-                настройках выше. Отключи галочку «Реальный риск-менеджмент», чтобы увидеть сами сделки без сайзинга.
+                настройках выше. Переключись на «📊 Теоретический максимум», чтобы увидеть сами сделки без сайзинга.
               </div>
             </div>
           ) : (
