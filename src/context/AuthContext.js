@@ -26,28 +26,38 @@ export function AuthProvider({ children }) {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
         setUser(firebaseUser);
-        const profileDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
-        if (profileDoc.exists()) {
-          const data = profileDoc.data();
-          if (!data.role) {
-            await setDoc(doc(db, 'users', firebaseUser.uid), { role: 'free' }, { merge: true });
-            data.role = 'free';
+        // При обрыве сети (нет DNS до Firestore) getDoc/setDoc падают с ошибкой — без
+        // try/catch setLoading(false) ниже никогда не выполнялся, и экран загрузки
+        // (тёмный экран после логотипа) висел бесконечно, пока сеть сама не оживёт.
+        // Реальный баг, пойманный трейдером. Firestore сам умеет работать в офлайне через
+        // локальный кэш — если он есть, getDoc его вернёт даже без сети; если кэша нет,
+        // просто показываем приложение без профиля вместо вечного спиннера.
+        try {
+          const profileDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+          if (profileDoc.exists()) {
+            const data = profileDoc.data();
+            if (!data.role) {
+              await setDoc(doc(db, 'users', firebaseUser.uid), { role: 'free' }, { merge: true });
+              data.role = 'free';
+            }
+            setUserProfile(data);
+          } else {
+            const defaultProfile = {
+              uid: firebaseUser.uid,
+              email: firebaseUser.email,
+              displayName: firebaseUser.displayName || firebaseUser.email.split('@')[0],
+              role: 'free',
+              tinkoffToken: '',
+              depositSize: 0,
+              dailyLossLimit: 3,
+              maxRiskPerTrade: 1,
+              createdAt: serverTimestamp(),
+            };
+            await setDoc(doc(db, 'users', firebaseUser.uid), defaultProfile);
+            setUserProfile(defaultProfile);
           }
-          setUserProfile(data);
-        } else {
-          const defaultProfile = {
-            uid: firebaseUser.uid,
-            email: firebaseUser.email,
-            displayName: firebaseUser.displayName || firebaseUser.email.split('@')[0],
-            role: 'free',
-            tinkoffToken: '',
-            depositSize: 0,
-            dailyLossLimit: 3,
-            maxRiskPerTrade: 1,
-            createdAt: serverTimestamp(),
-          };
-          await setDoc(doc(db, 'users', firebaseUser.uid), defaultProfile);
-          setUserProfile(defaultProfile);
+        } catch (e) {
+          console.warn('Не удалось загрузить профиль (нет сети или Firestore недоступен):', e.message);
         }
       } else {
         setUser(null);

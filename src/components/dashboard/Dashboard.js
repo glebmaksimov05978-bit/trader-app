@@ -106,7 +106,10 @@ export default function Dashboard() {
   const deposit = userProfile?.depositSize ?? 0;
   const lastEquity = equity[equity.length - 1]?.balance || deposit;
   const pnlTotal = lastEquity - deposit;
-  const pnlPercent = ((pnlTotal / deposit) * 100).toFixed(1);
+  // Депозит может быть ещё не загружен (например, офлайн — не достучались до профиля в
+  // Firestore) или не указан в Капитале вовсе. Без него делить P&L на депозит бессмысленно
+  // (0/0 = NaN) — реальный баг, из-за которого трейдер видел «(NaN%)» на Дашборде.
+  const pnlPercent = deposit > 0 ? ((pnlTotal / deposit) * 100).toFixed(1) : null;
 
   // Last 10 trades for chart — a partially closed position already has realized P&L from
   // the closed portion, so it belongs here too (matches calcStats/buildEquityCurve).
@@ -158,7 +161,10 @@ export default function Dashboard() {
             <div className="kpi-value" style={{color: pnlTotal >= 0 ? 'var(--green)' : 'var(--red)'}}>
               {formatCurrency(lastEquity)}
             </div>
-            <div className="kpi-sub">{pnlTotal >= 0 ? '+' : ''}{formatCurrency(pnlTotal)} ({pnlPercent}%)</div>
+            <div className="kpi-sub">
+              {pnlTotal >= 0 ? '+' : ''}{formatCurrency(pnlTotal)}
+              {pnlPercent !== null ? ` (${pnlPercent}%)` : ' (депозит не указан)'}
+            </div>
           </>}
         />
 
