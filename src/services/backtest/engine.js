@@ -62,12 +62,27 @@ function readinessPercent(strategy, ctx) {
 // from OHLC alone which was actually touched first, so we conservatively assume the
 // WORSE outcome (stop) hit first — never lets a lucky ordering assumption flatter the
 // result.
+//
+// Gap-through fill: a stop/take price is only where you WANTED out, not necessarily where
+// you actually got out. If the bar opened already past the level (a gap over a weekend, a
+// news overnight move), the real fill is the bar's OPEN, not the stop/take price — for a
+// stop that's worse than requested, for a take it's better. Real trader concern: assuming
+// a perfect fill at the exact stop price on every gap silently flatters the backtest —
+// this was previously always returning `stopPrice`/`takePrice` verbatim regardless of the
+// bar's open, understating losses (and overstating gains) on any real gap.
+function gapAwareFillPrice(level, barOpen, isStop, direction) {
+  const gappedThrough = direction === 'long'
+    ? (isStop ? barOpen <= level : barOpen >= level)
+    : (isStop ? barOpen >= level : barOpen <= level);
+  return gappedThrough ? barOpen : level;
+}
+
 function checkIntrabarExit(position, bar) {
   const { direction, stopPrice, takePrice } = position;
   const stopHit = stopPrice != null && (direction === 'long' ? bar.low <= stopPrice : bar.high >= stopPrice);
   const takeHit = takePrice != null && (direction === 'long' ? bar.high >= takePrice : bar.low <= takePrice);
-  if (stopHit) return { price: stopPrice, reason: 'stop' };
-  if (takeHit) return { price: takePrice, reason: 'take' };
+  if (stopHit) return { price: gapAwareFillPrice(stopPrice, bar.open, true, direction), reason: 'stop' };
+  if (takeHit) return { price: gapAwareFillPrice(takePrice, bar.open, false, direction), reason: 'take' };
   return null;
 }
 

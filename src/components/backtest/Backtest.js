@@ -97,7 +97,7 @@ export default function Backtest() {
     depositSize: userProfile?.depositSize || 100000,
     riskPercent: strategyRiskPercent || userProfile?.maxRiskPerTrade || 1,
     maxMarginPercent: strategyMarginPercent || 30,
-    lot: 1, minStep: 1, minStepAmount: 0, initialMargin: 0,
+    lot: 1, minStep: 1, minStepAmount: 0, initialMargin: 0, commissionRate: 0.0006,
   });
   // Re-derive risk%/margin% from the newly selected strategy — same "reset on strategy
   // switch, but not on cache restore" guard as exitRules above.
@@ -479,6 +479,11 @@ export default function Backtest() {
                 <label className="input-label">Лот</label>
                 <NumberInput className="input" value={riskSizing.lot}
                   onChange={(v) => setRiskSizing((r) => ({ ...r, lot: v }))} />
+              </div>
+              <div className="input-group" style={{width:120}}>
+                <label className="input-label">Комиссия (0.0006 = 0.06%)</label>
+                <NumberInput className="input" step="0.0001" value={riskSizing.commissionRate}
+                  onChange={(v) => setRiskSizing((r) => ({ ...r, commissionRate: v }))} />
               </div>
               {instrumentType === 'future' && (
                 <>

@@ -45,9 +45,17 @@ export function calcTrade({
       : ticksToSL * step * l;
   }
 
-  // Количество по риску
-  const contractsByRisk = lossPerContract > 0
-    ? Math.floor(riskAmount / lossPerContract)
+  // Количество по риску — учитывает и будущую комиссию (круглый рейс: вход + выход), не
+  // только убыток по стопу. Комиссия на 1 контракт не зависит от их количества (она сама
+  // растёт линейно вместе с contracts), поэтому её можно честно прибавить к убытку на
+  // контракт ещё ДО деления. Раньше комиссия нигде не участвовала в подборе количества
+  // контрактов — только вычиталась из итога после: при риске, скажем, 1000₽, реальный
+  // максимальный убыток получался немного БОЛЬШЕ 1000₽ (риск% + комиссия), а не ровно
+  // заявленный риск (реальная находка трейдера/Клода при разборе точности бэктеста).
+  const commissionPerContract = entry * l * commissionRate * 2;
+  const effectiveLossPerContract = lossPerContract + commissionPerContract;
+  const contractsByRisk = effectiveLossPerContract > 0
+    ? Math.floor(riskAmount / effectiveLossPerContract)
     : 0;
 
   // Ограничение по ГО (фьючерсы) или стоимости позиции (акции)
