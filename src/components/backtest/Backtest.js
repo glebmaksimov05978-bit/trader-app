@@ -21,6 +21,7 @@ import { calcStats } from '../../services/trades';
 import { formatNumber } from '../../utils/calculator';
 import CandleChart from '../shared/CandleChart';
 import ExitRulesEditor from '../shared/ExitRulesEditor';
+import NumberInput from '../shared/NumberInput';
 import EquityCurve from './EquityCurve';
 import TechnicalAnalysisBlock from '../shared/TechnicalAnalysisBlock';
 import toast from 'react-hot-toast';
@@ -393,8 +394,8 @@ export default function Backtest() {
             onChange={(e) => setTicker(e.target.value)} style={{maxWidth:220}} />
           <div className="flex gap-2" style={{alignItems:'center'}}>
             <span style={{fontSize:12, color:'var(--text-muted)'}}>Лет истории</span>
-            <input className="input" type="number" min="1" max="20" step="0.5" value={years}
-              onChange={(e) => setYears(parseFloat(e.target.value) || 1)} style={{width:70}} />
+            <NumberInput className="input" min="1" max="20" step="0.5" value={years}
+              onChange={(v) => setYears(v)} style={{width:70}} />
           </div>
         </div>
 
@@ -412,8 +413,8 @@ export default function Backtest() {
           </label>
           {holdoutEnabled && (
             <>
-              <input className="input" type="number" min="5" max="50" step="5" value={holdoutPct}
-                onChange={(e) => setHoldoutPct(parseInt(e.target.value) || 20)} style={{width:70}} />
+              <NumberInput className="input" min="5" max="50" step="5" value={holdoutPct}
+                onChange={(v) => setHoldoutPct(Math.round(v))} style={{width:70}} />
               <span style={{fontSize:12, color:'var(--text-muted)'}}>% истории — отложенный кусок в конце</span>
             </>
           )}
@@ -461,40 +462,40 @@ export default function Backtest() {
             <div className="flex gap-3" style={{flexWrap:'wrap'}}>
               <div className="input-group" style={{width:130}}>
                 <label className="input-label">Депозит, ₽</label>
-                <input className="input" type="number" value={riskSizing.depositSize}
-                  onChange={(e) => setRiskSizing((r) => ({ ...r, depositSize: parseFloat(e.target.value) || 0 }))} />
+                <NumberInput className="input" value={riskSizing.depositSize}
+                  onChange={(v) => setRiskSizing((r) => ({ ...r, depositSize: v }))} />
               </div>
               <div className="input-group" style={{width:100}}>
                 <label className="input-label">Риск, %</label>
-                <input className="input" type="number" step="0.1" value={riskSizing.riskPercent}
-                  onChange={(e) => setRiskSizing((r) => ({ ...r, riskPercent: parseFloat(e.target.value) || 0 }))} />
+                <NumberInput className="input" step="0.1" value={riskSizing.riskPercent}
+                  onChange={(v) => setRiskSizing((r) => ({ ...r, riskPercent: v }))} />
               </div>
               <div className="input-group" style={{width:100}}>
                 <label className="input-label">Загрузка ГО, %</label>
-                <input className="input" type="number" value={riskSizing.maxMarginPercent}
-                  onChange={(e) => setRiskSizing((r) => ({ ...r, maxMarginPercent: parseFloat(e.target.value) || 0 }))} />
+                <NumberInput className="input" value={riskSizing.maxMarginPercent}
+                  onChange={(v) => setRiskSizing((r) => ({ ...r, maxMarginPercent: v }))} />
               </div>
               <div className="input-group" style={{width:90}}>
                 <label className="input-label">Лот</label>
-                <input className="input" type="number" value={riskSizing.lot}
-                  onChange={(e) => setRiskSizing((r) => ({ ...r, lot: parseFloat(e.target.value) || 1 }))} />
+                <NumberInput className="input" value={riskSizing.lot}
+                  onChange={(v) => setRiskSizing((r) => ({ ...r, lot: v }))} />
               </div>
               {instrumentType === 'future' && (
                 <>
                   <div className="input-group" style={{width:100}}>
                     <label className="input-label">Шаг цены</label>
-                    <input className="input" type="number" value={riskSizing.minStep}
-                      onChange={(e) => setRiskSizing((r) => ({ ...r, minStep: parseFloat(e.target.value) || 1 }))} />
+                    <NumberInput className="input" value={riskSizing.minStep}
+                      onChange={(v) => setRiskSizing((r) => ({ ...r, minStep: v }))} />
                   </div>
                   <div className="input-group" style={{width:120}}>
                     <label className="input-label">Стоим. шага, ₽</label>
-                    <input className="input" type="number" value={riskSizing.minStepAmount}
-                      onChange={(e) => setRiskSizing((r) => ({ ...r, minStepAmount: parseFloat(e.target.value) || 0 }))} />
+                    <NumberInput className="input" value={riskSizing.minStepAmount}
+                      onChange={(v) => setRiskSizing((r) => ({ ...r, minStepAmount: v }))} />
                   </div>
                   <div className="input-group" style={{width:100}}>
                     <label className="input-label">ГО, ₽/контр.</label>
-                    <input className="input" type="number" value={riskSizing.initialMargin}
-                      onChange={(e) => setRiskSizing((r) => ({ ...r, initialMargin: parseFloat(e.target.value) || 0 }))} />
+                    <NumberInput className="input" value={riskSizing.initialMargin}
+                      onChange={(v) => setRiskSizing((r) => ({ ...r, initialMargin: v }))} />
                   </div>
                 </>
               )}

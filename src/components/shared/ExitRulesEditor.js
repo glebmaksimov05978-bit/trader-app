@@ -5,6 +5,7 @@
 // (temporary, unsaved override for experimenting). Same shape, same UI, so a number a
 // trader sees in one place means exactly the same thing in the other.
 import React from 'react';
+import NumberInput from './NumberInput';
 
 // One stop/take rule slot — pct/atr/level/none, each revealing its own inputs. Same
 // component reused for the stop side and the take side; `side` only changes labels.
@@ -23,15 +24,15 @@ function ExitSlot({ side, value, onChange }) {
       </div>
       {value[`${prefix}Type`] === 'pct' && (
         <div className="flex gap-2" style={{alignItems:'center'}}>
-          <input className="input" type="number" step="0.1" value={value[`${prefix}Pct`] ?? ''}
-            onChange={(e) => set({ [`${prefix}Pct`]: parseFloat(e.target.value) || 0 })} style={{width:90}} />
+          <NumberInput className="input" step="0.1" value={value[`${prefix}Pct`] ?? ''}
+            onChange={(v) => set({ [`${prefix}Pct`]: v })} style={{width:90}} />
           <span style={{fontSize:12, color:'var(--text-muted)'}}>% от цены входа</span>
         </div>
       )}
       {value[`${prefix}Type`] === 'atr' && (
         <div className="flex gap-2" style={{alignItems:'center'}}>
-          <input className="input" type="number" step="0.1" value={value[`${prefix}AtrMult`] ?? ''}
-            onChange={(e) => set({ [`${prefix}AtrMult`]: parseFloat(e.target.value) || 0 })} style={{width:90}} />
+          <NumberInput className="input" step="0.1" value={value[`${prefix}AtrMult`] ?? ''}
+            onChange={(v) => set({ [`${prefix}AtrMult`]: v })} style={{width:90}} />
           <span style={{fontSize:12, color:'var(--text-muted)'}}>× ATR(14) на входе</span>
         </div>
       )}
@@ -44,14 +45,14 @@ function ExitSlot({ side, value, onChange }) {
               <option value="ema200">EMA200</option>
             </select>
             <span style={{fontSize:12, color:'var(--text-muted)'}}>запас ±</span>
-            <input className="input" type="number" step="0.1" value={value[`${prefix}LevelTolerancePct`] ?? ''}
-              onChange={(e) => set({ [`${prefix}LevelTolerancePct`]: parseFloat(e.target.value) || 0 })} style={{width:70}} />
+            <NumberInput className="input" step="0.1" value={value[`${prefix}LevelTolerancePct`] ?? ''}
+              onChange={(v) => set({ [`${prefix}LevelTolerancePct`]: v })} style={{width:70}} />
             <span style={{fontSize:12, color:'var(--text-muted)'}}>%</span>
           </div>
           <div className="flex gap-2" style={{alignItems:'center', flexWrap:'wrap'}}>
             <span style={{fontSize:12, color:'var(--text-muted)'}}>Если уровня нет рядом — запасной выход, % от цены входа</span>
-            <input className="input" type="number" step="0.1" value={value[`${prefix}LevelFallbackPct`] ?? ''}
-              onChange={(e) => set({ [`${prefix}LevelFallbackPct`]: parseFloat(e.target.value) || 0 })} style={{width:70}} />
+            <NumberInput className="input" step="0.1" value={value[`${prefix}LevelFallbackPct`] ?? ''}
+              onChange={(v) => set({ [`${prefix}LevelFallbackPct`]: v })} style={{width:70}} />
           </div>
         </div>
       )}
@@ -81,8 +82,8 @@ export default function ExitRulesEditor({ value, onChange, maxBarsEnabled, onMax
           Выйти по времени, макс. дней в сделке
         </label>
         {maxBarsEnabled && (
-          <input className="input" type="number" min="1" value={value.maxBars ?? 20}
-            onChange={(e) => onChange({ ...value, maxBars: parseInt(e.target.value) || 1 })} style={{width:80}} />
+          <NumberInput className="input" min="1" value={value.maxBars ?? 20}
+            onChange={(v) => onChange({ ...value, maxBars: Math.round(v) })} style={{width:80}} />
         )}
       </div>
     </>
