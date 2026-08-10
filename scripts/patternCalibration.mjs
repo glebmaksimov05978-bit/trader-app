@@ -66,8 +66,17 @@ const TICKERS = [
 ];
 
 const WARMUP_BARS = 60;
-const OUTCOME_WINDOW_BARS = 15;
+// Расширено с 15 до 45 после честной проверки timeToPeak: 21% движений доходили до
+// порога ПОЗЖЕ 15-й свечи, то есть старое окно списывало их в "не сработало" и занижало
+// все выводы разом (винрейт, развороты, «убыточные» типы фигур). Средний пик движения —
+// на 43-й свече, поэтому 45 — обоснованное окно, а не очередное предположение.
+const OUTCOME_WINDOW_BARS = 45;
 const SUCCESS_THRESHOLD_PCT = 2; // matches the 2% stop many of the trader's real strategies use
+// Отдельное, ЗНАЧИТЕЛЬНО более широкое окно — специально чтобы проверить, не обрезает ли
+// OUTCOME_WINDOW_BARS=15 движение до того, как оно реально раскрылось. Трейдер прав
+// усомниться: 15-30 дневных свечей (3-6 недель) — это предположение, никогда не
+// проверявшееся. ~4 месяца торговых дней — достаточно широко, чтобы увидеть правду.
+const TIME_TO_PEAK_WINDOW = 90;
 
 function directionOf(pattern) {
   if (PATTERN_DIRECTIONS.bullish.includes(pattern)) return 1;
@@ -130,13 +139,70 @@ function scoreOutcome(candles, entryIndex, direction) {
   return { win, directionHit };
 }
 
+// Сколько РЕАЛЬНО баров нужно, чтобы движение раскрылось — независимо от того, попало
+// ли оно в наше окно 15/30 баров или нет. Идём широко (90 баров), находим бар, на
+// котором достигнут максимум движения В ПОЛЬЗУ сделки, и отдельно — прошёл ли этот
+// максимум порог SUCCESS_THRESHOLD_PCT (2%) вообще, и если да — на каком баре.
+function timeToPeak(candles, entryIndex, direction) {
+  const entryPrice = candles[entryIndex].close;
+  const end = Math.min(candles.length - 1, entryIndex + TIME_TO_PEAK_WINDOW);
+  let peakPct = 0, peakBar = 0, thresholdBar = null;
+  for (let i = entryIndex + 1; i <= end; i++) {
+    const bar = candles[i];
+    const favorable = direction === 1
+      ? ((bar.high - entryPrice) / entryPrice) * 100
+      : ((entryPrice - bar.low) / entryPrice) * 100;
+    if (favorable > peakPct) { peakPct = favorable; peakBar = i - entryIndex; }
+    if (thresholdBar === null && favorable >= SUCCESS_THRESHOLD_PCT) thresholdBar = i - entryIndex;
+  }
+  return { peakPct, peakBar, thresholdBar, reachedWindowEdge: end === entryIndex + TIME_TO_PEAK_WINDOW };
+}
+
+// --- Стоп ЗА СТРУКТУРУ фигуры вместо произвольных 2% ---------------------------------
+// Прямой ответ на вопрос трейдера "как сделать, чтобы стоп не выбивал сделку зря".
+// Классический ручной подход: стоп ставится не на произвольном расстоянии, а там, где
+// ФИГУРА БЫ ОТМЕНИЛАСЬ — под минимумом двойного дна, над максимумом двойной вершины и
+// т.п. Тогда шум внутри фигуры не выбивает позицию: чтобы задеть такой стоп, цена должна
+// реально сломать формацию. Тейк ставим кратно риску (RR 1:2), чтобы сравнение с
+// фиксированными 2%/2% было честным по механике, а не только по расстоянию.
+const STRUCTURAL_RR = 2;
+const STRUCTURAL_MAX_STOP_PCT = 8; // не берём совсем уж далёкие структуры — иначе риск на сделку неадекватный
+function structuralStopPrice(candidate, direction) {
+  if (!Array.isArray(candidate.points) || !candidate.points.length) return null;
+  const prices = candidate.points.map((p) => p.price);
+  return direction === 1 ? Math.min(...prices) : Math.max(...prices);
+}
+function scoreStructural(candles, entryIndex, direction, stopPrice) {
+  const entryPrice = candles[entryIndex].close;
+  const stopDistPct = Math.abs(entryPrice - stopPrice) / entryPrice * 100;
+  if (!(stopDistPct > 0) || stopDistPct > STRUCTURAL_MAX_STOP_PCT) return null;
+  const takeDistPct = stopDistPct * STRUCTURAL_RR;
+  const end = Math.min(candles.length - 1, entryIndex + LIFECYCLE_MAX_WINDOW);
+  for (let i = entryIndex + 1; i <= end; i++) {
+    const bar = candles[i];
+    const favorable = direction === 1
+      ? ((bar.high - entryPrice) / entryPrice) * 100
+      : ((entryPrice - bar.low) / entryPrice) * 100;
+    const adverse = direction === 1
+      ? ((entryPrice - bar.low) / entryPrice) * 100
+      : ((bar.high - entryPrice) / entryPrice) * 100;
+    if (adverse >= stopDistPct) return { win: 0, returnPct: -stopDistPct, stopDistPct };
+    if (favorable >= takeDistPct) return { win: 1, returnPct: takeDistPct, stopDistPct };
+  }
+  const last = candles[end];
+  const netReturn = direction === 1
+    ? ((last.close - entryPrice) / entryPrice) * 100
+    : ((entryPrice - last.close) / entryPrice) * 100;
+  return { win: netReturn > 0 ? 1 : 0, returnPct: netReturn, stopDistPct };
+}
+
 // --- Прототип "жизненного цикла фигуры" ------------------------------------------
 // Вместо жёсткого стопа по цене — выходим, когда движение реально ВЫДОХЛОСЬ: цена
 // откатила от своего максимума (в пользу сделки) больше чем на `giveBackFraction` этого
 // максимума. Плюс широкий аварийный стоп на случай резкого движения сразу против нас
 // (без него риск неограничен). Если вышли именно по "выдыханию" (не по аварийному
 // стопу) — отдельно смотрим, что было бы, если тут же открыть сделку в ОБРАТНУЮ сторону.
-const LIFECYCLE_MAX_WINDOW = 30;
+const LIFECYCLE_MAX_WINDOW = 60; // было 30 — по той же причине, что и OUTCOME_WINDOW_BARS выше
 const LIFECYCLE_GIVEBACK_FRACTION = 0.5; // отдать половину набранного пути — считаем "выдохлась"
 const LIFECYCLE_MIN_PEAK_PCT = 1; // не считаем откатом шум до того, как накопилось хоть 1% в нашу пользу
 const LIFECYCLE_EMERGENCY_STOP_PCT = 4; // шире обычного 2% стопа — даём сделке "дышать"
@@ -233,6 +299,7 @@ for (const { ticker, instrumentType } of TICKERS) {
     OUTCOME_WINDOW_BARS + maxDelay,
     LIFECYCLE_MAX_WINDOW + OUTCOME_WINDOW_BARS,
     TARGET_SEARCH_WINDOW + OUTCOME_WINDOW_BARS,
+    TIME_TO_PEAK_WINDOW,
   );
   const lastUsableIndex = candles.length - 1 - reserveTail;
   for (let i = WARMUP_BARS; i <= lastUsableIndex; i++) {
@@ -260,7 +327,14 @@ for (const { ticker, instrumentType } of TICKERS) {
       const barsSpan = Array.isArray(c.points) && c.points.length
         ? c.points[c.points.length - 1].index - c.points[0].index
         : null;
+      // Амплитуда — размах фигуры В ПРОЦЕНТАХ ЦЕНЫ, не в барах. Идея трейдера: крупная
+      // ПО ВРЕМЕНИ, но плоская фигура — вероятно, не то же самое, что крупная и по цене,
+      // и barsSpan это путает.
+      const amplitudePct = Array.isArray(c.points) && c.points.length
+        ? ((Math.max(...c.points.map((p) => p.price)) - Math.min(...c.points.map((p) => p.price))) / candles[i].close) * 100
+        : null;
       const { win, directionHit } = scoreOutcome(candles, i, direction);
+      const ttp = timeToPeak(candles, i, direction);
       const delayed = {};
       for (const d of ENTRY_DELAYS) delayed[d] = scoreOutcome(candles, i + d, direction).win;
 
@@ -290,9 +364,14 @@ for (const { ticker, instrumentType } of TICKERS) {
         lifecycleByFraction[f] = lifecycleExit(candles, i, direction, f).returnPct;
       }
 
+      const structStop = structuralStopPrice(c, direction);
+      const structural = structStop != null ? scoreStructural(candles, i, direction, structStop) : null;
+
       rows.push({
-        ticker, pattern: c.pattern, confidence: c.confidence, barsSpan, ageBars, win, directionHit, delayed,
+        ticker, pattern: c.pattern, confidence: c.confidence, barsSpan, amplitudePct, ageBars, win, directionHit, delayed,
+        levelTouches: c.levelConfluence?.touchCount ?? 0,
         lifecycleReturnPct: lifecycle.returnPct, lifecycleReason: lifecycle.reason, reverseWin, lifecycleByFraction,
+        structural, ttp,
       });
     }
   }
@@ -444,6 +523,110 @@ for (const [pattern, list] of Object.entries(byPattern).sort((a, b) => b[1].leng
   if (list.length < 30) continue;
   const avgFor = (f) => (list.reduce((s, r) => s + r.lifecycleByFraction[f], 0) / list.length).toFixed(2);
   console.log(`  ${pattern.padEnd(24)} n=${String(list.length).padStart(4)}  ${avgFor(0.3)}%      ${avgFor(0.5)}%      ${avgFor(0.7)}%`);
+}
+
+// --- Проверка самой методологии: не слишком ли узкое окно 15-30 баров ----------------
+// Трейдер справедливо усомнился: я решил "15-30 дневных свечей достаточно", ни разу не
+// проверив, сколько РЕАЛЬНО нужно движению, чтобы раскрыться. Смотрим широко (90 баров).
+console.log(`\nСколько баров РЕАЛЬНО нужно движению, чтобы дойти до максимума в свою пользу`
+  + ` (окно ${TIME_TO_PEAK_WINDOW} баров, честная проверка, не предположение):`);
+const ttpRows = rows.filter((r) => r.ttp);
+const reachedThreshold = ttpRows.filter((r) => r.ttp.thresholdBar != null);
+const avgThresholdBar = (reachedThreshold.reduce((s, r) => s + r.ttp.thresholdBar, 0) / reachedThreshold.length).toFixed(1);
+const pastOldWindow = reachedThreshold.filter((r) => r.ttp.thresholdBar > OUTCOME_WINDOW_BARS).length;
+const avgPeakBar = (ttpRows.reduce((s, r) => s + r.ttp.peakBar, 0) / ttpRows.length).toFixed(1);
+console.log(`  Из ${ttpRows.length} случаев движение вообще прошло 2% в ${reachedThreshold.length}`
+  + ` (${((reachedThreshold.length / ttpRows.length) * 100).toFixed(1)}%).`);
+console.log(`  Среди них: в среднем 2% достигается на ${avgThresholdBar}-й свече.`
+  + ` ${pastOldWindow} из ${reachedThreshold.length} (${((pastOldWindow / reachedThreshold.length) * 100).toFixed(1)}%)`
+  + ` — ПОСЛЕ 15-й свечи, то есть моё старое окно их обрезало бы как "не дошло".`);
+console.log(`  В среднем максимум движения в пользу сделки достигается на ${avgPeakBar}-й свече из ${TIME_TO_PEAK_WINDOW}.`);
+
+console.log('\nТо же самое по типам фигур (n≥30) — сколько баров до 2%, и % случаев позже 15-й свечи:');
+for (const [pattern, list] of Object.entries(byPattern).sort((a, b) => b[1].length - a[1].length)) {
+  const withTtp = list.filter((r) => r.ttp);
+  if (withTtp.length < 30) continue;
+  const reached = withTtp.filter((r) => r.ttp.thresholdBar != null);
+  if (!reached.length) continue;
+  const avgBar = (reached.reduce((s, r) => s + r.ttp.thresholdBar, 0) / reached.length).toFixed(1);
+  const late = reached.filter((r) => r.ttp.thresholdBar > OUTCOME_WINDOW_BARS).length;
+  console.log(`  ${pattern.padEnd(24)} n=${String(reached.length).padStart(4)}  в среднем на ${avgBar}-й свече,`
+    + ` ${((late / reached.length) * 100).toFixed(0)}% позже 15-й`);
+}
+
+// --- Амплитуда фигуры (% цены) как альтернативный критерий качества вместо размера в барах
+console.log('\nАмплитуда фигуры (% цены, не баров) → результат:');
+const amped = rows.filter((r) => r.amplitudePct != null);
+const amps = amped.map((r) => r.amplitudePct).sort((a, b) => a - b);
+const aq = (p) => amps[Math.floor(amps.length * p)];
+const ampBuckets = [
+  { label: `мелкие (≤${aq(0.33).toFixed(1)}%)`, test: (a) => a <= aq(0.33) },
+  { label: `средние (${aq(0.33).toFixed(1)}-${aq(0.66).toFixed(1)}%)`, test: (a) => a > aq(0.33) && a <= aq(0.66) },
+  { label: `крупные (>${aq(0.66).toFixed(1)}%)`, test: (a) => a > aq(0.66) },
+];
+for (const b of ampBuckets) {
+  const list = amped.filter((r) => b.test(r.amplitudePct));
+  if (!list.length) continue;
+  const wr = ((list.reduce((s, r) => s + r.win, 0) / list.length) * 100).toFixed(1);
+  const dr = ((list.reduce((s, r) => s + r.directionHit, 0) / list.length) * 100).toFixed(1);
+  console.log(`  ${b.label.padEnd(24)} n=${String(list.length).padStart(4)}  винрейт=${wr}%  направление=${dr}%`);
+}
+
+// --- НОВОЕ: стоит ли фигура на подтверждённом уровне S/R? ----------------------------
+// Проверка только что добавленной в patterns.js привязки фигур к реальным уровням
+// (levelConfluenceFor). Вопрос: двойное дно НА уровне с историей касаний действительно
+// отрабатывает лучше, чем такое же двойное дно в чистом поле?
+console.log('\nФигура стоит на подтверждённом уровне S/R (новая привязка) → результат:');
+const anchorable = rows.filter((r) => ['double_top', 'double_bottom', 'head_shoulders_top',
+  'head_shoulders_bottom', 'triangle_ascending', 'triangle_descending'].includes(r.pattern));
+const onLevel = anchorable.filter((r) => r.levelTouches > 0);
+const offLevel = anchorable.filter((r) => r.levelTouches === 0);
+const fmt = (l, label) => {
+  if (!l.length) { console.log(`  ${label.padEnd(34)} n=   0`); return; }
+  const wr = ((l.reduce((s, r) => s + r.win, 0) / l.length) * 100).toFixed(1);
+  const dr = ((l.reduce((s, r) => s + r.directionHit, 0) / l.length) * 100).toFixed(1);
+  console.log(`  ${label.padEnd(34)} n=${String(l.length).padStart(4)}  винрейт=${wr}%  направление=${dr}%`);
+};
+fmt(onLevel, 'НА уровне (есть касания в истории)');
+fmt(offLevel, 'в чистом поле (уровня рядом нет)');
+for (const min of [2, 3, 4]) {
+  fmt(anchorable.filter((r) => r.levelTouches >= min), `уровень с ${min}+ касаниями`);
+}
+
+// --- ИСПРАВЛЕНИЕ СОБСТВЕННОЙ ОШИБКИ: уверенность ВНУТРИ одного типа фигуры -----------
+// Первый вывод ("чем выше уверенность, тем хуже") был получен сравнением общих корзин по
+// уверенности — но это подмена: корзина 80%+ почти целиком состоит из СВЕЧНЫХ паттернов
+// (пин-бар 82, поглощение 75-76), а корзина 50-59% — из фигур (флаги 56, клинья 55).
+// То есть сравнивались свечные паттерны против фигур, а не высокая уверенность против
+// низкой. Честный вопрос — работает ли уверенность ВНУТРИ одного типа: у двойного дна с
+// 85% результат лучше, чем у двойного дна с 60%? Только это и говорит о качестве шкалы.
+console.log('\nУверенность ВНУТРИ одного типа фигуры (честная проверка шкалы, n≥60):');
+console.log('  Тип фигуры                 ниже медианы увер.   выше медианы увер.');
+for (const [pattern, list] of Object.entries(byPattern).sort((a, b) => b[1].length - a[1].length)) {
+  if (list.length < 60) continue;
+  const confs = list.map((r) => r.confidence).sort((a, b) => a - b);
+  const median = confs[Math.floor(confs.length / 2)];
+  const low = list.filter((r) => r.confidence < median);
+  const high = list.filter((r) => r.confidence >= median);
+  if (low.length < 15 || high.length < 15) {
+    console.log(`  ${pattern.padEnd(24)} — уверенность почти не варьируется (медиана ${median}), сравнивать нечего`);
+    continue;
+  }
+  const wr = (l) => ((l.reduce((s, r) => s + r.win, 0) / l.length) * 100).toFixed(1);
+  console.log(`  ${pattern.padEnd(24)} n=${String(list.length).padStart(4)}  ${wr(low)}% (n=${low.length})   ${wr(high)}% (n=${high.length})`);
+}
+
+// --- Стоп за структуру фигуры vs произвольные 2% -------------------------------------
+const structRows = rows.filter((r) => r.structural != null);
+if (structRows.length) {
+  console.log(`\nСтоп ЗА СТРУКТУРУ фигуры (тейк = 2× риска) vs фиксированные 2%/2% (n=${structRows.length}):`);
+  const structWr = ((structRows.reduce((s, r) => s + r.structural.win, 0) / structRows.length) * 100).toFixed(1);
+  const structAvg = (structRows.reduce((s, r) => s + r.structural.returnPct, 0) / structRows.length).toFixed(2);
+  const avgStopDist = (structRows.reduce((s, r) => s + r.structural.stopDistPct, 0) / structRows.length).toFixed(2);
+  const fixedWr = ((structRows.reduce((s, r) => s + r.win, 0) / structRows.length) * 100).toFixed(1);
+  const fixedAvg = (structRows.reduce((s, r) => s + (r.win ? SUCCESS_THRESHOLD_PCT : -SUCCESS_THRESHOLD_PCT), 0) / structRows.length).toFixed(2);
+  console.log(`  Стоп за структуру: винрейт=${structWr}%  средний результат=${structAvg}%  (средний стоп ${avgStopDist}% от входа)`);
+  console.log(`  Фикс. 2%/2%:       винрейт=${fixedWr}%  средний результат=${fixedAvg}%  (на тех же сделках)`);
 }
 
 // --- Гипотеза 4b: вход в обратную сторону после того, как движение "выдохлось" -------
