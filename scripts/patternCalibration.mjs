@@ -140,8 +140,9 @@ const LIFECYCLE_MAX_WINDOW = 30;
 const LIFECYCLE_GIVEBACK_FRACTION = 0.5; // отдать половину набранного пути — считаем "выдохлась"
 const LIFECYCLE_MIN_PEAK_PCT = 1; // не считаем откатом шум до того, как накопилось хоть 1% в нашу пользу
 const LIFECYCLE_EMERGENCY_STOP_PCT = 4; // шире обычного 2% стопа — даём сделке "дышать"
+const LIFECYCLE_FRACTIONS_TO_TEST = [0.3, 0.5, 0.7]; // "отдать 30/50/70% набранного максимума" — искать оптимум по типам фигур
 
-function lifecycleExit(candles, entryIndex, direction) {
+function lifecycleExit(candles, entryIndex, direction, giveBackFraction = LIFECYCLE_GIVEBACK_FRACTION) {
   const entryPrice = candles[entryIndex].close;
   const end = Math.min(candles.length - 1, entryIndex + LIFECYCLE_MAX_WINDOW);
   let peakFavorablePct = 0;
@@ -161,7 +162,7 @@ function lifecycleExit(candles, entryIndex, direction) {
       return { exitIndex: i, returnPct: -LIFECYCLE_EMERGENCY_STOP_PCT, reason: 'stop' };
     }
     if (peakFavorablePct >= LIFECYCLE_MIN_PEAK_PCT) {
-      const giveBackThreshold = peakFavorablePct * (1 - LIFECYCLE_GIVEBACK_FRACTION);
+      const giveBackThreshold = peakFavorablePct * (1 - giveBackFraction);
       if (closeReturnPct <= giveBackThreshold) {
         return { exitIndex: i, returnPct: closeReturnPct, reason: 'exhausted' };
       }
@@ -173,6 +174,36 @@ function lifecycleExit(candles, entryIndex, direction) {
     : ((entryPrice - last.close) / entryPrice) * 100;
   return { exitIndex: end, returnPct: finalReturnPct, reason: 'window_end' };
 }
+
+// --- Прицельная проверка для double_top/double_bottom: реальный ориентир фигуры ------
+// Трейдер уточнил идею: не "разворачивай, как только движение выдохлось вообще", а
+// именно ПО ЛОГИКЕ КОНКРЕТНОЙ ФИГУРЫ — у двойной вершины/дна есть встроенный ориентир,
+// "основание" между двумя пиками (точка B). Сначала цена должна дойти туда (это и есть
+// то движение, которое обещает фигура), и только ПОСЛЕ этого разворот имеет смысл
+// проверять — не раньше и не "когда попало откатило на 50%". Это тот же уровень, что
+// уже использует doubleTopBottomTargetReached() в patterns.js для отмены устаревшей
+// фигуры — здесь мы используем его как момент для проверки разворота.
+const TARGET_SEARCH_WINDOW = 40;
+function findTargetReachIndex(candles, fromIndex, targetPrice, originalDirection) {
+  const end = Math.min(candles.length - 1, fromIndex + TARGET_SEARCH_WINDOW);
+  for (let i = fromIndex + 1; i <= end; i++) {
+    const bar = candles[i];
+    const reached = originalDirection === -1 ? bar.low <= targetPrice : bar.high >= targetPrice;
+    if (reached) return i;
+  }
+  return null;
+}
+const targetReverseRows = []; // { pattern, barsToTarget, win, directionHit }
+
+// Separate from `rows` on purpose: `rows` dedupes to the pattern's FIRST appearance
+// (needed everywhere else so one instance doesn't get counted dozens of times). But that
+// makes "age" trivially small always — we'd never see how it performs once it's been
+// sitting there a while. This collection instead samples EVERY day an instance stays
+// reported (still capped once per ticker+pattern+day, never per-swing-window artifact),
+// specifically to answer "does staying confirmed for a long time hurt the odds?" — the
+// same question already answered for double_top/bottom (MAX_DOUBLE_PATTERN_AGE_BARS) but
+// never checked for the other pattern types.
+const ageRows = []; // { pattern, ageBars, win, directionHit }
 
 // Delayed-entry variants — same pattern instance, but pretend we waited N bars after
 // confirmation before actually entering, instead of entering right on the confirmation
@@ -198,7 +229,11 @@ for (const { ticker, instrumentType } of TICKERS) {
 
   const seen = new Set();
   const maxDelay = Math.max(...ENTRY_DELAYS);
-  const reserveTail = Math.max(OUTCOME_WINDOW_BARS + maxDelay, LIFECYCLE_MAX_WINDOW + OUTCOME_WINDOW_BARS);
+  const reserveTail = Math.max(
+    OUTCOME_WINDOW_BARS + maxDelay,
+    LIFECYCLE_MAX_WINDOW + OUTCOME_WINDOW_BARS,
+    TARGET_SEARCH_WINDOW + OUTCOME_WINDOW_BARS,
+  );
   const lastUsableIndex = candles.length - 1 - reserveTail;
   for (let i = WARMUP_BARS; i <= lastUsableIndex; i++) {
     const result = computePatternsAtEntry(candles, candles[i].date, { timeframeMinutes: 1440 });
@@ -207,6 +242,18 @@ for (const { ticker, instrumentType } of TICKERS) {
       if (c.status === 'forming') continue; // not a completed call yet — nothing to score
       const direction = directionOf(c.pattern);
       if (direction === 0) continue; // neutral patterns have no directional call to grade
+
+      // "Актуальность" — сколько свечей прошло от ЗАВЕРШЕНИЯ фигуры (последней точки) до
+      // сегодняшнего бара. Замер на КАЖДЫЙ день, пока фигура остаётся в списке — не только
+      // на первый — иначе никогда не увидим, что бывает с "постаревшими" инстансами.
+      const ageBars = Array.isArray(c.points) && c.points.length
+        ? i - c.points[c.points.length - 1].index
+        : null;
+      if (ageBars != null) {
+        const aged = scoreOutcome(candles, i, direction);
+        ageRows.push({ pattern: c.pattern, ageBars, win: aged.win, directionHit: aged.directionHit });
+      }
+
       const key = `${ticker}|${instanceKey(c, i)}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -217,15 +264,35 @@ for (const { ticker, instrumentType } of TICKERS) {
       const delayed = {};
       for (const d of ENTRY_DELAYS) delayed[d] = scoreOutcome(candles, i + d, direction).win;
 
+      if ((c.pattern === 'double_top' || c.pattern === 'double_bottom') && c.points?.length === 3) {
+        const targetPrice = c.points[1].price; // point B — the base/neckline between the two peaks/troughs
+        const targetIdx = findTargetReachIndex(candles, i, targetPrice, direction);
+        if (targetIdx != null && targetIdx + OUTCOME_WINDOW_BARS <= candles.length - 1) {
+          const atTarget = scoreOutcome(candles, targetIdx, -direction);
+          targetReverseRows.push({
+            pattern: c.pattern, barsToTarget: targetIdx - i, win: atTarget.win, directionHit: atTarget.directionHit,
+          });
+        }
+      }
+
       const lifecycle = lifecycleExit(candles, i, direction);
       let reverseWin = null;
       if (lifecycle.reason === 'exhausted' && lifecycle.exitIndex + OUTCOME_WINDOW_BARS <= candles.length - 1) {
         reverseWin = scoreOutcome(candles, lifecycle.exitIndex, -direction).win;
       }
 
+      // Трейдер прав, что жизненный цикл, скорее всего, нельзя настраивать ОДНИМ
+      // параметром на все фигуры сразу — проверяем 3 варианта "сколько отдать от
+      // набранного максимума" на каждой сделке, чтобы увидеть, отличается ли оптимум по
+      // типам фигур.
+      const lifecycleByFraction = {};
+      for (const f of LIFECYCLE_FRACTIONS_TO_TEST) {
+        lifecycleByFraction[f] = lifecycleExit(candles, i, direction, f).returnPct;
+      }
+
       rows.push({
-        ticker, pattern: c.pattern, confidence: c.confidence, barsSpan, win, directionHit, delayed,
-        lifecycleReturnPct: lifecycle.returnPct, lifecycleReason: lifecycle.reason, reverseWin,
+        ticker, pattern: c.pattern, confidence: c.confidence, barsSpan, ageBars, win, directionHit, delayed,
+        lifecycleReturnPct: lifecycle.returnPct, lifecycleReason: lifecycle.reason, reverseWin, lifecycleByFraction,
       });
     }
   }
@@ -296,11 +363,62 @@ for (const b of sizeBuckets) {
   console.log(`  ${b.label.padEnd(28)} n=${String(list.length).padStart(4)}  винрейт=${wr}%  направление=${dr}%`);
 }
 
+// --- «Актуальность» фигуры: сколько свечей прошло с её завершения до входа -----------
+// Прямая проверка идеи трейдера "торговать только актуальные фигуры, чьё движение ещё
+// не прошло". Важно: у double_top/bottom такой фильтр УЖЕ работает в patterns.js
+// (возраст >60 баров и «цель достигнута» отсекаются), у остальных типов — НЕТ. Поэтому
+// смотрим отдельно на типы БЕЗ фильтра — там и видно, теряем ли мы на этом деньги.
+const FILTERED_TYPES = new Set(['double_top', 'double_bottom']);
+const ageBuckets = [
+  { label: 'свежие (0-5 баров)', test: (a) => a <= 5 },
+  { label: 'недавние (6-15)', test: (a) => a > 5 && a <= 15 },
+  { label: 'подстывшие (16-30)', test: (a) => a > 15 && a <= 30 },
+  { label: 'старые (>30)', test: (a) => a > 30 },
+];
+function reportAgeTable(title, list) {
+  console.log(`\n${title}`);
+  for (const b of ageBuckets) {
+    const sub = list.filter((r) => b.test(r.ageBars));
+    if (!sub.length) { console.log(`  ${b.label.padEnd(22)} n=   0`); continue; }
+    const wr = ((sub.reduce((s, r) => s + r.win, 0) / sub.length) * 100).toFixed(1);
+    const dr = ((sub.reduce((s, r) => s + r.directionHit, 0) / sub.length) * 100).toFixed(1);
+    console.log(`  ${b.label.padEnd(22)} n=${String(sub.length).padStart(4)}  винрейт=${wr}%  направление=${dr}%`);
+  }
+}
+reportAgeTable(`Актуальность фигуры — все дни, пока фигура остаётся подтверждённой (n=${ageRows.length}):`, ageRows);
+reportAgeTable(
+  'То же, но ТОЛЬКО типы БЕЗ фильтра актуальности (Г&П, треугольники, клинья, флаги, вымпелы, волны):',
+  ageRows.filter((r) => !FILTERED_TYPES.has(r.pattern)),
+);
+
 // --- Гипотеза 3: момент входа — сразу на подтверждении или с задержкой --------------
-console.log('\nВход сразу vs с задержкой после подтверждения фигуры:');
+console.log('\nВход сразу vs с задержкой после подтверждения фигуры (в среднем по всем фигурам):');
 for (const d of ENTRY_DELAYS) {
   const wr = ((rows.reduce((s, r) => s + r.delayed[d], 0) / rows.length) * 100).toFixed(1);
   console.log(`  задержка ${String(d).padStart(2)} ${d === 1 ? 'свеча' : 'свечей'}: винрейт=${wr}%`);
+}
+
+// Разбивка по типам — момент входа может быть важен для одних фигур и не важен для
+// других, среднее по всем могло это спрятать.
+console.log('\nТо же самое, но отдельно по каждому типу фигуры (n≥30, иначе не показательно):');
+console.log('  Тип фигуры                 сразу   +3 свечи  +5 свечей');
+for (const [pattern, list] of Object.entries(byPattern).sort((a, b) => b[1].length - a[1].length)) {
+  if (list.length < 30) continue;
+  const wr = (d) => ((list.reduce((s, r) => s + r.delayed[d], 0) / list.length) * 100).toFixed(1);
+  console.log(`  ${pattern.padEnd(24)} n=${String(list.length).padStart(4)}  ${wr(0)}%   ${wr(3)}%    ${wr(5)}%`);
+}
+
+// --- Прицельный разворот: double_top/bottom, вход в обратную сторону ИМЕННО когда цена
+// дошла до собственного ориентира фигуры (основание между пиками/впадинами) ------------
+if (targetReverseRows.length) {
+  const wr = ((targetReverseRows.reduce((s, r) => s + r.win, 0) / targetReverseRows.length) * 100).toFixed(1);
+  const dr = ((targetReverseRows.reduce((s, r) => s + r.directionHit, 0) / targetReverseRows.length) * 100).toFixed(1);
+  const avgBars = (targetReverseRows.reduce((s, r) => s + r.barsToTarget, 0) / targetReverseRows.length).toFixed(1);
+  console.log(`\nРазворот ИМЕННО у double_top/double_bottom, вход после того как цена дошла до`
+    + ` основания фигуры (n=${targetReverseRows.length}, в среднем ${avgBars} баров до цели):`);
+  console.log(`  винрейт=${wr}%  направление=${dr}%  (для сравнения — вход по самой фигуре сразу ~52%)`);
+} else {
+  console.log('\nРазворот у double_top/double_bottom по достижению основания: не набралось случаев для отчёта.');
 }
 
 // --- Гипотеза 4: жизненный цикл фигуры — выход по "выдыханию" вместо жёсткого стопа ---
@@ -315,6 +433,18 @@ const exhaustedCount = rows.filter((r) => r.lifecycleReason === 'exhausted').len
 const stopCount = rows.filter((r) => r.lifecycleReason === 'stop').length;
 const windowEndCount = rows.filter((r) => r.lifecycleReason === 'window_end').length;
 console.log(`  Причины выхода: "выдохлась" ${exhaustedCount}, аварийный стоп ${stopCount}, конец окна ${windowEndCount}`);
+
+// --- Оптимальная доля отката ПО ТИПАМ фигур ------------------------------------------
+// Трейдер попросил: жизненный цикл не одним параметром на всё, а под каждую фигуру
+// отдельно. Проверяем 30/50/70% на каждом типе — если оптимум разный, это подтверждает,
+// что параметр действительно надо калибровать по типам, а не использовать общий 50%.
+console.log('\nОптимальная доля отката (жизненный цикл) — отдельно по типам фигур (n≥30):');
+console.log('  Тип фигуры                 откат 30%   откат 50%   откат 70%');
+for (const [pattern, list] of Object.entries(byPattern).sort((a, b) => b[1].length - a[1].length)) {
+  if (list.length < 30) continue;
+  const avgFor = (f) => (list.reduce((s, r) => s + r.lifecycleByFraction[f], 0) / list.length).toFixed(2);
+  console.log(`  ${pattern.padEnd(24)} n=${String(list.length).padStart(4)}  ${avgFor(0.3)}%      ${avgFor(0.5)}%      ${avgFor(0.7)}%`);
+}
 
 // --- Гипотеза 4b: вход в обратную сторону после того, как движение "выдохлось" -------
 const reverseRows = rows.filter((r) => r.reverseWin != null);
