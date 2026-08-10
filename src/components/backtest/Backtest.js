@@ -18,6 +18,7 @@ import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { computeMarketContextAtEntry } from '../../services/analytics/marketContext';
 import { calcStats } from '../../services/trades';
+import { diagnoseTrades } from '../../services/backtest/tradeDiagnostics';
 import { formatNumber } from '../../utils/calculator';
 import CandleChart from '../shared/CandleChart';
 import ExitRulesEditor from '../shared/ExitRulesEditor';
@@ -297,6 +298,13 @@ export default function Backtest() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [result, realRiskEnabled, riskSizing]);
   const stats = equity.statsTrades?.length ? calcStats(equity.statsTrades) : null;
+
+  // Диагностика по факту закрытия сделок (стоп/тейк/следящий выход/время) — реальный
+  // запрос трейдера: не просто показать цифры, а посмотреть на список сделок и
+  // подсказать, что стоит попробовать по-другому. Чисто алгоритмические правила (пороги
+  // по доле причин закрытия), без ИИ — см. tradeDiagnostics.js.
+  const diagnostics = useMemo(() => diagnoseTrades(result?.trades, exitRules),
+    [result, exitRules]);
 
   // Уровни/фигуры для обзорного графика читаются "как сейчас" (на последнюю свечу) —
   // это не то же самое, что видел движок на каждом баре при прогоне (там свой снимок на
@@ -606,6 +614,28 @@ export default function Backtest() {
               </>
             );
           })()}
+
+          {diagnostics.length > 0 && (
+            <div className="card" style={{marginBottom:16}}>
+              <div className="section-title"><div className="section-title-icon">🩺</div>Диагностика сделок</div>
+              <p className="text-xs text-muted" style={{marginBottom:12}}>
+                Разбор того, ЧЕМ закрывались сделки в этом прогоне (стоп/тейк/время) — не ИИ,
+                просто пороговые правила по факту результата. Показывается только когда есть
+                на что обратить внимание.
+              </p>
+              <div className="flex flex-col gap-2">
+                {diagnostics.map((d, i) => (
+                  <div key={i} style={{
+                    padding:'10px 14px', borderRadius:10,
+                    background:'rgba(245,158,11,0.08)', border:'1px solid rgba(245,158,11,0.25)',
+                  }}>
+                    <div style={{fontSize:13, fontWeight:600, marginBottom:4}}>{d.icon} {d.title}</div>
+                    <div style={{fontSize:12, color:'var(--text-secondary)', lineHeight:1.5}}>{d.text}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {equity.points.length > 1 && (
             <div className="card" style={{marginBottom:16}}>
