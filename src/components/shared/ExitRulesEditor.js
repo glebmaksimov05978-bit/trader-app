@@ -103,6 +103,29 @@ export default function ExitRulesEditor({ value, onChange, maxBarsEnabled, onMax
           отдаёт назад заданную долю этого пути. Смысл: фигуры угадывают направление в 76-90%
           случаев, но обычный стоп часто выбивает раньше, чем начнётся само движение.
         </div>
+        {/* Real user request: the finding shouldn't live only in a chat conversation —
+            show it where the trader actually flips the switch. Numbers from the 2026-08
+            calibration on ~2600 real instances, 6 tickers. */}
+        <div style={{
+          marginTop:10, padding:'10px 12px', borderRadius:8,
+          background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.25)', fontSize:12,
+        }}>
+          <div style={{fontWeight:600, marginBottom:4, color:'var(--green)'}}>📊 Что показала проверка на истории</div>
+          <div style={{color:'var(--text-secondary)', lineHeight:1.5}}>
+            На ~2600 реальных фигурах (6 тикеров, стоп 2%): доля прибыльных сделок выросла
+            с 49.3% до 56.7%, средний результат сделки — с −0.03% до +0.08%. Не гарантия
+            на будущее, а то, что было на этой конкретной истории.
+          </div>
+          <div style={{fontWeight:600, margin:'8px 0 4px', color:'var(--gold)'}}>💡 Как настроить рядом, чтобы сработало правильно</div>
+          <div style={{color:'var(--text-secondary)', lineHeight:1.5}}>
+            Этот выход работает, только если у сделки есть возможность «подышать» —
+            если стоп выше стоит близко (например 2%), он часто сработает раньше, чем
+            дойдёт очередь до следящего выхода, и вся эта настройка не будет успевать
+            включиться. Стоп лучше поставить пошире — вручную (3-4%+) или «У уровня»
+            за структуру фигуры. Тейк — тоже пошире или «Нет», иначе он же оборвёт
+            сделку раньше, чем движение успеет остановиться само.
+          </div>
+        </div>
         {value.trailEnabled && (
           <>
             <div className="flex gap-2" style={{alignItems:'center', flexWrap:'wrap', marginTop:10}}>
@@ -115,8 +138,15 @@ export default function ExitRulesEditor({ value, onChange, maxBarsEnabled, onMax
             <label className="flex gap-2" style={{alignItems:'center', fontSize:13, cursor:'pointer', marginTop:8}}>
               <input type="checkbox" checked={!!value.trailPerPattern}
                 onChange={(e) => onChange({ ...value, trailPerPattern: e.target.checked })} />
-              Своя доля для каждой фигуры
+              Своя доля для каждой фигуры (вместо одного числа выше на всё)
             </label>
+            <div className="input-hint" style={{marginTop:4}}>
+              Без этой галочки для ЛЮБОЙ фигуры используется одно число выше (например 50%).
+              С галочкой — у каждого типа своё: например, флагу восходящему даём больше простора
+              (70%, он долго раскрывается), а слабой нисходящей 5-волновой структуре — меньше
+              (30%, режем быстрее). Числа взяты из того, что реально сработало на истории для
+              каждого типа отдельно.
+            </div>
             {value.trailPerPattern && (
               <div className="input-hint" style={{marginTop:4}}>
                 ⚠️ Числа подобраны на той же истории, на которой измерялись, и по 37-464 случая
