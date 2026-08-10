@@ -483,21 +483,90 @@ function detectBreakout(candles, index, levels, volumeRatio) {
   return out;
 }
 
-// Classifies the last 5 swings (2-3 highs, 2-3 lows) into one shape: symmetric/
-// ascending/descending triangle, rising/falling wedge, or a flag/pennant in whichever
-// direction if there's a strong prior move (a "flagpole") feeding into the range. Only
-// one of these fires per call — they're geometrically exclusive by construction (a range
-// can't be both converging-opposite AND same-direction-sloped at once).
+// Least-squares fit through ALL points of one boundary, not just its two endpoints.
+// Endpoint-only slope (the previous approach) is degenerate: a straight line always
+// passes exactly through two points, so it measured nothing about whether the boundary
+// is real — two random swings "define" a perfect line. Fitting every point and measuring
+// the residual is what distinguishes a boundary price actually respects from a
+// coincidence (real trader question: "does it anchor to real lines or is it pure math?").
+function fitBoundary(points) {
+  const n = points.length;
+  if (n < 2) return null;
+  const meanX = points.reduce((s, p) => s + p.index, 0) / n;
+  const meanY = points.reduce((s, p) => s + p.price, 0) / n;
+  let num = 0, den = 0;
+  for (const p of points) {
+    num += (p.index - meanX) * (p.price - meanY);
+    den += (p.index - meanX) ** 2;
+  }
+  const slope = den === 0 ? 0 : num / den;
+  const intercept = meanY - slope * meanX;
+  // Mean absolute deviation from the fitted line, as % of price — "how tidy is this
+  // boundary". Only meaningful with 3+ points; with exactly 2 the fit is trivially exact.
+  const residualPct = n >= 3
+    ? (points.reduce((s, p) => s + Math.abs(p.price - (slope * p.index + intercept)), 0) / n / meanY) * 100
+    : null;
+  // Slope expressed as % of price across the whole window — comparable across tickers,
+  // unlike a raw price-per-bar slope.
+  const spanX = points[n - 1].index - points[0].index;
+  const slopePct = meanY > 0 ? ((slope * spanX) / meanY) * 100 : 0;
+  return { slope, intercept, residualPct, slopePct, pointCount: n };
+}
+
+// Classifies a run of recent swings into one shape: symmetric/ascending/descending
+// triangle, rising/falling wedge, or a flag/pennant in whichever direction if there's a
+// strong prior move (a "flagpole") feeding into the range. Only one of these fires per
+// call — they're geometrically exclusive by construction (a range can't be both
+// converging-opposite AND same-direction-sloped at once).
+//
+// Window is FLEXIBLE (5..11 swings), not a fixed 5. Real trader report: "I could see a
+// triangle forming but the algorithm didn't, or saw it far too late." Root cause was the
+// hard `swings.slice(-5)` — a large formation spanning 7-9 swings physically could not
+// fit, so the detector only ever saw a fragment of it. We now try progressively larger
+// windows and keep the one whose boundaries fit best (lowest residual), preferring larger
+// formations when quality is comparable, since size is one of only two properties that
+// measurably predicted outcomes in calibration.
+const CONSOLIDATION_WINDOWS = [5, 7, 9, 11];
+
 function classifyConsolidation(swings) {
   if (swings.length < 6) return null; // need one swing before the window to detect a flagpole
-  const last5 = swings.slice(-5);
-  const pole = swings[swings.length - 6];
+  let best = null;
+  for (const size of CONSOLIDATION_WINDOWS) {
+    if (swings.length < size + 1) break; // +1 for the flagpole swing
+    const candidate = classifyConsolidationWindow(swings, size);
+    if (!candidate) continue;
+    // Prefer the tidier fit; on a near-tie (within 0.3pp) prefer the LARGER formation.
+    if (!best
+      || candidate.fitQuality < best.fitQuality - 0.3
+      || (Math.abs(candidate.fitQuality - best.fitQuality) <= 0.3 && candidate.windowSize > best.windowSize)) {
+      best = candidate;
+    }
+  }
+  if (!best) return null;
+  // `fitQuality`/`windowSize` stay on the returned object on purpose: they're how a caller
+  // (and the trader reading the description) can tell a large, tidy 9-swing formation from
+  // a minimal 5-swing one. Calibration showed formation size is one of the few properties
+  // that actually predicts outcomes — 7-9 swing consolidations won 55-60% vs 46.6% for
+  // 5-swing ones — so throwing this away would discard the useful part.
+  return best;
+}
+
+function classifyConsolidationWindow(swings, windowSize) {
+  const last5 = swings.slice(-windowSize);
+  const pole = swings[swings.length - windowSize - 1];
+  if (!pole) return null;
   const highs = last5.filter((s) => s.type === 'high');
   const lows = last5.filter((s) => s.type === 'low');
   if (highs.length < 2 || lows.length < 2) return null;
 
-  const highSlopePct = ((highs[highs.length - 1].price - highs[0].price) / highs[0].price) * 100;
-  const lowSlopePct = ((lows[lows.length - 1].price - lows[0].price) / lows[0].price) * 100;
+  const upperFit = fitBoundary(highs);
+  const lowerFit = fitBoundary(lows);
+  if (!upperFit || !lowerFit) return null;
+  const highSlopePct = upperFit.slopePct;
+  const lowSlopePct = lowerFit.slopePct;
+  // Average residual across both boundaries — 0 when every swing sits exactly on its line.
+  // Null residuals (2-point boundaries, trivially exact) count as 0, matching old behavior.
+  const fitQuality = ((upperFit.residualPct ?? 0) + (lowerFit.residualPct ?? 0)) / 2;
   const flat = (slopePct) => Math.abs(slopePct) < 1;
 
   const range = (pts) => Math.max(...pts.map((p) => p.price)) - Math.min(...pts.map((p) => p.price));
@@ -510,16 +579,23 @@ function classifyConsolidation(swings) {
 
   // Size bonus — same reasoning as detectDoubleTopBottom's (repeated user feedback that
   // a small, barely-there consolidation was scored the same as a large, clearly
-  // meaningful one): +1 confidence per 5 bars the 5-swing window spans, capped so it
-  // can't dominate the base geometry score.
+  // meaningful one): +1 confidence per 5 bars the window spans, capped so it can't
+  // dominate the base geometry score. Size is one of only two properties that measurably
+  // predicted outcomes in the 2026-08 calibration, so it stays.
   const barsSpan = last5[last5.length - 1].index - last5[0].index;
   const sizeBonus = Math.min(10, Math.round(barsSpan / 5));
-  // "from date → to date" of the whole 5-swing window — real user feedback: descriptions
-  // gave a % move or a shape but never said WHEN, leaving the trader to guess which part
-  // of the chart was meant ("непонятно от какого момента он считает").
+  // "from date → to date" of the whole window — real user feedback: descriptions gave a %
+  // move or a shape but never said WHEN, leaving the trader to guess which part of the
+  // chart was meant ("непонятно от какого момента он считает").
   const fromDate = fmtSwingDate(last5[0]), toDate = fmtSwingDate(last5[last5.length - 1]);
   const dateRange = fromDate && toDate ? ` (${fromDate} → ${toDate})` : '';
+  // How many swings the shape is actually built from, and how tightly they sit on their
+  // fitted boundaries — surfaced so a 9-swing formation reads differently from a minimal
+  // 5-swing one instead of both just saying "triangle".
+  const structureNote = ` Построена по ${last5.length} точкам разворота`
+    + (fitQuality > 0 ? `, отклонение от линий ${fitQuality.toFixed(2)}%` : '') + '.';
 
+  const shape = (() => {
   if (highSlopePct < -1 && lowSlopePct > 1 && isNarrowing) {
     if (hasPole) {
       return {
@@ -567,6 +643,16 @@ function classifyConsolidation(swings) {
     };
   }
   return null;
+  })();
+
+  if (!shape) return null;
+  return {
+    ...shape,
+    detail: shape.detail + structureNote,
+    boundaries: { upper: upperFit, lower: lowerFit },
+    fitQuality,
+    windowSize,
+  };
 }
 
 // Head & shoulders (top) / inverted (bottom) — needs exactly 5 alternating swings:

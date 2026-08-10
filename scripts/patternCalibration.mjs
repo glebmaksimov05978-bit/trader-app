@@ -139,6 +139,66 @@ function scoreOutcome(candles, entryIndex, direction) {
   return { win, directionHit };
 }
 
+// --- ТРИ НЕИСПОЛЬЗОВАННЫХ РЕСУРСА -----------------------------------------------------
+// Проверка после замечания трейдера, что у треугольников/клиньев/флагов линии НАКЛОННЫЕ,
+// а горизонтальная привязка к уровням их в принципе оценить не могла.
+//
+// 1) КАСАНИЯ НАКЛОННОЙ ЛИНИИ. Классический треугольник — это когда цена многократно
+//    отбивается от двух сходящихся линий. Сейчас детектор строит "линию" через ДВЕ
+//    крайние точки, что математически бессмысленно (через 2 точки всегда пройдёт прямая).
+//    Считаем настоящую линию по всем точкам границы (МНК) и число реальных касаний.
+// 2) ОБЪЁМ. Учебник: в треугольнике объём затухает по мере сжатия, а на выходе взрывается.
+//    Данные по объёму у нас есть, но НИ ОДИН детектор фигур их не использует
+//    (используется только в detectBreakout).
+// 3) ФАКТ ПРОБОЯ ГРАНИЦЫ. Сейчас вход происходит по факту "фигура опознана". Но классика
+//    говорит: треугольник не торгуется, пока цена не вышла за его границу. Проверяем,
+//    улучшит ли результат ожидание реального выхода за пределы фигуры.
+function fitLine(points) {
+  const n = points.length;
+  if (n < 2) return null;
+  const meanX = points.reduce((s, p) => s + p.index, 0) / n;
+  const meanY = points.reduce((s, p) => s + p.price, 0) / n;
+  let num = 0, den = 0;
+  for (const p of points) { num += (p.index - meanX) * (p.price - meanY); den += (p.index - meanX) ** 2; }
+  const slope = den === 0 ? 0 : num / den;
+  return { slope, intercept: meanY - slope * meanX };
+}
+// Касание = бар, чей экстремум подошёл к линии ближе чем tolerancePct и не пробил её
+// заметно. Это и есть та проверка "цена уважает линию", которой сейчас нигде нет.
+const TRENDLINE_TOUCH_TOLERANCE_PCT = 0.8;
+function countTrendlineTouches(candles, line, fromIndex, toIndex, type) {
+  if (!line) return 0;
+  let touches = 0;
+  for (let i = fromIndex; i <= toIndex && i < candles.length; i++) {
+    const expected = line.slope * i + line.intercept;
+    if (expected <= 0) continue;
+    const actual = type === 'high' ? candles[i].high : candles[i].low;
+    if ((Math.abs(actual - expected) / expected) * 100 <= TRENDLINE_TOUCH_TOLERANCE_PCT) touches += 1;
+  }
+  return touches;
+}
+// Объём внутри формации против объёма до неё — затухает ли он, как учит классика.
+function volumeProfileFor(candles, points) {
+  if (!points?.length) return null;
+  const from = points[0].index, to = points[points.length - 1].index;
+  const span = to - from;
+  if (span < 3 || from - span < 0) return null;
+  const inside = candles.slice(from, to + 1).map((c) => c.volume).filter(Number.isFinite);
+  const before = candles.slice(from - span, from).map((c) => c.volume).filter(Number.isFinite);
+  if (!inside.length || !before.length) return null;
+  const avg = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+  const avgBefore = avg(before);
+  return avgBefore > 0 ? avg(inside) / avgBefore : null; // <1 = объём затухает внутри фигуры
+}
+// Вышла ли цена за границы самой фигуры в сторону сделки — то есть состоялся ли пробой.
+function hasBrokenOut(candles, entryIndex, points, direction) {
+  if (!points?.length) return null;
+  const prices = points.map((p) => p.price);
+  const hi = Math.max(...prices), lo = Math.min(...prices);
+  const close = candles[entryIndex].close;
+  return direction === 1 ? close > hi : close < lo;
+}
+
 // Сколько РЕАЛЬНО баров нужно, чтобы движение раскрылось — независимо от того, попало
 // ли оно в наше окно 15/30 баров или нет. Идём широко (90 баров), находим бар, на
 // котором достигнут максимум движения В ПОЛЬЗУ сделки, и отдельно — прошёл ли этот
@@ -335,6 +395,19 @@ for (const { ticker, instrumentType } of TICKERS) {
         : null;
       const { win, directionHit } = scoreOutcome(candles, i, direction);
       const ttp = timeToPeak(candles, i, direction);
+
+      // Три новые метрики — см. блок "ТРИ НЕИСПОЛЬЗОВАННЫХ РЕСУРСА" выше.
+      let trendlineTouches = null;
+      if (Array.isArray(c.points) && c.points.length >= 4) {
+        const highs = c.points.filter((p) => p.type === 'high');
+        const lows = c.points.filter((p) => p.type === 'low');
+        const from = c.points[0].index, to = c.points[c.points.length - 1].index;
+        const upper = countTrendlineTouches(candles, fitLine(highs), from, to, 'high');
+        const lower = countTrendlineTouches(candles, fitLine(lows), from, to, 'low');
+        trendlineTouches = upper + lower;
+      }
+      const volumeProfile = volumeProfileFor(candles, c.points);
+      const brokeOut = hasBrokenOut(candles, i, c.points, direction);
       const delayed = {};
       for (const d of ENTRY_DELAYS) delayed[d] = scoreOutcome(candles, i + d, direction).win;
 
@@ -370,6 +443,8 @@ for (const { ticker, instrumentType } of TICKERS) {
       rows.push({
         ticker, pattern: c.pattern, confidence: c.confidence, barsSpan, amplitudePct, ageBars, win, directionHit, delayed,
         levelTouches: c.levelConfluence?.touchCount ?? 0,
+        trendlineTouches, volumeProfile, brokeOut,
+        windowSize: c.points?.length ?? null, fitQuality: c.fitQuality ?? null,
         lifecycleReturnPct: lifecycle.returnPct, lifecycleReason: lifecycle.reason, reverseWin, lifecycleByFraction,
         structural, ttp,
       });
@@ -571,6 +646,41 @@ for (const b of ampBuckets) {
   const dr = ((list.reduce((s, r) => s + r.directionHit, 0) / list.length) * 100).toFixed(1);
   console.log(`  ${b.label.padEnd(24)} n=${String(list.length).padStart(4)}  винрейт=${wr}%  направление=${dr}%`);
 }
+
+// --- ТРИ НЕИСПОЛЬЗОВАННЫХ РЕСУРСА: касания наклонной линии, объём, факт пробоя --------
+const wr = (l) => l.length ? ((l.reduce((s, r) => s + r.win, 0) / l.length) * 100).toFixed(1) : '—';
+const dr = (l) => l.length ? ((l.reduce((s, r) => s + r.directionHit, 0) / l.length) * 100).toFixed(1) : '—';
+const line = (label, l) => console.log(`  ${label.padEnd(38)} n=${String(l.length).padStart(4)}  винрейт=${wr(l)}%  направление=${dr(l)}%`);
+
+// --- Гибкое окно: находятся ли теперь КРУПНЫЕ фигуры (жалоба «не видит большой треугольник»)
+const CONSOLIDATION_TYPES = ['triangle_symmetric', 'triangle_ascending', 'triangle_descending',
+  'wedge_rising', 'wedge_falling', 'flag_ascending', 'flag_descending', 'flag_horizontal',
+  'pennant_bullish', 'pennant_bearish'];
+const consol = rows.filter((r) => CONSOLIDATION_TYPES.includes(r.pattern) && r.windowSize != null);
+console.log('\n0) ГИБКОЕ ОКНО — размер найденных консолидаций (было жёстко 5 точек):');
+for (const size of [5, 7, 9, 11]) {
+  const l = consol.filter((r) => r.windowSize === size);
+  if (!l.length) { console.log(`  из ${size} точек                              n=   0`); continue; }
+  const q = (l.reduce((s, r) => s + (r.fitQuality ?? 0), 0) / l.length).toFixed(2);
+  console.log(`  из ${size} точек                              n=${String(l.length).padStart(4)}  винрейт=${wr(l)}%  направление=${dr(l)}%  откл.=${q}%`);
+}
+
+console.log('\n1) КАСАНИЯ НАКЛОННОЙ ЛИНИИ (цена реально уважает границы фигуры?):');
+const withTl = rows.filter((r) => r.trendlineTouches != null);
+line('мало касаний (≤3)', withTl.filter((r) => r.trendlineTouches <= 3));
+line('средне (4-5)', withTl.filter((r) => r.trendlineTouches >= 4 && r.trendlineTouches <= 5));
+line('много (6+) — цена уважает линии', withTl.filter((r) => r.trendlineTouches >= 6));
+
+console.log('\n2) ОБЪЁМ внутри формации против объёма до неё (классика: должен затухать):');
+const withVol = rows.filter((r) => r.volumeProfile != null);
+line('объём затухает (<0.8 от прежнего)', withVol.filter((r) => r.volumeProfile < 0.8));
+line('объём примерно тот же (0.8-1.2)', withVol.filter((r) => r.volumeProfile >= 0.8 && r.volumeProfile <= 1.2));
+line('объём вырос (>1.2)', withVol.filter((r) => r.volumeProfile > 1.2));
+
+console.log('\n3) ФАКТ ПРОБОЯ границы фигуры (классика: не торговать, пока не вышла):');
+const withBo = rows.filter((r) => r.brokeOut != null);
+line('цена УЖЕ вышла за границу фигуры', withBo.filter((r) => r.brokeOut));
+line('цена ещё внутри фигуры', withBo.filter((r) => !r.brokeOut));
 
 // --- НОВОЕ: стоит ли фигура на подтверждённом уровне S/R? ----------------------------
 // Проверка только что добавленной в patterns.js привязки фигур к реальным уровням

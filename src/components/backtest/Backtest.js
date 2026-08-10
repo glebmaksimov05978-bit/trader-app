@@ -28,6 +28,7 @@ import toast from 'react-hot-toast';
 
 const EXIT_REASON_LABELS = {
   stop: 'Стоп', take: 'Тейк', signal: 'Сигнал пропал', time: 'По времени', end_of_data: 'Конец истории (не закрыта)',
+  trail: 'Движение выдохлось',
 };
 
 function StatCard({ label, value, tone }) {

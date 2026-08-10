@@ -14,7 +14,7 @@ import { computeIndicatorsAtEntry } from '../analytics/indicators';
 import { computePatternsAtEntry } from '../analytics/patterns';
 import { computeMarketContextAtEntry } from '../analytics/marketContext';
 import { evaluateStrategy } from '../analytics/strategy';
-import { computeStopPrice, computeTakePrice } from '../analytics/exitRules';
+import { computeStopPrice, computeTakePrice, resolveTrailGiveBackPct } from '../analytics/exitRules';
 import { calcTrade } from '../../utils/calculator';
 
 // Real position sizing (optional — see runBacktest's `riskSizing` param). Reuses the
@@ -83,6 +83,29 @@ function checkIntrabarExit(position, bar) {
   const takeHit = takePrice != null && (direction === 'long' ? bar.high >= takePrice : bar.low <= takePrice);
   if (stopHit) return { price: gapAwareFillPrice(stopPrice, bar.open, true, direction), reason: 'stop' };
   if (takeHit) return { price: gapAwareFillPrice(takePrice, bar.open, false, direction), reason: 'take' };
+  return null;
+}
+
+// Trailing "movement exhausted" exit — see the long rationale in exitRules.js. Tracks the
+// best excursion IN OUR FAVOUR so far and closes once price hands back `giveBackPct` of
+// it. Deliberately evaluated on the bar's CLOSE, not its low/high: an intrabar wick
+// dipping below the give-back line is exactly the noise this exit exists to survive, so
+// exiting on it would reintroduce the very problem a fixed stop has.
+function updateTrailAndCheckExit(position, bar) {
+  const { direction, entryPrice } = position;
+  const favorableHigh = direction === 'long'
+    ? ((bar.high - entryPrice) / entryPrice) * 100
+    : ((entryPrice - bar.low) / entryPrice) * 100;
+  position.peakFavorablePct = Math.max(position.peakFavorablePct ?? 0, favorableHigh);
+  if (position.peakFavorablePct < position.trailMinPeakPct) return null;
+
+  const closeReturnPct = direction === 'long'
+    ? ((bar.close - entryPrice) / entryPrice) * 100
+    : ((entryPrice - bar.close) / entryPrice) * 100;
+  const keepFraction = 1 - position.trailGiveBackPct / 100;
+  if (closeReturnPct <= position.peakFavorablePct * keepFraction) {
+    return { price: bar.close, reason: 'trail' };
+  }
   return null;
 }
 
@@ -183,6 +206,17 @@ export function runBacktest({
         continue;
       }
 
+      // Checked AFTER stop/take so a hard stop still wins on the same bar — the trail is
+      // meant to bank a fading move, never to override the trader's own risk limit.
+      if (position.trailEnabled) {
+        const trailExit = updateTrailAndCheckExit(position, bar);
+        if (trailExit) {
+          trades.push(finalizeTrade(position, i, bar.date, trailExit.price, trailExit.reason));
+          position = null;
+          continue;
+        }
+      }
+
       let deferredExit = null; // { reason } — executed at NEXT bar's open, same lag as entry
       if (onSignalLoss) {
         const ctx = buildCtx(candles, bar.date, position.direction, timeframeMinutes);
@@ -231,10 +265,19 @@ export function runBacktest({
     const priceCtx = { atr: baseCtx.indicators.atr14 ?? null, patterns: baseCtx.patterns };
     const stopPrice = computeStopPrice(direction, entryPrice, rules, priceCtx);
     const takePrice = computeTakePrice(direction, entryPrice, rules, priceCtx);
+    // Which pattern (if any) is behind this entry — only used to pick a per-pattern trail
+    // give-back when the trader opted into that. Highest-confidence confirmed candidate,
+    // matching how `pattern_confirmed` picks the one it reports.
+    const drivingPattern = baseCtx.patterns?.candidates
+      ?.find((c) => c.status !== 'forming')?.pattern ?? null;
     position = {
       direction, entryIndex: i + 1, entryDate: nextBar.date, entryPrice, entryPercent,
       stopPrice, takePrice, barsHeld: 0,
       sizing: sizePosition(entryPrice, stopPrice, riskSizing),
+      trailEnabled: !!rules.trailEnabled,
+      trailGiveBackPct: resolveTrailGiveBackPct(rules, drivingPattern),
+      trailMinPeakPct: rules.trailMinPeakPct ?? 1,
+      peakFavorablePct: 0,
     };
   }
 

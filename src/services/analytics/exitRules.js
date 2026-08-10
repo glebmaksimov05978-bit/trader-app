@@ -17,12 +17,63 @@
 const LEVEL_FALLBACK_STOP_ATR_MULT = 1.5;
 const LEVEL_FALLBACK_TAKE_ATR_MULT = 3;
 
+// --- Trailing "movement exhausted" exit ------------------------------------------------
+//
+// The one idea out of many tested in the 2026-08 calibration that measurably worked. The
+// problem it solves: patterns call DIRECTION correctly 76-90% of the time, but a fixed 2%
+// stop only wins ~49% — because price routinely dips against the trade (ordinary noise)
+// and trips the stop before the move it predicted actually starts. Measured over ~2600
+// real instances on 6 tickers: exiting when price gives back a fraction of its PEAK
+// favorable excursion (instead of at a fixed price) moved average expectancy from −0.03%
+// to +0.08% per trade and the share of profitable trades from 49.3% to 56.7%.
+//
+// Unlike stop/take, this has no price at entry time — it's a running rule the engine
+// evaluates bar by bar against the best level reached so far, so it lives here as config
+// and is applied in services/backtest/engine.js.
+export const DEFAULT_TRAIL_GIVE_BACK_PCT = 50;
+
+// Per-pattern give-back fractions. The optimum genuinely differs by shape (trader's own
+// hypothesis, confirmed): flags/double bottoms do best with lots of room (70%+), while
+// 5-wave impulses and bullish pennants do better cut short (30%).
+//
+// ⚠️ HONESTY CAVEAT: these were picked as the best of {30,50,70} on the SAME data they
+// were measured on, with per-pattern samples of only 37-464. That is textbook selection
+// bias — several of the gaps are well inside noise. Treat as a starting hint, not proven
+// truth: they're opt-in (see `trailPerPattern`), the global default stays the primary
+// path, and they need out-of-sample confirmation before being trusted.
+export const PATTERN_TRAIL_GIVE_BACK_PCT = {
+  flag_ascending: 70, double_bottom: 70, engulfing_bullish: 70, triangle_descending: 70,
+  head_shoulders_top: 70, pin_bar_bullish: 70, pin_bar_bearish: 70, double_top: 70,
+  wedge_rising: 70, wedge_falling: 70,
+  triangle_ascending: 50, head_shoulders_bottom: 50, pennant_bearish: 50,
+  impulse_up_5wave: 30, flag_descending: 30, engulfing_bearish: 30,
+  impulse_down_5wave: 30, pennant_bullish: 30,
+};
+
+/**
+ * Give-back % this trade should use. Falls back to the strategy's single number whenever
+ * per-pattern mode is off or the pattern isn't in the table.
+ * @param {object} exitRules
+ * @param {string|null} patternName - the pattern that triggered the entry, if any
+ */
+export function resolveTrailGiveBackPct(exitRules, patternName) {
+  const base = exitRules?.trailGiveBackPct ?? DEFAULT_TRAIL_GIVE_BACK_PCT;
+  if (!exitRules?.trailPerPattern || !patternName) return base;
+  return PATTERN_TRAIL_GIVE_BACK_PCT[patternName] ?? base;
+}
+
 export function defaultExitRules() {
   return {
     stopType: 'pct', stopPct: 2, stopAtrMult: 1.5, stopLevelSource: 'sr', stopLevelTolerancePct: 0.3, stopLevelFallbackPct: 2,
     takeType: 'pct', takePct: 4, takeAtrMult: 3, takeLevelSource: 'sr', takeLevelTolerancePct: 0.3, takeLevelFallbackPct: 4,
     onSignalLoss: false,
     maxBars: null,
+    // Off by default: it changes exit behaviour substantially, and every existing saved
+    // strategy was tuned without it. Opt-in, same as the other non-price exits.
+    trailEnabled: false,
+    trailGiveBackPct: DEFAULT_TRAIL_GIVE_BACK_PCT,
+    trailMinPeakPct: 1,   // ignore give-back until the move has actually gone somewhere
+    trailPerPattern: false,
   };
 }
 

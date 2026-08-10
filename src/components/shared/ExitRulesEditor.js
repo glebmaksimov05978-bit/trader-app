@@ -76,7 +76,7 @@ export default function ExitRulesEditor({ value, onChange, maxBarsEnabled, onMax
           Выйти, если условия стратегии перестали выполняться (сигнал пропал)
         </label>
       </div>
-      <div className="flex gap-2" style={{alignItems:'center', flexWrap:'wrap'}}>
+      <div className="flex gap-2" style={{alignItems:'center', flexWrap:'wrap', marginBottom:10}}>
         <label className="flex gap-2" style={{alignItems:'center', fontSize:13, cursor:'pointer'}}>
           <input type="checkbox" checked={!!maxBarsEnabled} onChange={(e) => onMaxBarsEnabledChange(e.target.checked)} />
           Выйти по времени, макс. дней в сделке
@@ -84,6 +84,47 @@ export default function ExitRulesEditor({ value, onChange, maxBarsEnabled, onMax
         {maxBarsEnabled && (
           <NumberInput className="input" min="1" value={value.maxBars ?? 20}
             onChange={(v) => onChange({ ...value, maxBars: Math.round(v) })} style={{width:80}} />
+        )}
+      </div>
+
+      {/* Trailing "movement exhausted" exit — the one measurable win out of everything
+          tested in the 2026-08 calibration (avg expectancy −0.03% → +0.08% per trade,
+          profitable share 49.3% → 56.7% over ~2600 pattern instances on 6 tickers). Kept
+          opt-in and explained in plain terms, since it changes exit behaviour a lot and
+          every saved strategy was tuned without it. */}
+      <div style={{padding:'10px 14px', borderRadius:10, background:'var(--bg-surface-2)', border:'1px solid var(--border-subtle)'}}>
+        <label className="flex gap-2" style={{alignItems:'center', fontSize:13, cursor:'pointer', fontWeight:600}}>
+          <input type="checkbox" checked={!!value.trailEnabled}
+            onChange={(e) => onChange({ ...value, trailEnabled: e.target.checked })} />
+          🌊 Выйти, когда движение выдохлось (следящий выход)
+        </label>
+        <div className="input-hint" style={{marginTop:6}}>
+          Программа запоминает, докуда цена дошла в вашу пользу, и закрывает сделку, когда она
+          отдаёт назад заданную долю этого пути. Смысл: фигуры угадывают направление в 76-90%
+          случаев, но обычный стоп часто выбивает раньше, чем начнётся само движение.
+        </div>
+        {value.trailEnabled && (
+          <>
+            <div className="flex gap-2" style={{alignItems:'center', flexWrap:'wrap', marginTop:10}}>
+              <span style={{fontSize:12, color:'var(--text-muted)'}}>Отдать назад не больше</span>
+              <NumberInput className="input" min="10" max="90" step="5"
+                value={value.trailGiveBackPct ?? 50}
+                onChange={(v) => onChange({ ...value, trailGiveBackPct: v })} style={{width:70}} />
+              <span style={{fontSize:12, color:'var(--text-muted)'}}>% от лучшей достигнутой прибыли</span>
+            </div>
+            <label className="flex gap-2" style={{alignItems:'center', fontSize:13, cursor:'pointer', marginTop:8}}>
+              <input type="checkbox" checked={!!value.trailPerPattern}
+                onChange={(e) => onChange({ ...value, trailPerPattern: e.target.checked })} />
+              Своя доля для каждой фигуры
+            </label>
+            {value.trailPerPattern && (
+              <div className="input-hint" style={{marginTop:4}}>
+                ⚠️ Числа подобраны на той же истории, на которой измерялись, и по 37-464 случая
+                на фигуру — часть различий может быть случайностью. Это подсказка, а не
+                проверенная истина: сначала сравните оба варианта на отложенном периоде.
+              </div>
+            )}
+          </>
         )}
       </div>
     </>
