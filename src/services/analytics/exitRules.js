@@ -111,10 +111,59 @@ function applyTolerance(direction, side, price, tolerancePct) {
   return price * (1 + (beyond * tolerancePct) / 100);
 }
 
+// Stop distance beyond which "за структуру фигуры" is no longer practical — a formation
+// spanning 15% of price would demand a risk nobody sizes for. Matches the cap used when
+// this was validated in scripts/patternCalibration.mjs.
+const STRUCTURE_STOP_MAX_PCT = 8;
+
+// The pattern actually behind this entry — same "highest-confidence confirmed candidate"
+// rule the backtest engine already uses to pick a per-pattern trail give-back, so a
+// structural stop and a per-pattern trail agree on which formation they're talking about.
+function drivingPattern(patterns) {
+  return patterns?.candidates
+    ?.filter((c) => c.status !== 'forming' && Array.isArray(c.points) && c.points.length)
+    .sort((a, b) => b.confidence - a.confidence)[0] ?? null;
+}
+
+// Stop just beyond the formation's own extreme — under a double bottom's low, over a
+// double top's high, etc. Real trader idea: place the stop where the PATTERN would be
+// invalidated, not at an arbitrary distance, so ordinary noise inside the formation can't
+// trip it. Measured in the 2026-08 calibration: lower win rate (fewer, farther take-profits
+// reached) but better average result per trade (+0.18% vs −0.05% for a fixed 2%/2%) — the
+// classic "fewer, bigger wins" trade-off, not a free lunch.
+function structuralStopPrice(direction, entryPrice, patterns) {
+  const pattern = drivingPattern(patterns);
+  if (!pattern) return null;
+  const prices = pattern.points.map((p) => p.price);
+  const raw = direction === 'long' ? Math.min(...prices) : Math.max(...prices);
+  const distPct = (Math.abs(entryPrice - raw) / entryPrice) * 100;
+  if (!(distPct > 0) || distPct > STRUCTURE_STOP_MAX_PCT) return null; // too tight/far to be a real number
+  return raw;
+}
+
 // Computes ONE stop-or-take price from a single rule slot. Returns null when that slot
 // has no fixed price to offer — type 'none', or a level-based rule whose reference level
 // doesn't exist yet (fresh ticker, no swing history) — never a guess.
 function computeOne(direction, side, entryPrice, type, params, ctx) {
+  if (type === 'structure') {
+    // Only validated for the STOP side — the calibration measured "stop under/over the
+    // pattern's own extreme", never a matching take-profit rule. Offering it for take
+    // would present an untested guess as if it were the same proven thing.
+    if (side === 'stop') {
+      const raw = structuralStopPrice(direction, entryPrice, ctx.patterns);
+      if (raw != null) return raw;
+    }
+    // No confirmed pattern with points right now (or its extreme is too far away) — same
+    // fallback chain as the 'level' type below, reusing the trader's own configured
+    // number rather than silently leaving the position with no stop at all.
+    if (params.levelFallbackPct != null) {
+      return entryPrice * (1 + (directionalSign(direction, side) * params.levelFallbackPct) / 100);
+    }
+    if (ctx.atr != null) {
+      return entryPrice + directionalSign(direction, side) * ctx.atr * LEVEL_FALLBACK_STOP_ATR_MULT;
+    }
+    return null;
+  }
   if (type === 'pct') {
     if (params.pct == null) return null;
     return entryPrice * (1 + (directionalSign(direction, side) * params.pct) / 100);
@@ -180,5 +229,6 @@ export function exitTypeLabel(type, levelSource) {
   if (type === 'pct') return '% от входа';
   if (type === 'atr') return '×ATR';
   if (type === 'level') return levelSource === 'ema200' ? 'у EMA200' : 'у ближайшего уровня';
+  if (type === 'structure') return 'за структурой фигуры';
   return 'не задано';
 }

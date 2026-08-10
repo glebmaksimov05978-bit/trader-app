@@ -17,7 +17,13 @@ function ExitSlot({ side, value, onChange }) {
     <div style={{padding:'10px 14px', borderRadius:10, background:'var(--bg-surface-2)', border:'1px solid var(--border-subtle)'}}>
       <div style={{fontSize:13, fontWeight:600, marginBottom:8}}>{sideLabel}</div>
       <div className="flex gap-2" style={{marginBottom:8, flexWrap:'wrap'}}>
-        {[['pct', '%'], ['atr', '×ATR'], ['level', 'У уровня'], ['none', 'Нет']].map(([t, label]) => (
+        {[
+          ['pct', '%'], ['atr', '×ATR'], ['level', 'У уровня'],
+          // Только для стопа — проверена в калибровке именно как расстояние ДО СТОПА
+          // (под минимумом/над максимумом фигуры), а не как правило для тейка.
+          ...(side === 'stop' ? [['structure', 'За структурой фигуры']] : []),
+          ['none', 'Нет'],
+        ].map(([t, label]) => (
           <button key={t} type="button" className={`btn btn-sm ${value[`${prefix}Type`] === t ? 'btn-primary' : 'btn-ghost'}`}
             onClick={() => set({ [`${prefix}Type`]: t })}>{label}</button>
         ))}
@@ -51,6 +57,23 @@ function ExitSlot({ side, value, onChange }) {
           </div>
           <div className="flex gap-2" style={{alignItems:'center', flexWrap:'wrap'}}>
             <span style={{fontSize:12, color:'var(--text-muted)'}}>Если уровня нет рядом — запасной выход, % от цены входа</span>
+            <NumberInput className="input" step="0.1" value={value[`${prefix}LevelFallbackPct`] ?? ''}
+              onChange={(v) => set({ [`${prefix}LevelFallbackPct`]: v })} style={{width:70}} />
+          </div>
+        </div>
+      )}
+      {value[`${prefix}Type`] === 'structure' && (
+        <div className="flex flex-col gap-2">
+          <div className="input-hint">
+            Стоп ставится под минимумом (лонг) или над максимумом (шорт) той фигуры, из-за
+            которой открыта сделка — там, где формация была бы отменена, а не на произвольном
+            расстоянии. Проверено: реже добираются далёкие тейки (винрейт ниже), но средний
+            результат сделки лучше — крупные редкие победы перекрывают частые мелкие потери.
+            Работает вместе со следящим выходом «Движение выдохлось» лучше, чем с фиксированным
+            тейком — ему нужен настоящий стоп-запас, а не тесный.
+          </div>
+          <div className="flex gap-2" style={{alignItems:'center', flexWrap:'wrap'}}>
+            <span style={{fontSize:12, color:'var(--text-muted)'}}>Если подтверждённой фигуры нет — запасной %, от цены входа</span>
             <NumberInput className="input" step="0.1" value={value[`${prefix}LevelFallbackPct`] ?? ''}
               onChange={(v) => set({ [`${prefix}LevelFallbackPct`]: v })} style={{width:70}} />
           </div>
