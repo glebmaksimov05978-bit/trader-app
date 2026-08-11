@@ -805,6 +805,28 @@ export function levelConfluenceFor(candidate, levels) {
   return best;
 }
 
+// --- Amplitude bonus: reward price range, not just geometric neatness ----------------
+//
+// Calibration (2026-08-10, ~2600 real instances) tested amplitude — a pattern's price
+// range as % of price, NOT its span in bars — as a quality signal on its own: direction
+// accuracy climbed from 60.9% (small, ≤8.4%) to 70.3% (medium) to 84.2% (large, >14.3%),
+// a cleaner and larger spread than the bar-count size bonus each detector already applies.
+// That existing size bonus rewards a DIFFERENT thing (how long the formation took), so
+// this is additive to it, not a replacement — a shape can be old-and-flat or
+// young-and-wide, and both properties turned out to matter.
+//
+// Saturates at 15% amplitude (roughly the top of the "large" bucket that scored 84.2%) —
+// past that, more range didn't measurably keep helping, so no reason to keep rewarding it.
+const AMPLITUDE_BONUS_SATURATION_PCT = 15;
+const AMPLITUDE_BONUS_MAX = 10;
+
+function amplitudeBonusFor(candidate, currentPrice) {
+  if (!Array.isArray(candidate.points) || candidate.points.length < 2 || !(currentPrice > 0)) return 0;
+  const prices = candidate.points.map((p) => p.price);
+  const amplitudePct = ((Math.max(...prices) - Math.min(...prices)) / currentPrice) * 100;
+  return Math.round(Math.min(1, amplitudePct / AMPLITUDE_BONUS_SATURATION_PCT) * AMPLITUDE_BONUS_MAX);
+}
+
 // --- Entry point: everything computed as of the entry bar, no lookahead --------------
 
 export function computePatternsAtEntry(candles, atDate, { swingLookback = 3, timeframeMinutes = null } = {}) {
@@ -894,6 +916,16 @@ export function computePatternsAtEntry(candles, atDate, { swingLookback = 3, tim
           + `(${confluence.touchCount} касаний в истории) — просто факт для сведения, `
           + `на статистике отработки такие фигуры не лучше остальных.`,
       };
+    })
+    // Amplitude bonus — see amplitudeBonusFor above. Unlike level confluence, this ONE
+    // DOES adjust confidence: it measurably predicted outcomes (direction accuracy
+    // 60.9%→84.2% across amplitude terciles), unlike the geometric precision most
+    // detectors' base confidence rewards. Applied uniformly here instead of touching every
+    // detector's own formula individually.
+    .map((c) => {
+      const amplitudeBonus = amplitudeBonusFor(c, currentPrice);
+      if (!amplitudeBonus) return c;
+      return { ...c, confidence: Math.min(95, c.confidence + amplitudeBonus) };
     })
     .filter((c) => c.status === 'forming' || c.confidence >= MIN_DISPLAY_CONFIDENCE)
     .sort((a, b) => (a.status === 'forming' ? -1 : b.status === 'forming' ? 1 : b.confidence - a.confidence))
