@@ -62,6 +62,21 @@ export function resolveTrailGiveBackPct(exitRules, patternName) {
   return PATTERN_TRAIL_GIVE_BACK_PCT[patternName] ?? base;
 }
 
+// Real bug found live-testing H1 (2026-08-12): `trailMinPeakPct` was a flat 1% no matter
+// the timeframe, calibrated implicitly on daily bars (where 1% is an ordinary few-day
+// move). On an hourly chart the SAME 1% can take far longer to accumulate — a position
+// can sit open for hundreds of bars never even starting to be tracked (no stop/take to
+// close it either), and once it finally crosses 1% by a hair, the trail immediately fires
+// on the very next small pullback, locking in a barely-there profit. Both symptoms the
+// trader saw (one position stuck 2341 bars, several trades closing at +0.03%/+0.36%/
+// +0.65%) trace to this one flat threshold.
+//
+// Fix: default to ATR-based — the minimum move required scales with how much this
+// instrument/timeframe actually moves per bar, instead of a number tuned for daily
+// candles. `trailMinPeakMode: 'pct'` is kept for backward compatibility / manual override
+// (e.g. a trader who wants an exact %, knows what they're doing).
+export const DEFAULT_TRAIL_MIN_PEAK_ATR_MULT = 0.5;
+
 export function defaultExitRules() {
   return {
     stopType: 'pct', stopPct: 2, stopAtrMult: 1.5, stopLevelSource: 'sr', stopLevelTolerancePct: 0.3, stopLevelFallbackPct: 2,
@@ -72,9 +87,23 @@ export function defaultExitRules() {
     // strategy was tuned without it. Opt-in, same as the other non-price exits.
     trailEnabled: false,
     trailGiveBackPct: DEFAULT_TRAIL_GIVE_BACK_PCT,
-    trailMinPeakPct: 1,   // ignore give-back until the move has actually gone somewhere
+    trailMinPeakMode: 'atr',                                  // 'atr' (scales with volatility) or 'pct' (fixed number)
+    trailMinPeakAtrMult: DEFAULT_TRAIL_MIN_PEAK_ATR_MULT,      // "at least half an ATR of favorable move before tracking give-back"
+    trailMinPeakPct: 1,   // used only when trailMinPeakMode === 'pct', or as ATR fallback when ATR isn't available yet
     trailPerPattern: false,
   };
+}
+
+// Resolves the actual minimum-peak threshold (in % of entry price) this trade should use
+// — ATR-scaled when possible and requested, falling back to the flat % otherwise (no ATR
+// yet this early in history, or the trader explicitly chose 'pct' mode).
+export function resolveTrailMinPeakPct(exitRules, entryPrice, atr) {
+  const mode = exitRules?.trailMinPeakMode ?? 'atr';
+  if (mode === 'atr' && atr != null && entryPrice > 0) {
+    const mult = exitRules?.trailMinPeakAtrMult ?? DEFAULT_TRAIL_MIN_PEAK_ATR_MULT;
+    return (atr * mult / entryPrice) * 100;
+  }
+  return exitRules?.trailMinPeakPct ?? 1;
 }
 
 // Whether the stop/take side sits BELOW or ABOVE entry, expressed as ±1 — a stop and a

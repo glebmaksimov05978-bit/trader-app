@@ -164,6 +164,43 @@ export default function ExitRulesEditor({ value, onChange, maxBarsEnabled, onMax
                 onChange={(v) => onChange({ ...value, trailGiveBackPct: v })} style={{width:70}} />
               <span style={{fontSize:12, color:'var(--text-muted)'}}>% от лучшей достигнутой прибыли</span>
             </div>
+
+            {/* Real bug found live-testing H1 (2026-08-12): a flat "минимум 1%" before the
+                trail starts tracking anything was calibrated for daily bars — on an hourly
+                chart 1% can take hundreds of bars to accumulate, leaving a position stuck
+                open with nothing to close it, and once crossed by a hair the trail fires
+                on the very next tick, locking in a barely-there profit. ATR-based scales
+                with whatever the instrument/timeframe actually moves per bar. */}
+            <div className="flex gap-2" style={{alignItems:'center', flexWrap:'wrap', marginTop:10}}>
+              <span style={{fontSize:12, color:'var(--text-muted)'}}>Начинать следить только после хода не меньше</span>
+              <button type="button" className={`btn btn-sm ${(value.trailMinPeakMode ?? 'atr') === 'atr' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => onChange({ ...value, trailMinPeakMode: 'atr' })}>по ATR</button>
+              <button type="button" className={`btn btn-sm ${value.trailMinPeakMode === 'pct' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => onChange({ ...value, trailMinPeakMode: 'pct' })}>фикс. %</button>
+            </div>
+            {(value.trailMinPeakMode ?? 'atr') === 'atr' ? (
+              <div className="flex gap-2" style={{alignItems:'center', flexWrap:'wrap', marginTop:6}}>
+                <NumberInput className="input" min="0.1" max="3" step="0.1"
+                  value={value.trailMinPeakAtrMult ?? 0.5}
+                  onChange={(v) => onChange({ ...value, trailMinPeakAtrMult: v })} style={{width:70}} />
+                <span style={{fontSize:12, color:'var(--text-muted)'}}>× ATR(14) на входе</span>
+                <div className="input-hint" style={{width:'100%', marginTop:2}}>
+                  Рекомендуется — сам подстраивается под то, насколько обычно двигается этот
+                  инструмент на выбранном таймфрейме (день, час — любой), без ручной подгонки.
+                </div>
+              </div>
+            ) : (
+              <div className="flex gap-2" style={{alignItems:'center', flexWrap:'wrap', marginTop:6}}>
+                <NumberInput className="input" min="0.1" max="5" step="0.1"
+                  value={value.trailMinPeakPct ?? 1}
+                  onChange={(v) => onChange({ ...value, trailMinPeakPct: v })} style={{width:70}} />
+                <span style={{fontSize:12, color:'var(--text-muted)'}}>% от цены входа</span>
+                <div className="input-hint" style={{width:'100%', marginTop:2}}>
+                  ⚠️ Фиксированное число, откалиброванное под дневной график. На часовом или
+                  более мелком таймфрейме легко получить зависшие сделки — используйте «по ATR».
+                </div>
+              </div>
+            )}
             <label className="flex gap-2" style={{alignItems:'center', fontSize:13, cursor:'pointer', marginTop:8}}>
               <input type="checkbox" checked={!!value.trailPerPattern}
                 onChange={(e) => onChange({ ...value, trailPerPattern: e.target.checked })} />

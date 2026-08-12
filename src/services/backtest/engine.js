@@ -14,7 +14,7 @@ import { computeIndicatorsAtEntry } from '../analytics/indicators';
 import { computePatternsAtEntry } from '../analytics/patterns';
 import { computeMarketContextAtEntry } from '../analytics/marketContext';
 import { evaluateStrategy } from '../analytics/strategy';
-import { computeStopPrice, computeTakePrice, resolveTrailGiveBackPct } from '../analytics/exitRules';
+import { computeStopPrice, computeTakePrice, resolveTrailGiveBackPct, resolveTrailMinPeakPct } from '../analytics/exitRules';
 import { calcTrade } from '../../utils/calculator';
 
 // Real position sizing (optional — see runBacktest's `riskSizing` param). Reuses the
@@ -276,7 +276,7 @@ export function runBacktest({
       sizing: sizePosition(entryPrice, stopPrice, riskSizing),
       trailEnabled: !!rules.trailEnabled,
       trailGiveBackPct: resolveTrailGiveBackPct(rules, drivingPattern),
-      trailMinPeakPct: rules.trailMinPeakPct ?? 1,
+      trailMinPeakPct: resolveTrailMinPeakPct(rules, entryPrice, priceCtx.atr),
       peakFavorablePct: 0,
     };
   }
