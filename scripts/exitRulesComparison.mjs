@@ -86,17 +86,21 @@ const base = {
 // перезапускаются, чтобы не дублировать уже полученный ответ); (2) жёсткий лимит времени
 // в сделке (трейдер ориентируется на 5-14 дней для фьючерсов) — не даёт ли он почти тот
 // же эффект, что следящий выход, но с управляемым горизонтом.
+// Раунд 2026-08-13: после починки бага (плоский trailMinPeakPct=1% не масштабировался
+// под таймфрейм, ломался на H1) новый режим по умолчанию — ATR×0.5 — был поставлен НА
+// ГЛАЗ, не проверен. Трейдер справедливо не поверил. Подбираем множитель по данным:
+// эталон — старый фиксированный 1% на Д1, который уже дал доказанный хороший результат
+// (доля прибыльных 49.3%→56.7%, из раздела 08-10). Задача — найти ATR-множитель, который
+// на Д1 хотя бы не хуже эталона, и одновременно чинит H1 (не даёт зависать сделкам).
+const R = { ...base, stopType: 'none', takeType: 'none', trailEnabled: true };
 const CONFIGS = [
   { name: 'A. Стоп 2% / тейк 4% (классика)', rules: { ...base, stopType: 'pct', stopPct: 2, takeType: 'pct', takePct: 4 } },
-  { name: 'Е. Без стопа, только следящий', rules: { ...base, stopType: 'none', takeType: 'none', trailEnabled: true } },
-  // Новое: жёсткий лимит времени в сделке поверх следящего выхода — прямой ответ на
-  // "сколько оптимально сидеть в позиции" и на подозрение "просто держим слишком долго".
-  { name: 'М. Без стопа + следящий, макс. 14 дней', rules: { ...base, stopType: 'none', takeType: 'none', trailEnabled: true, maxBars: 14 } },
-  { name: 'Н. Без стопа + следящий, макс. 7 дней', rules: { ...base, stopType: 'none', takeType: 'none', trailEnabled: true, maxBars: 7 } },
-  // Новое: аварийный стоп ДРУГОГО типа, не фиксированный % — идея трейдера (2026-08-12)
-  // "ATR или последний локальный экстремум", раз фикс.% монотонно вредил на любой ширине.
-  { name: 'О. Стоп ×ATR(3) + следящий', rules: { ...base, stopType: 'atr', stopAtrMult: 3, takeType: 'none', trailEnabled: true } },
-  { name: 'П. Стоп «У уровня» + следящий', rules: { ...base, stopType: 'level', takeType: 'none', trailEnabled: true } },
+  { name: 'Е0. Эталон: фикс. 1% (старое поведение)', rules: { ...R, trailMinPeakMode: 'pct', trailMinPeakPct: 1 } },
+  { name: 'Е1. ATR × 0.2', rules: { ...R, trailMinPeakMode: 'atr', trailMinPeakAtrMult: 0.2 } },
+  { name: 'Е2. ATR × 0.3', rules: { ...R, trailMinPeakMode: 'atr', trailMinPeakAtrMult: 0.3 } },
+  { name: 'Е3. ATR × 0.5 (нынешний дефолт)', rules: { ...R, trailMinPeakMode: 'atr', trailMinPeakAtrMult: 0.5 } },
+  { name: 'Е4. ATR × 0.75', rules: { ...R, trailMinPeakMode: 'atr', trailMinPeakAtrMult: 0.75 } },
+  { name: 'Е5. ATR × 1.0', rules: { ...R, trailMinPeakMode: 'atr', trailMinPeakAtrMult: 1.0 } },
 ];
 
 const TICKERS = [
@@ -276,7 +280,7 @@ if (bhTest) console.log(`  Отложено: средняя доходность
 // Разбивка по каждому инструменту для варианта Е ("без стопа, только следящий") — прямой
 // ответ на вопрос трейдера "может, стратегия просто подходит не всем инструментам,
 // а не всем одинаково". Показываем ОТЛОЖЕННЫЙ период — он честный, не подогнан.
-const eName = CONFIGS.find((c) => c.name.startsWith('Е.')).name;
+const eName = CONFIGS.find((c) => c.name.startsWith('Е0.')).name;
 console.log(`\nПо каждому инструменту, отложенный период, вариант «${eName}» — стратегия vs купи-и-держи:`);
 console.log('Тикер    | Тип     | Сделок | Винрейт | Доходность | Купи-и-держи | Разница');
 console.log('-'.repeat(80));

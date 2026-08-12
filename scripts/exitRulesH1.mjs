@@ -69,9 +69,12 @@ const base = {
   onSignalLoss: false, maxBars: null,
   trailEnabled: false, trailGiveBackPct: 50, trailMinPeakPct: 1, trailPerPattern: false,
 };
+const R = { ...base, stopType: 'none', takeType: 'none', trailEnabled: true };
 const CONFIGS = [
   { name: 'A. Стоп 2% / тейк 4% (классика)', rules: { ...base, stopType: 'pct', stopPct: 2, takeType: 'pct', takePct: 4 } },
-  { name: 'Е. Без стопа, только следящий', rules: { ...base, stopType: 'none', takeType: 'none', trailEnabled: true } },
+  { name: 'Е0. Старый фикс. 1% (баг — должен зависать)', rules: { ...R, trailMinPeakMode: 'pct', trailMinPeakPct: 1 } },
+  { name: 'Е2. ATR × 0.3', rules: { ...R, trailMinPeakMode: 'atr', trailMinPeakAtrMult: 0.3 } },
+  { name: 'Е3. ATR × 0.5', rules: { ...R, trailMinPeakMode: 'atr', trailMinPeakAtrMult: 0.5 } },
 ];
 
 const TICKERS = [
