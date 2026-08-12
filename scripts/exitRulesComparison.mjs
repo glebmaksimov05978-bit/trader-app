@@ -79,22 +79,24 @@ const base = {
   trailEnabled: false, trailGiveBackPct: 50, trailMinPeakPct: 1, trailPerPattern: false,
 };
 
+// Раунд 2026-08-12: трейдер поднял вопрос "может, без стопа выигрывает не умный выход,
+// а просто «дольше сидим в позиции на растущем рынке»" — и предложил проверить: (1)
+// аварийный стоп ДРУГОГО типа (ATR/уровень), не только фикс. %, раз фикс. % монотонно
+// вредил на любой ширине (см. Ж/З ниже — оставлены как справка о прошлом раунде, но не
+// перезапускаются, чтобы не дублировать уже полученный ответ); (2) жёсткий лимит времени
+// в сделке (трейдер ориентируется на 5-14 дней для фьючерсов) — не даёт ли он почти тот
+// же эффект, что следящий выход, но с управляемым горизонтом.
 const CONFIGS = [
   { name: 'A. Стоп 2% / тейк 4% (классика)', rules: { ...base, stopType: 'pct', stopPct: 2, takeType: 'pct', takePct: 4 } },
-  { name: 'Б. Стоп за структурой / тейк 4%', rules: { ...base, stopType: 'structure', takeType: 'pct', takePct: 4 } },
-  { name: 'В. Стоп за структурой + следящий', rules: { ...base, stopType: 'structure', takeType: 'none', trailEnabled: true } },
-  // Идея трейдера (2026-08-11): страховочный стоп 2%, а обычный выход — по выдыханию.
-  { name: 'Г. Стоп 2% (страховка) + следящий', rules: { ...base, stopType: 'pct', stopPct: 2, takeType: 'none', trailEnabled: true } },
-  { name: 'Д. Стоп 4% (страховка) + следящий', rules: { ...base, stopType: 'pct', stopPct: 4, takeType: 'none', trailEnabled: true } },
   { name: 'Е. Без стопа, только следящий', rules: { ...base, stopType: 'none', takeType: 'none', trailEnabled: true } },
-  // Три доп. проверки, запрошенные трейдером 2026-08-11:
-  // 1) где именно проходит точка перелома у страховочного стопа (2%/4% в минус — где он
-  //    перестаёт мешать следящему выходу и уходит в плюс).
-  { name: 'Ж. Стоп 6% (страховка) + следящий', rules: { ...base, stopType: 'pct', stopPct: 6, takeType: 'none', trailEnabled: true } },
-  { name: 'З. Стоп 8% (страховка) + следящий', rules: { ...base, stopType: 'pct', stopPct: 8, takeType: 'none', trailEnabled: true } },
-  // 2) своя доля отката для каждой фигуры вместо одного общего числа — на большой
-  //    выборке, а не только вручную на одном тикере.
-  { name: 'И. Без стопа + следящий (своя доля по фигуре)', rules: { ...base, stopType: 'none', takeType: 'none', trailEnabled: true, trailPerPattern: true } },
+  // Новое: жёсткий лимит времени в сделке поверх следящего выхода — прямой ответ на
+  // "сколько оптимально сидеть в позиции" и на подозрение "просто держим слишком долго".
+  { name: 'М. Без стопа + следящий, макс. 14 дней', rules: { ...base, stopType: 'none', takeType: 'none', trailEnabled: true, maxBars: 14 } },
+  { name: 'Н. Без стопа + следящий, макс. 7 дней', rules: { ...base, stopType: 'none', takeType: 'none', trailEnabled: true, maxBars: 7 } },
+  // Новое: аварийный стоп ДРУГОГО типа, не фиксированный % — идея трейдера (2026-08-12)
+  // "ATR или последний локальный экстремум", раз фикс.% монотонно вредил на любой ширине.
+  { name: 'О. Стоп ×ATR(3) + следящий', rules: { ...base, stopType: 'atr', stopAtrMult: 3, takeType: 'none', trailEnabled: true } },
+  { name: 'П. Стоп «У уровня» + следящий', rules: { ...base, stopType: 'level', takeType: 'none', trailEnabled: true } },
 ];
 
 const TICKERS = [
@@ -126,21 +128,43 @@ async function fetchWithRetry(args, attempts = 3) {
 const HOLDOUT_FRACTION = 0.2;
 
 function summarize(trades) {
-  const closed = trades.filter((t) => t.status === 'closed');
+  const closed = trades.filter((t) => t.status === 'closed').sort((a, b) => a.exitDate - b.exitDate);
   if (!closed.length) return null;
-  let equity = 100;
+  let equity = 100, peak = 100, maxDrawdownPct = 0;
   let wins = 0, grossWin = 0, grossLoss = 0, worst = 0;
+  let longWins = 0, longN = 0, shortWins = 0, shortN = 0;
+  let longReturn = 0, shortReturn = 0;
+  let totalBars = 0;
   for (const t of closed) {
     equity *= 1 + t.pnlPct / 100;
+    peak = Math.max(peak, equity);
+    maxDrawdownPct = Math.max(maxDrawdownPct, ((peak - equity) / peak) * 100);
     if (t.pnlPct > 0) { wins += 1; grossWin += t.pnlPct; } else { grossLoss += Math.abs(t.pnlPct); }
     worst = Math.min(worst, t.pnlPct);
+    totalBars += t.barsHeld || 0;
+    if (t.direction === 'long') { longN += 1; if (t.pnlPct > 0) longWins += 1; longReturn += t.pnlPct; }
+    else { shortN += 1; if (t.pnlPct > 0) shortWins += 1; shortReturn += t.pnlPct; }
   }
   return {
     n: closed.length, returnPct: equity - 100,
     winRate: (wins / closed.length) * 100,
     pf: grossLoss > 0 ? grossWin / grossLoss : Infinity,
-    worst,
+    worst, maxDrawdownPct,
+    avgHoldDays: totalBars / closed.length,
+    longN, longWinRate: longN ? (longWins / longN) * 100 : null, longReturn,
+    shortN, shortWinRate: shortN ? (shortWins / shortN) * 100 : null, shortReturn,
   };
+}
+
+// "Купил и держи" за тот же ровно кусок истории — раз без стопа позиции живут гораздо
+// дольше (реальное подозрение трейдера 2026-08-12: "может, выигрывает не умный выход,
+// а просто то, что мы дольше сидим в позиции на растущем рынке"), нужен честный ноль для
+// сравнения. Не взвешено по времени входа/выхода стратегии — просто "а если ничего не
+// делать, просто купить в начале периода и держать до конца".
+function buyAndHoldReturn(candles) {
+  if (candles.length < 2) return null;
+  const first = candles[0].close, last = candles[candles.length - 1].close;
+  return ((last - first) / first) * 100;
 }
 
 // Вторая стратегия — проверка, специфичен ли эффект следящего выхода для "Фигуры
@@ -161,17 +185,13 @@ const STRATEGY2 = {
   ],
   customConditions: [],
 };
-// Только два самых показательных варианта — полный список на 21 тикере занял бы ещё
-// столько же времени, а вопрос узкий: "работает ли ТА ЖЕ идея на другой стратегии".
-const STRATEGY2_CONFIGS = [
-  CONFIGS.find((c) => c.name.startsWith('A.')),
-  CONFIGS.find((c) => c.name.startsWith('Е.')),
-];
+// STRATEGY2 (кросс-проверка на другой логике входа) уже подтверждена в прошлом раунде
+// (2026-08-12, "работает ли эффект на ДРУГОЙ стратегии — ДА"), не повторяем — экономим
+// время ради новых вопросов этого раунда (просадка/бенчмарк/лимит времени/тип стопа).
 
 const results = {};
 for (const cfg of CONFIGS) results[cfg.name] = { train: [], test: [], instrumentType: {} };
-const results2 = {};
-for (const cfg of STRATEGY2_CONFIGS) results2[cfg.name] = { train: [], test: [] };
+const benchmark = { train: [], test: [] };
 
 for (const { ticker, instrumentType } of TICKERS) {
   process.stdout.write(`${ticker}... `);
@@ -183,6 +203,11 @@ for (const { ticker, instrumentType } of TICKERS) {
   const splitIndex = Math.floor(candles.length * (1 - HOLDOUT_FRACTION));
   console.log(`${candles.length} свечей`);
 
+  const bhTrain = buyAndHoldReturn(candles.slice(0, splitIndex));
+  const bhTest = buyAndHoldReturn(candles.slice(splitIndex));
+  if (bhTrain != null) benchmark.train.push({ ticker, returnPct: bhTrain });
+  if (bhTest != null) benchmark.test.push({ ticker, returnPct: bhTest });
+
   for (const cfg of CONFIGS) {
     const train = runBacktest({ candles: candles.slice(0, splitIndex), strategy: STRATEGY, timeframeMinutes: 1440, exitRules: cfg.rules });
     const test = runBacktest({ candles, strategy: STRATEGY, timeframeMinutes: 1440, exitRules: cfg.rules, warmupBars: splitIndex });
@@ -190,15 +215,6 @@ for (const { ticker, instrumentType } of TICKERS) {
     const testSum = summarize(test.trades);
     if (trainSum) results[cfg.name].train.push({ ticker, instrumentType, ...trainSum });
     if (testSum) results[cfg.name].test.push({ ticker, instrumentType, ...testSum });
-  }
-
-  for (const cfg of STRATEGY2_CONFIGS) {
-    const train = runBacktest({ candles: candles.slice(0, splitIndex), strategy: STRATEGY2, timeframeMinutes: 1440, exitRules: cfg.rules });
-    const test = runBacktest({ candles, strategy: STRATEGY2, timeframeMinutes: 1440, exitRules: cfg.rules, warmupBars: splitIndex });
-    const trainSum = summarize(train.trades);
-    const testSum = summarize(test.trades);
-    if (trainSum) results2[cfg.name].train.push({ ticker, ...trainSum });
-    if (testSum) results2[cfg.name].test.push({ ticker, ...testSum });
   }
 }
 
@@ -209,59 +225,69 @@ function aggregate(list) {
   const avgReturn = list.reduce((s, r) => s + r.returnPct, 0) / list.length;
   const positive = list.filter((r) => r.returnPct > 0).length;
   const worst = Math.min(...list.map((r) => r.worst));
+  const avgDrawdown = list.reduce((s, r) => s + r.maxDrawdownPct, 0) / list.length;
+  const avgHoldDays = list.reduce((s, r) => s + r.avgHoldDays, 0) / list.length;
+  const longN = list.reduce((s, r) => s + r.longN, 0);
+  const shortN = list.reduce((s, r) => s + r.shortN, 0);
+  const longWins = list.reduce((s, r) => s + ((r.longWinRate ?? 0) / 100) * r.longN, 0);
+  const shortWins = list.reduce((s, r) => s + ((r.shortWinRate ?? 0) / 100) * r.shortN, 0);
   return {
     n, winRate: (wins / n) * 100, avgReturn, positive, tickers: list.length, worst,
+    avgDrawdown, avgHoldDays, longN, shortN,
+    longWinRate: longN ? (longWins / longN) * 100 : null,
+    shortWinRate: shortN ? (shortWins / shortN) * 100 : null,
   };
+}
+function aggregateBenchmark(list) {
+  if (!list.length) return null;
+  return { avgReturn: list.reduce((s, r) => s + r.returnPct, 0) / list.length, positive: list.filter((r) => r.returnPct > 0).length, tickers: list.length };
 }
 
 console.log(`\n${'='.repeat(100)}`);
 console.log(`Сравнение правил выхода — стратегия «${STRATEGY.name}», ${TICKERS.length} инструментов, ~6 лет истории`);
 console.log(`${'='.repeat(100)}\n`);
-console.log('Вариант                                   | Период  | Сделок | Винрейт | Ср.дох. | В плюсе | Худшая сделка');
-console.log('-'.repeat(100));
+console.log('Вариант                                   | Период  | Сделок | Винрейт | Ср.дох. | В плюсе | Худш.сделка| Просадка| Ср.дней | Лонг вр%/шорт вр%');
+console.log('-'.repeat(140));
 for (const cfg of CONFIGS) {
   for (const period of ['train', 'test']) {
     const agg = aggregate(results[cfg.name][period]);
     const label = period === 'train' ? 'обучен' : 'ОТЛОЖ.';
     if (!agg) { console.log(`${cfg.name.padEnd(41)} | ${label}  | нет сделок`); continue; }
+    const longShort = `Л:${agg.longN}(${agg.longWinRate?.toFixed(0) ?? '-'}%) Ш:${agg.shortN}(${agg.shortWinRate?.toFixed(0) ?? '-'}%)`;
     console.log(
       `${(period === 'train' ? cfg.name : '').padEnd(41)} | ${label}  | ${String(agg.n).padStart(6)} | `
       + `${agg.winRate.toFixed(1).padStart(6)}% | ${(agg.avgReturn >= 0 ? '+' : '') + agg.avgReturn.toFixed(1).padStart(6)}% | `
-      + `${agg.positive}/${agg.tickers}`.padStart(7) + ` | ${agg.worst.toFixed(1)}%`
+      + `${agg.positive}/${agg.tickers}`.padStart(7) + ` | ${agg.worst.toFixed(1).padStart(6)}% | ${agg.avgDrawdown.toFixed(1).padStart(6)}% | `
+      + `${agg.avgHoldDays.toFixed(1).padStart(6)} | ${longShort}`
     );
   }
-  console.log('-'.repeat(100));
+  console.log('-'.repeat(140));
 }
+
+// Бенчмарк "купил и держи" — тот самый честный ноль. Если стратегия хуже него, весь
+// "прорыв" без стопа объясняется просто тем, что рынок в среднем рос, а не мастерством
+// выбора момента входа/выхода.
+const bhTrain = aggregateBenchmark(benchmark.train);
+const bhTest = aggregateBenchmark(benchmark.test);
+console.log('\nБЕНЧМАРК «Купил и держи» (ничего не делаем, просто держим весь период):');
+if (bhTrain) console.log(`  Обучение: средняя доходность ${(bhTrain.avgReturn >= 0 ? '+' : '') + bhTrain.avgReturn.toFixed(1)}%, в плюсе ${bhTrain.positive}/${bhTrain.tickers} инструментов`);
+if (bhTest) console.log(`  Отложено: средняя доходность ${(bhTest.avgReturn >= 0 ? '+' : '') + bhTest.avgReturn.toFixed(1)}%, в плюсе ${bhTest.positive}/${bhTest.tickers} инструментов`);
 
 // Разбивка по каждому инструменту для варианта Е ("без стопа, только следящий") — прямой
 // ответ на вопрос трейдера "может, стратегия просто подходит не всем инструментам,
 // а не всем одинаково". Показываем ОТЛОЖЕННЫЙ период — он честный, не подогнан.
 const eName = CONFIGS.find((c) => c.name.startsWith('Е.')).name;
-console.log(`\nПо каждому инструменту, отложенный период, вариант «${eName}»:`);
-console.log('Тикер    | Тип     | Сделок | Винрейт | Доходность');
-console.log('-'.repeat(55));
+console.log(`\nПо каждому инструменту, отложенный период, вариант «${eName}» — стратегия vs купи-и-держи:`);
+console.log('Тикер    | Тип     | Сделок | Винрейт | Доходность | Купи-и-держи | Разница');
+console.log('-'.repeat(80));
 for (const r of [...results[eName].test].sort((a, b) => b.returnPct - a.returnPct)) {
-  console.log(`${r.ticker.padEnd(8)} | ${r.instrumentType.padEnd(7)} | ${String(r.n).padStart(6)} | ${r.winRate.toFixed(1).padStart(6)}% | ${(r.returnPct >= 0 ? '+' : '') + r.returnPct.toFixed(1)}%`);
-}
-
-console.log(`\n${'='.repeat(100)}`);
-console.log(`Та же проверка на ДРУГОЙ стратегии — «${STRATEGY2.name}» — работает ли идея не только`);
-console.log('на "Фигуры разворота + уровень":');
-console.log(`${'='.repeat(100)}\n`);
-console.log('Вариант                                   | Период  | Сделок | Винрейт | Ср.дох. | В плюсе | Худшая сделка');
-console.log('-'.repeat(100));
-for (const cfg of STRATEGY2_CONFIGS) {
-  for (const period of ['train', 'test']) {
-    const agg = aggregate(results2[cfg.name][period]);
-    const label = period === 'train' ? 'обучен' : 'ОТЛОЖ.';
-    if (!agg) { console.log(`${cfg.name.padEnd(41)} | ${label}  | нет сделок`); continue; }
-    console.log(
-      `${(period === 'train' ? cfg.name : '').padEnd(41)} | ${label}  | ${String(agg.n).padStart(6)} | `
-      + `${agg.winRate.toFixed(1).padStart(6)}% | ${(agg.avgReturn >= 0 ? '+' : '') + agg.avgReturn.toFixed(1).padStart(6)}% | `
-      + `${agg.positive}/${agg.tickers}`.padStart(7) + ` | ${agg.worst.toFixed(1)}%`
-    );
-  }
-  console.log('-'.repeat(100));
+  const bh = benchmark.test.find((b) => b.ticker === r.ticker);
+  const bhVal = bh ? bh.returnPct : null;
+  const diff = bhVal != null ? r.returnPct - bhVal : null;
+  console.log(`${r.ticker.padEnd(8)} | ${r.instrumentType.padEnd(7)} | ${String(r.n).padStart(6)} | ${r.winRate.toFixed(1).padStart(6)}% | `
+    + `${(r.returnPct >= 0 ? '+' : '') + r.returnPct.toFixed(1)}%`.padStart(11) + ' | '
+    + `${bhVal != null ? (bhVal >= 0 ? '+' : '') + bhVal.toFixed(1) + '%' : '—'}`.padStart(12) + ' | '
+    + `${diff != null ? (diff >= 0 ? '+' : '') + diff.toFixed(1) + '%' : '—'}`);
 }
 
 fs.rmSync(tmpDir, { recursive: true, force: true });
