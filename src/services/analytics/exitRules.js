@@ -242,6 +242,11 @@ export function computeStopPrice(direction, entryPrice, exitRules, ctx) {
     levelSource: exitRules.stopLevelSource, tolerancePct: exitRules.stopLevelTolerancePct,
     levelFallbackPct: exitRules.stopLevelFallbackPct,
   };
+  // "Нет" means NO STOP — a deliberate choice (e.g. running the trailing exit as the only
+  // way out), not a missing value to be filled in. Regression caught in live testing:
+  // the salvage chain below fired even for stopType 'none', silently reinstating a 2%
+  // stop and producing "Стоп" exits in a run the trader had explicitly set to stopless.
+  if (exitRules.stopType === 'none') return null;
   const price = computeOne(direction, 'stop', entryPrice, exitRules.stopType, params, ctx);
   if (usableStop(price, direction, entryPrice)) return price;
   // Same fallback chain the level/structure branches use internally, applied here so it

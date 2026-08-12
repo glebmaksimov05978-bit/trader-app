@@ -50,18 +50,29 @@ export function diagnoseTrades(trades, exitRules) {
   // "direction was probably fine, distance was too tight" pattern this whole calibration
   // pass was built around.
   if (stopPct >= 45 && !exitRules?.trailEnabled) {
+    // Plain-language name, never the raw internal key — live testing showed the untranslated
+    // "structure" leaking into the trader-facing text.
     const stopDesc = exitRules?.stopType === 'pct' ? `фиксированный ${exitRules.stopPct ?? '?'}%`
       : exitRules?.stopType === 'level' ? '«У уровня»'
       : exitRules?.stopType === 'atr' ? `×ATR (${exitRules.stopAtrMult ?? '?'})`
-      : exitRules?.stopType;
+      : exitRules?.stopType === 'structure' ? '«За структурой фигуры»'
+      : 'не задан';
+    // Don't advise what's already switched on — suggesting "put the stop at structure" to
+    // someone whose stop IS at structure reads like the app isn't looking at the settings.
+    const suggestion = exitRules?.stopType === 'structure'
+      ? `Стоп уже стоит за структурой фигуры, так что дело не в произвольном расстоянии — `
+        + `похоже, сами формации тесноваты для обычного шума этого инструмента. Стоит `
+        + `попробовать следящий выход «Движение выдохлось» ниже вместо фиксированного тейка, `
+        + `или отбирать фигуры покрупнее.`
+      : `Варианты: расширить стоп (в %/×ATR), поставить стоп «За структурой фигуры» — там, `
+        + `где формация была бы отменена, а не на произвольном расстоянии, или включить `
+        + `следящий выход «Движение выдохлось» ниже.`;
     findings.push({
       icon: '🛑',
       title: `Стоп срабатывает часто — ${stopPct}% сделок (${stopCount} из ${total})`,
       text: `Сейчас стоп — ${stopDesc}. Когда стоп срабатывает настолько часто, обычно дело не `
         + `в том, что направление было выбрано неверно, а в том, что цене не хватает места на `
-        + `обычный шум перед движением. Варианты: расширить стоп (в %/×ATR), поставить стоп `
-        + `«У уровня» — за структурой фигуры, а не на произвольном расстоянии, или включить `
-        + `следящий выход «Движение выдохлось» ниже.`,
+        + `обычный шум перед движением. ${suggestion}`,
     });
   }
 
