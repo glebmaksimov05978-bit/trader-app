@@ -116,6 +116,16 @@ function applyTolerance(direction, side, price, tolerancePct) {
 // this was validated in scripts/patternCalibration.mjs.
 const STRUCTURE_STOP_MAX_PCT = 8;
 
+// ...and the floor. Real bug found in live testing (2026-08-11): the pattern's extreme is
+// read from the SIGNAL bar, but entry fills at the NEXT bar's open. When price moved
+// overnight, that extreme can end up level with — or on the wrong side of — the entry
+// price, producing a stop that is instantly touched. The trader saw exactly this: a wall
+// of trades opening and closing on the same candle at ±0%, win rate collapsing to 5.3%,
+// and in real-money mode "28 trades found, none could be sized" (calcTrade refuses a stop
+// that isn't strictly on the losing side of entry, so every position sized to zero).
+// Anything closer than this is treated as "no usable structural stop" and falls back.
+const STRUCTURE_STOP_MIN_PCT = 0.5;
+
 // The pattern actually behind this entry — same "highest-confidence confirmed candidate"
 // rule the backtest engine already uses to pick a per-pattern trail give-back, so a
 // structural stop and a per-pattern trail agree on which formation they're talking about.
@@ -136,8 +146,13 @@ function structuralStopPrice(direction, entryPrice, patterns) {
   if (!pattern) return null;
   const prices = pattern.points.map((p) => p.price);
   const raw = direction === 'long' ? Math.min(...prices) : Math.max(...prices);
+  // Must sit on the LOSING side of entry — a long's stop below it, a short's above. If
+  // price gapped past the formation's extreme overnight this comes out backwards, and a
+  // "stop" on the winning side is not a stop at all (see STRUCTURE_STOP_MIN_PCT).
+  const onLosingSide = direction === 'long' ? raw < entryPrice : raw > entryPrice;
+  if (!onLosingSide) return null;
   const distPct = (Math.abs(entryPrice - raw) / entryPrice) * 100;
-  if (!(distPct > 0) || distPct > STRUCTURE_STOP_MAX_PCT) return null; // too tight/far to be a real number
+  if (distPct < STRUCTURE_STOP_MIN_PCT || distPct > STRUCTURE_STOP_MAX_PCT) return null;
   return raw;
 }
 
@@ -207,12 +222,39 @@ function computeOne(direction, side, entryPrice, type, params, ctx) {
  *   have these (Calculator's checklist, or the backtest engine's per-bar ctx).
  * @returns {number|null}
  */
+// Any stop that isn't strictly on the losing side of entry is not a stop — it would be
+// touched the instant the position opens. Level- and structure-based stops can land there
+// legitimately (their reference price comes from the SIGNAL bar while the fill happens at
+// the NEXT bar's open, so an overnight move can put entry on the wrong side of it), which
+// is exactly the bug live testing surfaced on 2026-08-11: same-candle exits at ±0% and
+// positions that couldn't be sized at all. Rather than silently emitting a broken stop,
+// fall back to the trader's own configured distance.
+function usableStop(price, direction, entryPrice) {
+  if (price == null) return false;
+  const distPct = (Math.abs(entryPrice - price) / entryPrice) * 100;
+  if (distPct < STRUCTURE_STOP_MIN_PCT) return false;
+  return direction === 'long' ? price < entryPrice : price > entryPrice;
+}
+
 export function computeStopPrice(direction, entryPrice, exitRules, ctx) {
-  return computeOne(direction, 'stop', entryPrice, exitRules.stopType, {
+  const params = {
     pct: exitRules.stopPct, atrMult: exitRules.stopAtrMult,
     levelSource: exitRules.stopLevelSource, tolerancePct: exitRules.stopLevelTolerancePct,
     levelFallbackPct: exitRules.stopLevelFallbackPct,
-  }, ctx);
+  };
+  const price = computeOne(direction, 'stop', entryPrice, exitRules.stopType, params, ctx);
+  if (usableStop(price, direction, entryPrice)) return price;
+  // Same fallback chain the level/structure branches use internally, applied here so it
+  // also covers a stop that came back on the wrong side rather than merely missing.
+  if (params.levelFallbackPct != null) {
+    const fallback = entryPrice * (1 - (direction === 'long' ? 1 : -1) * params.levelFallbackPct / 100);
+    if (usableStop(fallback, direction, entryPrice)) return fallback;
+  }
+  if (ctx?.atr != null) {
+    const fallback = entryPrice - (direction === 'long' ? 1 : -1) * ctx.atr * LEVEL_FALLBACK_STOP_ATR_MULT;
+    if (usableStop(fallback, direction, entryPrice)) return fallback;
+  }
+  return null;
 }
 
 export function computeTakePrice(direction, entryPrice, exitRules, ctx) {
