@@ -87,6 +87,14 @@ const CONFIGS = [
   { name: 'Г. Стоп 2% (страховка) + следящий', rules: { ...base, stopType: 'pct', stopPct: 2, takeType: 'none', trailEnabled: true } },
   { name: 'Д. Стоп 4% (страховка) + следящий', rules: { ...base, stopType: 'pct', stopPct: 4, takeType: 'none', trailEnabled: true } },
   { name: 'Е. Без стопа, только следящий', rules: { ...base, stopType: 'none', takeType: 'none', trailEnabled: true } },
+  // Три доп. проверки, запрошенные трейдером 2026-08-11:
+  // 1) где именно проходит точка перелома у страховочного стопа (2%/4% в минус — где он
+  //    перестаёт мешать следящему выходу и уходит в плюс).
+  { name: 'Ж. Стоп 6% (страховка) + следящий', rules: { ...base, stopType: 'pct', stopPct: 6, takeType: 'none', trailEnabled: true } },
+  { name: 'З. Стоп 8% (страховка) + следящий', rules: { ...base, stopType: 'pct', stopPct: 8, takeType: 'none', trailEnabled: true } },
+  // 2) своя доля отката для каждой фигуры вместо одного общего числа — на большой
+  //    выборке, а не только вручную на одном тикере.
+  { name: 'И. Без стопа + следящий (своя доля по фигуре)', rules: { ...base, stopType: 'none', takeType: 'none', trailEnabled: true, trailPerPattern: true } },
 ];
 
 const TICKERS = [
@@ -135,8 +143,35 @@ function summarize(trades) {
   };
 }
 
+// Вторая стратегия — проверка, специфичен ли эффект следящего выхода для "Фигуры
+// разворота + уровень", или он работает так же на другой логике входа. Реконструкция
+// "Выход по уровням S/R + Фигуры" (та самая, где чинили противоречивую логику 2026-08-09:
+// цена у поддержки + RSI ниже 50 + выше EMA200, то есть откат к поддержке ВНУТРИ
+// восходящего тренда).
+const STRATEGY2 = {
+  id: 'sr_levels_patterns',
+  name: 'Выход по уровням S/R + Фигуры',
+  readinessThreshold: 75,
+  conditions: [
+    { id: 'near_support', enabled: true, param: 1, direction: 'long' },
+    { id: 'pattern_confirmed', enabled: true, param: 65, direction: 'both' },
+    { id: 'market_trending', enabled: true, param: null, direction: 'both' },
+    { id: 'rsi_below', enabled: true, param: 50, direction: 'long' },
+    { id: 'price_above_ema200', enabled: true, param: null, direction: 'long' },
+  ],
+  customConditions: [],
+};
+// Только два самых показательных варианта — полный список на 21 тикере занял бы ещё
+// столько же времени, а вопрос узкий: "работает ли ТА ЖЕ идея на другой стратегии".
+const STRATEGY2_CONFIGS = [
+  CONFIGS.find((c) => c.name.startsWith('A.')),
+  CONFIGS.find((c) => c.name.startsWith('Е.')),
+];
+
 const results = {};
 for (const cfg of CONFIGS) results[cfg.name] = { train: [], test: [], instrumentType: {} };
+const results2 = {};
+for (const cfg of STRATEGY2_CONFIGS) results2[cfg.name] = { train: [], test: [] };
 
 for (const { ticker, instrumentType } of TICKERS) {
   process.stdout.write(`${ticker}... `);
@@ -155,6 +190,15 @@ for (const { ticker, instrumentType } of TICKERS) {
     const testSum = summarize(test.trades);
     if (trainSum) results[cfg.name].train.push({ ticker, instrumentType, ...trainSum });
     if (testSum) results[cfg.name].test.push({ ticker, instrumentType, ...testSum });
+  }
+
+  for (const cfg of STRATEGY2_CONFIGS) {
+    const train = runBacktest({ candles: candles.slice(0, splitIndex), strategy: STRATEGY2, timeframeMinutes: 1440, exitRules: cfg.rules });
+    const test = runBacktest({ candles, strategy: STRATEGY2, timeframeMinutes: 1440, exitRules: cfg.rules, warmupBars: splitIndex });
+    const trainSum = summarize(train.trades);
+    const testSum = summarize(test.trades);
+    if (trainSum) results2[cfg.name].train.push({ ticker, ...trainSum });
+    if (testSum) results2[cfg.name].test.push({ ticker, ...testSum });
   }
 }
 
@@ -198,6 +242,26 @@ console.log('Тикер    | Тип     | Сделок | Винрейт | Дох
 console.log('-'.repeat(55));
 for (const r of [...results[eName].test].sort((a, b) => b.returnPct - a.returnPct)) {
   console.log(`${r.ticker.padEnd(8)} | ${r.instrumentType.padEnd(7)} | ${String(r.n).padStart(6)} | ${r.winRate.toFixed(1).padStart(6)}% | ${(r.returnPct >= 0 ? '+' : '') + r.returnPct.toFixed(1)}%`);
+}
+
+console.log(`\n${'='.repeat(100)}`);
+console.log(`Та же проверка на ДРУГОЙ стратегии — «${STRATEGY2.name}» — работает ли идея не только`);
+console.log('на "Фигуры разворота + уровень":');
+console.log(`${'='.repeat(100)}\n`);
+console.log('Вариант                                   | Период  | Сделок | Винрейт | Ср.дох. | В плюсе | Худшая сделка');
+console.log('-'.repeat(100));
+for (const cfg of STRATEGY2_CONFIGS) {
+  for (const period of ['train', 'test']) {
+    const agg = aggregate(results2[cfg.name][period]);
+    const label = period === 'train' ? 'обучен' : 'ОТЛОЖ.';
+    if (!agg) { console.log(`${cfg.name.padEnd(41)} | ${label}  | нет сделок`); continue; }
+    console.log(
+      `${(period === 'train' ? cfg.name : '').padEnd(41)} | ${label}  | ${String(agg.n).padStart(6)} | `
+      + `${agg.winRate.toFixed(1).padStart(6)}% | ${(agg.avgReturn >= 0 ? '+' : '') + agg.avgReturn.toFixed(1).padStart(6)}% | `
+      + `${agg.positive}/${agg.tickers}`.padStart(7) + ` | ${agg.worst.toFixed(1)}%`
+    );
+  }
+  console.log('-'.repeat(100));
 }
 
 fs.rmSync(tmpDir, { recursive: true, force: true });
