@@ -8,7 +8,7 @@
 // constructor is backtestable for free, no changes needed here.
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { fetchDailyCandles, TIMEFRAMES } from '../../services/marketData/candles';
+import { fetchDailyCandles, TIMEFRAMES, availableTimeframes, DEFAULT_TIMEFRAME } from '../../services/marketData/candles';
 import { fetchActiveFutureCard, resolveFuturesSpecFromMoex, fetchStockLot } from '../../services/marketData/futuresSpecs';
 import { runBacktest } from '../../services/backtest/engine';
 import { getStrategies, getActiveStrategy, CONDITION_CATALOG } from '../../services/analytics/strategy';
@@ -52,6 +52,12 @@ export default function Backtest() {
   const [ticker, setTicker] = useState(cache.ticker ?? '');
   const [instrumentType, setInstrumentType] = useState(cache.instrumentType ?? 'future');
   const [years, setYears] = useState(cache.years ?? 3);
+  // Real trader request 2026-08-12: страница раньше жёстко использовала дневной график
+  // (`timeframe: 'D1'` было зашито прямо в вызове fetchDailyCandles) — не было выбора
+  // вообще. Идея: тот же следящий выход на более мелком графике держит сделки в разумных
+  // календарных рамках вместо недель. H1 бесплатен без токена (MOEX ISS отдаёт его сам),
+  // М5/М15 — только с привязанным токеном Т-Инвестиций (см. availableTimeframes).
+  const [timeframe, setTimeframe] = useState(cache.timeframe ?? DEFAULT_TIMEFRAME);
   // Local, editable copy of the selected strategy's exit rules — the trader can crank
   // these for a "what if" run right here without touching what's saved in Капитал (real
   // user request: "можно временно крутить"). Resets to the strategy's saved rules
@@ -184,7 +190,7 @@ export default function Backtest() {
   // it's a real in-memory object, not JSON/localStorage.
   useEffect(() => {
     Object.assign(cache, {
-      selectedStrategyId, ticker, instrumentType, years, exitRules, maxBarsEnabled,
+      selectedStrategyId, ticker, instrumentType, years, timeframe, exitRules, maxBarsEnabled,
       holdoutEnabled, holdoutPct, result, holdoutResult, holdoutSplitDate, selectedTradeIdx,
       realRiskEnabled, riskSizing,
     });
@@ -207,7 +213,7 @@ export default function Backtest() {
         instrumentType,
         toDate: new Date(),
         tinkoffToken: userProfile?.tinkoffToken,
-        timeframe: 'D1',
+        timeframe,
         lookbackDays: Math.round(years * 365),
       });
       if (!candles?.length) throw new Error('Нет исторических свечей по этому тикеру');
@@ -226,10 +232,10 @@ export default function Backtest() {
         const splitIndex = Math.floor(candles.length * (1 - holdoutPct / 100));
         const trainCandles = candles.slice(0, splitIndex);
         const trainResult = runBacktest({
-          candles: trainCandles, strategy: selectedStrategy, timeframeMinutes: TIMEFRAMES.D1.minutes, exitRules: rules, riskSizing: sizing,
+          candles: trainCandles, strategy: selectedStrategy, timeframeMinutes: TIMEFRAMES[timeframe].minutes, exitRules: rules, riskSizing: sizing,
         });
         const testResult = runBacktest({
-          candles, strategy: selectedStrategy, timeframeMinutes: TIMEFRAMES.D1.minutes, exitRules: rules, warmupBars: splitIndex, riskSizing: sizing,
+          candles, strategy: selectedStrategy, timeframeMinutes: TIMEFRAMES[timeframe].minutes, exitRules: rules, warmupBars: splitIndex, riskSizing: sizing,
         });
         setResult({ ...trainResult, candles: trainCandles });
         setHoldoutResult({ ...testResult, candles });
@@ -239,7 +245,7 @@ export default function Backtest() {
         }
       } else {
         const engineResult = runBacktest({
-          candles, strategy: selectedStrategy, timeframeMinutes: TIMEFRAMES.D1.minutes, exitRules: rules, riskSizing: sizing,
+          candles, strategy: selectedStrategy, timeframeMinutes: TIMEFRAMES[timeframe].minutes, exitRules: rules, riskSizing: sizing,
         });
         setResult({ ...engineResult, candles });
         if (!engineResult.trades.length) {
@@ -313,7 +319,7 @@ export default function Backtest() {
   const overviewPatterns = useMemo(() => {
     if (!result?.candles?.length) return null;
     const last = result.candles[result.candles.length - 1];
-    return computePatternsAtEntry(result.candles, last.date, { timeframeMinutes: TIMEFRAMES.D1.minutes });
+    return computePatternsAtEntry(result.candles, last.date, { timeframeMinutes: TIMEFRAMES[timeframe].minutes });
   }, [result]);
 
   const selectedTrade = selectedTradeIdx != null ? result?.trades?.[selectedTradeIdx] : null;
@@ -328,7 +334,7 @@ export default function Backtest() {
   const selectedTradeSnapshot = useMemo(() => {
     if (!selectedTrade || !result?.candles?.length) return null;
     const indicators = computeIndicatorsAtEntry(result.candles, selectedTrade.entryDate);
-    const patterns = computePatternsAtEntry(result.candles, selectedTrade.entryDate, { timeframeMinutes: TIMEFRAMES.D1.minutes });
+    const patterns = computePatternsAtEntry(result.candles, selectedTrade.entryDate, { timeframeMinutes: TIMEFRAMES[timeframe].minutes });
     const marketContext = computeMarketContextAtEntry(result.candles, selectedTrade.entryDate);
     return { indicators, patterns, marketContext };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -407,6 +413,28 @@ export default function Backtest() {
               onChange={(v) => setYears(v)} style={{width:70}} />
           </div>
         </div>
+
+        <div className="flex gap-2" style={{marginBottom:12, flexWrap:'wrap', alignItems:'center'}}>
+          <span style={{fontSize:12, color:'var(--text-muted)'}}>Таймфрейм</span>
+          {availableTimeframes(!!userProfile?.tinkoffToken).map((tf) => (
+            <button key={tf.key} type="button" className={`btn btn-sm ${timeframe === tf.key ? 'btn-primary' : 'btn-ghost'}`}
+              onClick={() => setTimeframe(tf.key)}>{tf.label}</button>
+          ))}
+          {!userProfile?.tinkoffToken && (
+            <span style={{fontSize:11, color:'var(--text-muted)'}}>
+              М5/М15 — только с привязанным токеном Т-Инвестиций (Настройки)
+            </span>
+          )}
+        </div>
+        {timeframe !== 'D1' && (
+          <p className="text-xs text-muted" style={{marginTop:-8, marginBottom:12}}>
+            На внутридневных графиках история короче, чем на дневном: Ч1 — бесплатно
+            через биржу без токена, но не больше пары месяцев вглубь; М5/М15 — только
+            с токеном Т-Инвестиций, и там глубина ещё меньше (недели, не месяцы/годы).
+            «Лет истории» выше в этом случае не сработает буквально — просто получите
+            всё, что реально доступно за этот период.
+          </p>
+        )}
 
         <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:8}}>
           Правила выхода — подставлены из выбранной стратегии, можно временно подкрутить для этого прогона (в Капитале не сохранится)
