@@ -86,7 +86,7 @@ function ExitSlot({ side, value, onChange }) {
   );
 }
 
-export default function ExitRulesEditor({ value, onChange, maxBarsEnabled, onMaxBarsEnabledChange }) {
+export default function ExitRulesEditor({ value, onChange, maxBarsEnabled, onMaxBarsEnabledChange, barUnitLabel = 'дней' }) {
   return (
     <>
       <div className="grid-2" style={{gap:10, marginBottom:10}}>
@@ -102,7 +102,7 @@ export default function ExitRulesEditor({ value, onChange, maxBarsEnabled, onMax
       <div className="flex gap-2" style={{alignItems:'center', flexWrap:'wrap', marginBottom:10}}>
         <label className="flex gap-2" style={{alignItems:'center', fontSize:13, cursor:'pointer'}}>
           <input type="checkbox" checked={!!maxBarsEnabled} onChange={(e) => onMaxBarsEnabledChange(e.target.checked)} />
-          Выйти по времени, макс. дней в сделке
+          Выйти по времени, макс. {barUnitLabel} в сделке
         </label>
         {maxBarsEnabled && (
           <NumberInput className="input" min="1" value={value.maxBars ?? 20}

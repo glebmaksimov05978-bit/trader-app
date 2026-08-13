@@ -8,7 +8,7 @@
 // constructor is backtestable for free, no changes needed here.
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { fetchDailyCandles, TIMEFRAMES, availableTimeframes, DEFAULT_TIMEFRAME } from '../../services/marketData/candles';
+import { fetchDailyCandles, TIMEFRAMES, availableTimeframes, DEFAULT_TIMEFRAME, barUnitLabel } from '../../services/marketData/candles';
 import { fetchActiveFutureCard, resolveFuturesSpecFromMoex, fetchStockLot } from '../../services/marketData/futuresSpecs';
 import { runBacktest } from '../../services/backtest/engine';
 import { getStrategies, getActiveStrategy, CONDITION_CATALOG } from '../../services/analytics/strategy';
@@ -440,7 +440,7 @@ export default function Backtest() {
           Правила выхода — подставлены из выбранной стратегии, можно временно подкрутить для этого прогона (в Капитале не сохранится)
         </div>
         <div style={{marginBottom:16}}>
-          <ExitRulesEditor value={exitRules} onChange={setExitRules} maxBarsEnabled={maxBarsEnabled} onMaxBarsEnabledChange={handleMaxBarsEnabledChange} />
+          <ExitRulesEditor value={exitRules} onChange={setExitRules} maxBarsEnabled={maxBarsEnabled} onMaxBarsEnabledChange={handleMaxBarsEnabledChange} barUnitLabel={barUnitLabel(TIMEFRAMES[timeframe].minutes)} />
         </div>
 
         <div className="flex gap-2" style={{marginBottom:16, alignItems:'center', flexWrap:'wrap'}}>
@@ -703,7 +703,7 @@ export default function Backtest() {
                   <thead>
                     <tr>
                       <th>Направление</th><th>Вход</th><th>Цена входа</th><th>% готовности</th>
-                      <th>Выход</th><th>Цена выхода</th><th>Причина</th><th>Дней</th><th>P&L</th>
+                      <th>Выход</th><th>Цена выхода</th><th>Причина</th><th style={{textTransform:'capitalize'}}>{barUnitLabel(TIMEFRAMES[timeframe].minutes)}</th><th>P&L</th>
                     </tr>
                   </thead>
                   <tbody>

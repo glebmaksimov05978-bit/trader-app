@@ -27,6 +27,15 @@ export const TIMEFRAMES = {
 
 export const DEFAULT_TIMEFRAME = 'D1';
 
+// One "bar" is 1440 minutes on D1, 60 on H1, etc. — a trade held for N bars is N days on
+// the daily chart but N HOURS on the hourly one. UI text showing bar counts must use this
+// instead of hardcoding "дней", or a trade held 6452 hours (~9 months) misreads as 6452 days.
+export function barUnitLabel(minutes) {
+  if (minutes >= 1440) return 'дней';
+  if (minutes >= 60) return 'часов';
+  return 'минут';
+}
+
 // Which timeframes a trader can actually pick, given whether they've connected a token.
 export function availableTimeframes(hasToken) {
   return Object.entries(TIMEFRAMES)
