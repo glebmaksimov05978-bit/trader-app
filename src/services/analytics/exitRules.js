@@ -75,7 +75,11 @@ export function resolveTrailGiveBackPct(exitRules, patternName) {
 // instrument/timeframe actually moves per bar, instead of a number tuned for daily
 // candles. `trailMinPeakMode: 'pct'` is kept for backward compatibility / manual override
 // (e.g. a trader who wants an exact %, knows what they're doing).
-export const DEFAULT_TRAIL_MIN_PEAK_ATR_MULT = 0.5;
+// 1.0 (not 0.5) per 2026-08-13 validation: on D1 it beat 0.5 outright (+15.2% vs +11.6%,
+// worst trade -2.0% vs -3.5%, 21-ticker holdout); on H1 it roughly halved the share of
+// "penny" trades under a 0.3% round-trip cost floor (71.6% -> 44.0% of trades), which
+// 0.5 didn't fix even though it stopped the stuck-position bug. See HANDOFF_NEXT_SESSION.md.
+export const DEFAULT_TRAIL_MIN_PEAK_ATR_MULT = 1.0;
 
 export function defaultExitRules() {
   return {

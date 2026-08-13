@@ -71,10 +71,13 @@ const base = {
 };
 const R = { ...base, stopType: 'none', takeType: 'none', trailEnabled: true };
 const CONFIGS = [
-  { name: 'A. Стоп 2% / тейк 4% (классика)', rules: { ...base, stopType: 'pct', stopPct: 2, takeType: 'pct', takePct: 4 } },
+  { name: 'A. Стоп 2% / тейк 4% (фикс. %, старое)', rules: { ...base, stopType: 'pct', stopPct: 2, takeType: 'pct', takePct: 4 } },
+  { name: 'F. Стоп/тейк по ATR (1.5x/3x)', rules: { ...base, stopType: 'atr', stopAtrMult: 1.5, takeType: 'atr', takeAtrMult: 3 } },
   { name: 'Е0. Старый фикс. 1% (баг — должен зависать)', rules: { ...R, trailMinPeakMode: 'pct', trailMinPeakPct: 1 } },
   { name: 'Е2. ATR × 0.3', rules: { ...R, trailMinPeakMode: 'atr', trailMinPeakAtrMult: 0.3 } },
-  { name: 'Е3. ATR × 0.5', rules: { ...R, trailMinPeakMode: 'atr', trailMinPeakAtrMult: 0.5 } },
+  { name: 'Е3. ATR × 0.5 (старый дефолт)', rules: { ...R, trailMinPeakMode: 'atr', trailMinPeakAtrMult: 0.5 } },
+  { name: 'Е4. ATR × 1.0 (новый дефолт)', rules: { ...R, trailMinPeakMode: 'atr', trailMinPeakAtrMult: 1.0 } },
+  { name: 'Е5. ATR × 1.5', rules: { ...R, trailMinPeakMode: 'atr', trailMinPeakAtrMult: 1.5 } },
 ];
 
 const TICKERS = [
@@ -96,11 +99,13 @@ async function fetchWithRetry(args, attempts = 3) {
   throw lastErr;
 }
 
+const TINY_TRADE_PCT = 0.3; // rough round-trip cost floor (commission+spread) — below this, a "win" isn't real money
+
 function summarize(trades) {
   const closed = trades.filter((t) => t.status === 'closed');
   if (!closed.length) return null;
   let equity = 100, peak = 100, maxDrawdownPct = 0;
-  let wins = 0, worst = 0, totalBars = 0;
+  let wins = 0, worst = 0, totalBars = 0, tinyTrades = 0, sumAbsPct = 0;
   for (const t of closed) {
     equity *= 1 + t.pnlPct / 100;
     peak = Math.max(peak, equity);
@@ -108,10 +113,13 @@ function summarize(trades) {
     if (t.pnlPct > 0) wins += 1;
     worst = Math.min(worst, t.pnlPct);
     totalBars += t.barsHeld || 0;
+    sumAbsPct += Math.abs(t.pnlPct);
+    if (Math.abs(t.pnlPct) < TINY_TRADE_PCT) tinyTrades += 1;
   }
   return {
     n: closed.length, returnPct: equity - 100, winRate: (wins / closed.length) * 100,
     worst, maxDrawdownPct, avgHoldHours: totalBars / closed.length, // 1 bar = 1 hour on H1
+    avgAbsPct: sumAbsPct / closed.length, tinyTradePct: (tinyTrades / closed.length) * 100,
   };
 }
 
@@ -143,21 +151,24 @@ function aggregate(list) {
   const worst = Math.min(...list.map((r) => r.worst));
   const avgDrawdown = list.reduce((s, r) => s + r.maxDrawdownPct, 0) / list.length;
   const avgHoldHours = list.reduce((s, r) => s + r.avgHoldHours, 0) / list.length;
-  return { n, winRate: (wins / n) * 100, avgReturn, positive, tickers: list.length, worst, avgDrawdown, avgHoldHours };
+  const avgAbsPct = list.reduce((s, r) => s + r.avgAbsPct, 0) / list.length;
+  const tinyTradePct = list.reduce((s, r) => s + r.tinyTradePct, 0) / list.length;
+  return { n, winRate: (wins / n) * 100, avgReturn, positive, tickers: list.length, worst, avgDrawdown, avgHoldHours, avgAbsPct, tinyTradePct };
 }
 
-console.log(`\n${'='.repeat(90)}`);
+console.log(`\n${'='.repeat(120)}`);
 console.log(`Часовой график (H1), ~135 дней истории, БЕЗ holdout (данных мало) — только прикидка`);
-console.log(`${'='.repeat(90)}\n`);
-console.log('Вариант                          | Сделок | Винрейт | Ср.дох. | В плюсе | Худшая | Просадка | Ср.часов (~дней)');
-console.log('-'.repeat(110));
+console.log(`"Копеечных" сделок = доля сделок с |P&L| < ${TINY_TRADE_PCT}% (примерная стоимость комиссии+спреда туда-обратно)`);
+console.log(`${'='.repeat(120)}\n`);
+console.log('Вариант                          | Сделок | Винрейт | Ср.дох. | В плюсе | Худшая | Ср.|P&L| | Копеечных | Ср.часов');
+console.log('-'.repeat(130));
 for (const cfg of CONFIGS) {
   const agg = aggregate(results[cfg.name]);
   if (!agg) { console.log(`${cfg.name.padEnd(33)} | нет сделок`); continue; }
   console.log(
     `${cfg.name.padEnd(33)} | ${String(agg.n).padStart(6)} | ${agg.winRate.toFixed(1).padStart(6)}% | `
     + `${(agg.avgReturn >= 0 ? '+' : '') + agg.avgReturn.toFixed(1).padStart(6)}% | ${agg.positive}/${agg.tickers}`.padStart(7)
-    + ` | ${agg.worst.toFixed(1)}% | ${agg.avgDrawdown.toFixed(1)}% | ${agg.avgHoldHours.toFixed(1)}ч (~${(agg.avgHoldHours / 7).toFixed(1)}д)`
+    + ` | ${agg.worst.toFixed(1)}% | ${agg.avgAbsPct.toFixed(2)}% | ${agg.tinyTradePct.toFixed(1)}% | ${agg.avgHoldHours.toFixed(1)}ч`
   );
 }
 
