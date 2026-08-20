@@ -10,7 +10,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { fetchDailyCandles, TIMEFRAMES, availableTimeframes, DEFAULT_TIMEFRAME, barUnitLabel } from '../../services/marketData/candles';
 import { fetchActiveFutureCard, resolveFuturesSpecFromMoex, fetchStockLot } from '../../services/marketData/futuresSpecs';
-import { runBacktest } from '../../services/backtest/engine';
+import { runBacktest, buildMarketRegimeFilter } from '../../services/backtest/engine';
 import { getStrategies, getActiveStrategy, CONDITION_CATALOG } from '../../services/analytics/strategy';
 import { defaultExitRules } from '../../services/analytics/exitRules';
 import { backtestPageCache as cache } from '../../services/backtest/pageStateCache';
@@ -29,7 +29,9 @@ import toast from 'react-hot-toast';
 
 const EXIT_REASON_LABELS = {
   stop: 'Стоп', take: 'Тейк', signal: 'Сигнал пропал', time: 'По времени', end_of_data: 'Конец истории (не закрыта)',
-  trail: 'Движение выдохлось',
+  trail: 'Движение выдохлось', trail_adverse: 'Против входа, не отыгралось',
+  signal_reversal: 'Разворот подтверждён (RSI+EMA)',
+  profit_score: 'Прибыль зафиксирована (рейтинг)',
 };
 
 function StatCard({ label, value, tone }) {
@@ -58,6 +60,12 @@ export default function Backtest() {
   // календарных рамках вместо недель. H1 бесплатен без токена (MOEX ISS отдаёт его сам),
   // М5/М15 — только с привязанным токеном Т-Инвестиций (см. availableTimeframes).
   const [timeframe, setTimeframe] = useState(cache.timeframe ?? DEFAULT_TIMEFRAME);
+  // Strongest, most universal finding of the 2026-08-13/17 session (see
+  // HANDOFF_NEXT_SESSION.md): block new LONG entries while the index (IMOEXF, D1) is
+  // itself below its own SMA50. Validated across 3 unrelated strategies, not just the
+  // pattern one — improved every single one. Off by default (opt-in, changes trade count
+  // a lot, every saved strategy was tuned without it) — same convention as trailEnabled.
+  const [marketRegimeFilterEnabled, setMarketRegimeFilterEnabled] = useState(cache.marketRegimeFilterEnabled ?? false);
   // Local, editable copy of the selected strategy's exit rules — the trader can crank
   // these for a "what if" run right here without touching what's saved in Капитал (real
   // user request: "можно временно крутить"). Resets to the strategy's saved rules
@@ -192,7 +200,7 @@ export default function Backtest() {
     Object.assign(cache, {
       selectedStrategyId, ticker, instrumentType, years, timeframe, exitRules, maxBarsEnabled,
       holdoutEnabled, holdoutPct, result, holdoutResult, holdoutSplitDate, selectedTradeIdx,
-      realRiskEnabled, riskSizing,
+      realRiskEnabled, riskSizing, marketRegimeFilterEnabled,
     });
   });
 
@@ -221,6 +229,20 @@ export default function Backtest() {
       const rules = { ...exitRules, maxBars: maxBarsEnabled ? exitRules.maxBars : null };
       const sizing = realRiskEnabled ? { ...riskSizing, instrumentType } : null;
 
+      // Market-regime filter always reads the index on D1, regardless of what timeframe
+      // the traded instrument itself is on — SMA50-on-D1 is "is the market in a downtrend",
+      // not something that needs recomputing per intraday bar. Skipped entirely when the
+      // traded instrument already IS the index (nothing to gate against itself).
+      let marketRegimeFilter = null;
+      if (marketRegimeFilterEnabled && ticker.trim().toUpperCase() !== 'IMOEXF') {
+        const indexCandles = await fetchDailyCandles({
+          ticker: 'IMOEXF', instrumentType: 'future', toDate: new Date(),
+          tinkoffToken: userProfile?.tinkoffToken, timeframe: 'D1',
+          lookbackDays: Math.round(years * 365),
+        });
+        marketRegimeFilter = buildMarketRegimeFilter(indexCandles);
+      }
+
       if (holdoutEnabled && candles.length > 60) {
         // Split point: the last `holdoutPct`% of bars is the отложенный кусок. The
         // тренировочный run only ever sees candles BEFORE the split (can't leak future
@@ -232,10 +254,10 @@ export default function Backtest() {
         const splitIndex = Math.floor(candles.length * (1 - holdoutPct / 100));
         const trainCandles = candles.slice(0, splitIndex);
         const trainResult = runBacktest({
-          candles: trainCandles, strategy: selectedStrategy, timeframeMinutes: TIMEFRAMES[timeframe].minutes, exitRules: rules, riskSizing: sizing,
+          candles: trainCandles, strategy: selectedStrategy, timeframeMinutes: TIMEFRAMES[timeframe].minutes, exitRules: rules, riskSizing: sizing, marketRegimeFilter,
         });
         const testResult = runBacktest({
-          candles, strategy: selectedStrategy, timeframeMinutes: TIMEFRAMES[timeframe].minutes, exitRules: rules, warmupBars: splitIndex, riskSizing: sizing,
+          candles, strategy: selectedStrategy, timeframeMinutes: TIMEFRAMES[timeframe].minutes, exitRules: rules, warmupBars: splitIndex, riskSizing: sizing, marketRegimeFilter,
         });
         setResult({ ...trainResult, candles: trainCandles });
         setHoldoutResult({ ...testResult, candles });
@@ -245,7 +267,7 @@ export default function Backtest() {
         }
       } else {
         const engineResult = runBacktest({
-          candles, strategy: selectedStrategy, timeframeMinutes: TIMEFRAMES[timeframe].minutes, exitRules: rules, riskSizing: sizing,
+          candles, strategy: selectedStrategy, timeframeMinutes: TIMEFRAMES[timeframe].minutes, exitRules: rules, riskSizing: sizing, marketRegimeFilter,
         });
         setResult({ ...engineResult, candles });
         if (!engineResult.trades.length) {
@@ -304,6 +326,25 @@ export default function Backtest() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [result, realRiskEnabled, riskSizing]);
   const stats = equity.statsTrades?.length ? calcStats(equity.statsTrades) : null;
+
+  // Honest-numbers check (real trader question, 2026-08-13): the trailing exit only fires
+  // on a give-back from a favorable peak — a position that goes straight against entry and
+  // never comes back has no peak to give back FROM, so it just sits open until history runs
+  // out (status:'open'/exitReason:'end_of_data') and calcStats() correctly excludes it (no
+  // realized P&L). That's right for real trading (an open position isn't a loss yet), but
+  // it means the winrate/return shown above can look better than what actually happened to
+  // the money, because only trades that WANTED to close (i.e. were winners) closed. This
+  // recomputes the same numbers as if every still-open position were marked-to-market at
+  // its last known price, purely to expose the gap — not a replacement for the real stats.
+  const openTrades = useMemo(() => (result?.trades || []).filter((t) => t.status === 'open'), [result]);
+  const mtmComparison = useMemo(() => {
+    if (!stats || !openTrades.length) return null;
+    const closedPnls = equity.statsTrades.map((t) => t.pnl);
+    const allPnls = [...closedPnls, ...openTrades.map((t) => t.pnlPct)];
+    const mtmWinrate = (allPnls.filter((p) => p > 0).length / allPnls.length) * 100;
+    const worstOpen = Math.min(...openTrades.map((t) => t.pnlPct));
+    return { mtmWinrate, worstOpen, openCount: openTrades.length };
+  }, [stats, openTrades, equity]);
 
   // Диагностика по факту закрытия сделок (стоп/тейк/следящий выход/время) — реальный
   // запрос трейдера: не просто показать цифры, а посмотреть на список сделок и
@@ -428,13 +469,34 @@ export default function Backtest() {
         </div>
         {timeframe !== 'D1' && (
           <p className="text-xs text-muted" style={{marginTop:-8, marginBottom:12}}>
-            На внутридневных графиках история короче, чем на дневном: Ч1 — бесплатно
-            через биржу без токена, но не больше пары месяцев вглубь; М5/М15 — только
-            с токеном Т-Инвестиций, и там глубина ещё меньше (недели, не месяцы/годы).
-            «Лет истории» выше в этом случае не сработает буквально — просто получите
-            всё, что реально доступно за этот период.
+            На внутридневных графиках история короче, чем на дневном. Ч1 — бесплатно через
+            биржу без токена; реальная глубина зависит от инструмента (проверено: несколько
+            лет для IMOEXF), а не пара месяцев, как можно было подумать. М5/М15 — только с
+            токеном Т-Инвестиций, там глубина заметно меньше (недели, не годы). «Лет
+            истории» выше в этом случае не сработает буквально — просто получите всё, что
+            реально доступно за этот период.
           </p>
         )}
+
+        {/* Strongest, most universal finding of the session (HANDOFF_NEXT_SESSION.md,
+            2026-08-13/17): blocking longs while the index is itself below its own SMA50
+            improved every strategy tested, not just this one's pattern logic. Placed above
+            the exit-rule editor since it's an ENTRY filter, not an exit rule — belongs with
+            instrument/timeframe choice, not alongside stop/take/trail. */}
+        <div style={{padding:'10px 14px', borderRadius:10, background:'var(--bg-surface-2)', border:'1px solid var(--border-subtle)', marginBottom:16}}>
+          <label className="flex gap-2" style={{alignItems:'center', fontSize:13, cursor:'pointer', fontWeight:600}}>
+            <input type="checkbox" checked={marketRegimeFilterEnabled}
+              onChange={(e) => setMarketRegimeFilterEnabled(e.target.checked)} />
+            📉 Фильтр рынка: не входить в лонг, когда индекс (IMOEXF) сам ниже своей SMA50
+          </label>
+          <div className="input-hint" style={{marginTop:6}}>
+            Загружает дневной график IMOEXF отдельно и проверяет на дату каждого потенциального
+            входа: если индекс сам ниже своей 50-дневной скользящей (рынок в целом падает) —
+            лонг не открывается. Шорты не трогает. На истории — самое сильное и универсальное
+            улучшение сессии: подтвердилось на трёх разных стратегиях входа, включая две без
+            единого упоминания фигур.
+          </div>
+        </div>
 
         <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:8}}>
           Правила выхода — подставлены из выбранной стратегии, можно временно подкрутить для этого прогона (в Капитале не сохранится)
@@ -582,7 +644,7 @@ export default function Backtest() {
               <StatCard label="Винрейт" value={`${formatNumber(stats.winrate, 1)}%`} tone={stats.winrate >= 50 ? 'green' : 'red'} />
               <StatCard label="Профит-фактор" value={stats.profitFactor === Infinity ? '∞' : formatNumber(stats.profitFactor, 2)} tone={stats.profitFactor >= 1 ? 'green' : 'red'} />
             </div>
-          ) : result.trades?.length > 0 ? (
+          ) : result.trades?.length > 0 && realRiskEnabled ? (
             // Real bug, caught live: this used to show the SAME "стратегия не набрала
             // нужный %" text as genuinely zero trades, even when the engine found and
             // closed real trades — realRiskEnabled just couldn't SIZE any of them (риск%
@@ -596,9 +658,32 @@ export default function Backtest() {
                 настройках выше. Переключись на «📊 Теоретический максимум», чтобы увидеть сами сделки без сайзинга.
               </div>
             </div>
+          ) : result.trades?.length > 0 ? (
+            // Second real bug, caught live in the same session: with trailEnabled and no
+            // stop/take, one slot per instrument means the strategy can find an entry that
+            // just never closes (trail never arms/fires) — trades.length>0 but every trade
+            // is still open, so calcStats() (closed-only) returns null. The branch above
+            // used to catch this too and blamed "риск%/сайзинг" even in Theoretical Max
+            // mode, where there's no sizing step at all. This is not a risk-sizing problem —
+            // it's zero CLOSED trades so far, same root cause as mtmComparison below.
+            <div className="card empty-state" style={{marginBottom:16, borderColor:'var(--gold)'}}>
+              <div className="empty-state-text">
+                Стратегия открыла {result.trades.length} {result.trades.length === 1 ? 'сделку' : 'сделок'}, но ни одна
+                ещё не закрылась за этот период — статистику посчитать не из чего. Если включён следящий выход без
+                стопа/тейка, позиция может провисеть до конца истории, если движение сразу пошло против входа и не
+                вернулось. Смотри график сделок ниже.
+              </div>
+            </div>
           ) : (
             <div className="card empty-state" style={{marginBottom:16}}>
               <div className="empty-state-text">Ни одной завершённой сделки за этот период — стратегия ни разу не набрала нужный % готовности.</div>
+            </div>
+          )}
+          {mtmComparison && (
+            <div className="card" style={{marginBottom:16, borderColor:'var(--gold)'}}>
+              <div style={{color:'var(--gold)', fontSize:13}}>
+                ⚠️ {mtmComparison.openCount} {mtmComparison.openCount === 1 ? 'позиция осталась незакрытой' : 'позиции остались незакрытыми'} до конца истории (следящий выход не нашёл, от чего "отдавать" — движение сразу пошло против входа и не вернулось). Винрейт выше ({formatNumber(stats.winrate, 1)}%) считает только закрытые сделки. Если честно учесть незакрытые по последней цене — винрейт {formatNumber(mtmComparison.mtmWinrate, 1)}%, худшая незакрытая позиция сейчас {formatNumber(mtmComparison.worstOpen, 1)}%.
+              </div>
             </div>
           )}
           {realRiskEnabled && equity.skippedCount > 0 && equity.statsTrades?.length > 0 && (

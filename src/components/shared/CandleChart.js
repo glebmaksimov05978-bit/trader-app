@@ -597,12 +597,20 @@ export default function CandleChart({
   }, [candles, patterns, layers, entryMarker, exitMarker, legs, direction, entryPrice, exitPrice, planLines, colors, isTrade, trades]);
 
   const rsiMacdPanes = (layers.rsi ? 110 : 0) + (layers.macd ? 110 : 0);
-  const chartHeight = fullscreen ? `calc(100vh - 150px)` : `${300 + rsiMacdPanes}px`;
+  // Real user report 2026-08-17: fullscreen used to hard-code `calc(100vh - 150px)` for
+  // the chart, assuming a fixed 150px was always enough for the header + layer-toggle
+  // row above it — with several layers on, that row wraps to 2-3 lines and eats more
+  // than 150px, pushing the bottom of the chart (and its RSI/MACD sub-panes) past the
+  // viewport with no obvious way to see it (the outer wrapper's overflow:auto just made
+  // the WHOLE overlay scroll instead of clipping, but nothing signaled that). Flexbox
+  // instead of a magic number: header + toggle row keep their natural height (however
+  // many lines they wrap to), the chart takes whatever's actually left — never a guess.
+  const chartHeight = fullscreen ? '100%' : `${300 + rsiMacdPanes}px`;
   const visibleLayers = LAYER_DEFS.filter((l) => (!l.tradeOnly || isTrade) && (!l.overviewOnly || trades?.length));
 
   return (
-    <div style={fullscreen ? { position:'fixed', inset:0, zIndex:9998, background:'var(--bg-surface)', padding:16, overflow:'auto' } : undefined}>
-      <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:8, marginBottom:8}}>
+    <div style={fullscreen ? { position:'fixed', inset:0, zIndex:9998, background:'var(--bg-surface)', padding:16, display:'flex', flexDirection:'column', overflow:'hidden' } : undefined}>
+      <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:8, marginBottom:8, flexShrink:0}}>
         <div style={{fontSize:14, fontWeight:700, color:'var(--text-primary)'}}>{ticker}</div>
         <div style={{display:'flex', gap:4, alignItems:'center'}}>
           {timeframeOptions?.length > 0 && timeframeOptions.map((tf) => (
@@ -621,7 +629,7 @@ export default function CandleChart({
           >{fullscreen ? '✕' : '⛶'}</button>
         </div>
       </div>
-      <div style={{display:'flex', flexWrap:'wrap', gap:6, marginBottom:8, alignItems:'center'}}>
+      <div style={{display:'flex', flexWrap:'wrap', gap:6, marginBottom:8, alignItems:'center', flexShrink:0}}>
         {visibleLayers.map((l) => (
           <span key={l.key} style={{display:'inline-flex', alignItems:'center', gap:4}}>
             <button
@@ -633,7 +641,7 @@ export default function CandleChart({
           </span>
         ))}
       </div>
-      <div style={{position:'relative'}}>
+      <div style={fullscreen ? {position:'relative', flex:1, minHeight:0} : {position:'relative'}}>
         <div ref={containerRef} style={{width:'100%', height:chartHeight}} />
         <div ref={tooltipRef} style={{
           position:'absolute', display:'none', pointerEvents:'none', zIndex:5, width:180,

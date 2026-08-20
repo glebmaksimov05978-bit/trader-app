@@ -6,6 +6,7 @@
 // trader sees in one place means exactly the same thing in the other.
 import React from 'react';
 import NumberInput from './NumberInput';
+import { DEFAULT_TRAIL_MIN_PEAK_ATR_MULT, DEFAULT_PROFIT_CAPTURE_SCORE_THRESHOLD } from '../../services/analytics/exitRules';
 
 // One stop/take rule slot — pct/atr/level/none, each revealing its own inputs. Same
 // component reused for the stop side and the take side; `side` only changes labels.
@@ -181,7 +182,7 @@ export default function ExitRulesEditor({ value, onChange, maxBarsEnabled, onMax
             {(value.trailMinPeakMode ?? 'atr') === 'atr' ? (
               <div className="flex gap-2" style={{alignItems:'center', flexWrap:'wrap', marginTop:6}}>
                 <NumberInput className="input" min="0.1" max="3" step="0.1"
-                  value={value.trailMinPeakAtrMult ?? 0.5}
+                  value={value.trailMinPeakAtrMult ?? DEFAULT_TRAIL_MIN_PEAK_ATR_MULT}
                   onChange={(v) => onChange({ ...value, trailMinPeakAtrMult: v })} style={{width:70}} />
                 <span style={{fontSize:12, color:'var(--text-muted)'}}>× ATR(14) на входе</span>
                 <div className="input-hint" style={{width:'100%', marginTop:2}}>
@@ -218,6 +219,35 @@ export default function ExitRulesEditor({ value, onChange, maxBarsEnabled, onMax
                 ⚠️ Числа подобраны на той же истории, на которой измерялись, и по 37-464 случая
                 на фигуру — часть различий может быть случайностью. Это подсказка, а не
                 проверенная истина: сначала сравните оба варианта на отложенном периоде.
+              </div>
+            )}
+
+            {/* Profit-capture score, wired 2026-08-16: replaces the blunt "give back 50% of
+                peak" rule with a weighted score (RSI extreme, EMA13 stretch, profit>8%,
+                Боллинджер10>0.85, held 15+ bars, low ADX, volume spike, held<=2 bars = -1)
+                over 27 candidate indicators, calibrated on 109772 labelled points and
+                confirmed on money (portfolio +18.4% -> +23.7% over the give-back baseline,
+                see HANDOFF_NEXT_SESSION.md). Opt-in — proven in scripts, not yet live-tested
+                in the browser before today. */}
+            <label className="flex gap-2" style={{alignItems:'center', fontSize:13, cursor:'pointer', marginTop:14}}>
+              <input type="checkbox" checked={!!value.profitCaptureEnabled}
+                onChange={(e) => onChange({ ...value, profitCaptureEnabled: e.target.checked })} />
+              📈 Фиксировать прибыль по рейтингу, а не по «отдать N% от пика»
+            </label>
+            <div className="input-hint" style={{marginTop:4}}>
+              Вместо фиксированной доли отката от лучшей точки — начисляет очки за признаки
+              «движение выдыхается» (RSI на экстремуме, оторвались от EMA13, прибыль уже
+              большая, верх Боллинджера, долго держим, всплеск объёма) и закрывает сделку,
+              когда очков набралось достаточно. На истории (портфель, поверх фильтра рынка
+              и аварийного порога ×2) дало +18.4%→+23.7% доходности. Работает только пока
+              включён следящий выход выше.
+            </div>
+            {value.profitCaptureEnabled && (
+              <div className="flex gap-2" style={{alignItems:'center', flexWrap:'wrap', marginTop:6}}>
+                <span style={{fontSize:12, color:'var(--text-muted)'}}>Порог очков (закрыть, когда набралось ≥)</span>
+                <NumberInput className="input" min="1" max="8" step="1"
+                  value={value.profitCaptureThreshold ?? DEFAULT_PROFIT_CAPTURE_SCORE_THRESHOLD}
+                  onChange={(v) => onChange({ ...value, profitCaptureThreshold: v })} style={{width:60}} />
               </div>
             )}
           </>

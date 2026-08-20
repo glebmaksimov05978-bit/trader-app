@@ -95,6 +95,28 @@ export function bollingerSeries(closes, period = 20, k = 2) {
   return closes.map((_, i) => bollingerAt(closes, i, period, k));
 }
 
+// ADX-lite: normalized directional-move imbalance over `period` bars — "how one-sided has
+// price movement been lately" (0 = perfectly balanced/choppy, 100 = every bar moved the
+// same direction). Not the textbook Wilder ADX (no smoothing of +DI/-DI, no separate ATR
+// normalization) but the same underlying idea, validated 2026-08-17 in the profit-capture
+// score full search: a LOW reading here (weak/no clear trend) combined with an RSI
+// extreme predicted "this winning trade is topping out" far better than either alone.
+export function adxLite(candles, period = 14) {
+  const out = new Array(candles.length).fill(null);
+  for (let i = period; i < candles.length; i++) {
+    let upSum = 0, downSum = 0;
+    for (let j = i - period + 1; j <= i; j++) {
+      const up = candles[j].high - candles[j - 1].high;
+      const down = candles[j - 1].low - candles[j].low;
+      if (up > down && up > 0) upSum += up;
+      if (down > up && down > 0) downSum += down;
+    }
+    const total = upSum + downSum;
+    out[i] = total > 0 ? (Math.abs(upSum - downSum) / total) * 100 : 0;
+  }
+  return out;
+}
+
 // ATR (Average True Range) — Wilder's smoothed average of the true range (the widest of
 // today's high-low, high-prevClose, low-prevClose). Answers "how far does this instrument
 // typically move per bar right now", independent of direction — used in the Calculator to
@@ -157,12 +179,21 @@ export function computeIndicatorsAtEntry(candles, atDate) {
   const volumes = candles.map((c) => c.volume);
 
   const sma200 = sma(closes, 200);
+  const ema9Series = ema(closes, 9);
+  const ema13Series = ema(closes, 13);
+  const ema100Series = ema(closes, 100);
+  const ema200Series = ema(closes, 200);
   const rsi14 = rsi(closes, 14);
   const { histogram } = macd(closes);
   const atr14 = atr(candles, 14);
+  const adx14 = adxLite(candles, 14);
 
   const closeAtIndex = closes[index];
   const sma200AtIndex = sma200[index];
+  const ema9AtIndex = ema9Series[index];
+  const ema13AtIndex = ema13Series[index];
+  const ema100AtIndex = ema100Series[index];
+  const ema200AtIndex = ema200Series[index];
 
   return {
     date: candles[index].date,
@@ -171,8 +202,21 @@ export function computeIndicatorsAtEntry(candles, atDate) {
     rsi14: rsi14[index] ?? null,
     macdHistogram: histogram[index] ?? null,
     sma200Distance: sma200AtIndex != null ? ((closeAtIndex - sma200AtIndex) / sma200AtIndex) * 100 : null,
+    // % distance of close from EMA100/200 — signed (positive = price above the line).
+    // Added 2026-08-14 for the "post-entry indicator dynamics" exit signal (see
+    // exitRules.js resolvePostEntrySignal) — validated on holdout data that CHANGE in
+    // RSI plus current side of these EMAs distinguishes a real reversal from ordinary
+    // noise far better than any single indicator's value at entry ever did.
+    ema9Distance: ema9AtIndex != null ? ((closeAtIndex - ema9AtIndex) / ema9AtIndex) * 100 : null,
+    ema13Distance: ema13AtIndex != null ? ((closeAtIndex - ema13AtIndex) / ema13AtIndex) * 100 : null,
+    ema100Distance: ema100AtIndex != null ? ((closeAtIndex - ema100AtIndex) / ema100AtIndex) * 100 : null,
+    ema200Distance: ema200AtIndex != null ? ((closeAtIndex - ema200AtIndex) / ema200AtIndex) * 100 : null,
     volumeRatio: volumeRatioAt(volumes, index),
     bollinger: bollingerAt(closes, index),
+    // Shorter-period band (10 vs the default 20) — reacts faster, validated 2026-08-17 as
+    // part of the profit-capture score's feature search alongside adxLite above.
+    bollinger10: bollingerAt(closes, index, 10, 2),
     atr14: atr14[index] ?? null,
+    adx14: adx14[index] ?? null,
   };
 }

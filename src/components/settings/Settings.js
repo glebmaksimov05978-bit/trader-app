@@ -99,10 +99,10 @@ export default function Settings() {
         <div className="card" style={{marginBottom:20}}>
           <div className="section-title">
             <div className="section-title-icon">🔑</div>
-            Tinkoff Invest API
+            Т-Инвестиции API
           </div>
           <p className="text-sm text-secondary" style={{marginBottom:12}}>
-            Токен используется для подгрузки цен, параметров фьючерсов и импорта сделок из Тинькофф.
+            Токен используется для подгрузки цен, параметров фьючерсов и импорта сделок из Т-Инвестиций.
             Получить можно в <a href="https://www.tinkoff.ru/invest/" target="_blank" rel="noreferrer" style={{color:'var(--accent-primary)'}}>личном кабинете Т-Инвестиций</a>.
           </p>
           <div className="input-group">
@@ -110,14 +110,24 @@ export default function Settings() {
             <div className="pass-wrap" style={{position:'relative'}}>
               <input
                 className="input"
-                type={showToken ? 'text' : 'password'}
+                // Real user report (2026-08-17): their Т-Инвестиции API-токен showed up
+                // IN the real login page's password field. Root cause: this field used
+                // type="password" purely for visual masking, but browsers (Chrome
+                // especially) ignore autoComplete="off"/data-lpignore for password-TYPE
+                // inputs specifically — they still offer to save it as a site credential,
+                // and can later autofill that saved value into any OTHER password field
+                // on the same origin, including the real login form. type="text" + CSS
+                // masking (-webkit-text-security) gets the same visual dots without ever
+                // registering as a password field, so the browser's credential manager
+                // never touches it.
+                type="text"
                 autoComplete="off"
                 data-lpignore="true"
                 data-1p-ignore="true"
                 value={form.tinkoffToken}
                 onChange={e => set('tinkoffToken', e.target.value)}
                 placeholder="t.xxx..."
-                style={{paddingRight:44}}
+                style={{paddingRight:44, WebkitTextSecurity: showToken ? 'none' : 'disc', textSecurity: showToken ? 'none' : 'disc'}}
               />
               <button
                 type="button"

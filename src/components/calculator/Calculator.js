@@ -65,7 +65,13 @@ export default function Calculator() {
   const activeStrategy = getActiveStrategy(userProfile);
   const draft = useRef(loadCalcDraft()).current;
   const [instrumentType, setInstrumentType] = useState(draft?.instrumentType || 'future');
-  const [priceSource, setPriceSource] = useState(draft?.priceSource || 'tinkoff'); // 'tinkoff' | 'moex'
+  // Real user question 2026-08-17: "зачем MOEX если есть токен" — defaulting to
+  // 'tinkoff' unconditionally meant a trader with NO token hit an avoidable "Введите
+  // API-токен" error on their very first «Загрузить» click, every single time, until
+  // they manually clicked MOEX. Default to whichever source actually works without
+  // extra clicks — MOEX only when there's no token to lose out on, Т-Инвестиции
+  // otherwise (still switchable by hand; an explicit past choice in the draft wins).
+  const [priceSource, setPriceSource] = useState(draft?.priceSource || (userProfile?.tinkoffToken ? 'tinkoff' : 'moex')); // 'tinkoff' | 'moex'
   const [orderType, setOrderType] = useState(draft?.orderType || 'market'); // 'market' | 'limit'
   const [manualContracts, setManualContracts] = useState(draft?.manualContracts || '');
   const [journalAnim, setJournalAnim] = useState(false);
@@ -134,6 +140,17 @@ export default function Calculator() {
   // about whether anything had actually happened since toggling it on (real user
   // report: "непонятно, что вообще произошло при включении").
   const [taUpdatedAt, setTaUpdatedAt] = useState(null);
+  // Real user question 2026-08-17: "можно ли загружать сразу все таймфреймы, чтобы
+  // переключение было мгновенным" — loading all 5 up front on every ticker isn't the
+  // right trade: M5/M15 need a token and are rarely both looked at in the same
+  // session, and D1's own lookback (960 days) already means real network cost just for
+  // the ONE timeframe someone's actually looking at. The real fix for "switching feels
+  // slow" is caching each timeframe's result the FIRST time it's fetched, so flipping
+  // back to one you've already viewed this session is instant — no refetch, no
+  // spinner — while timeframes you've never opened still load on demand (lazily
+  // prefetched the moment you pick them, same as before). Keyed by the same
+  // ticker|instrument|timeframe identity used elsewhere (`analysisKey`).
+  const taCacheRef = useRef({});
   const hasTinkoffToken = !!userProfile?.tinkoffToken;
   const taTimeframeOptions = useMemo(() => availableTimeframes(hasTinkoffToken), [hasTinkoffToken]);
   // Tracks which "forming" setups were on screen after the last poll, so the next poll
@@ -284,7 +301,10 @@ export default function Calculator() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasAnyConditions, userProfile?.strategy, userProfile?.strategies, userProfile?.activeStrategyId, taState.data, displayResult, form.riskPercent, form.entryPrice, activeDirection, manualChecks]);
 
-  const rrColor = !displayResult ? '' : displayResult.rr >= 2 ? 'var(--green)' : displayResult.rr >= 1 ? 'var(--gold)' : 'var(--red)';
+  // Rounded to 1 decimal — same precision shown on screen (formatNumber(rr,1)) — so the
+  // big number's color always agrees with the badge below it (see RR badge comment).
+  const rrDisplayForColor = displayResult ? Math.round((displayResult.rr || 0) * 10) / 10 : 0;
+  const rrColor = !displayResult ? '' : rrDisplayForColor >= 2 ? 'var(--green)' : rrDisplayForColor >= 1 ? 'var(--gold)' : 'var(--red)';
 
   // Reset "Свои условия" ticks on every new ticker — see manualChecks above.
   useEffect(() => { setManualChecks({}); }, [resolvedTicker]);
@@ -383,18 +403,42 @@ export default function Calculator() {
     })();
   }, [orderType]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Stale analysis for a different ticker (or timeframe) would be misleading — clear it
-  // as soon as the trader edits the ticker field or switches timeframe, so they never
-  // see SBER's daily figures while looking at GAZP on M15. Closing the panel too (not
-  // just wiping its data) matters: leaving `taOpen` true with `taState.data` null used
-  // to render an empty card with nothing in it — a blank patch of screen the trader
-  // couldn't explain (real user report).
+  // Stale analysis for a different ticker would be misleading — clear it as soon as the
+  // trader edits the ticker field or switches instrument, so they never see SBER's
+  // figures while looking at GAZP. Closing the panel too (not just wiping its data)
+  // matters: leaving `taOpen` true with `taState.data` null used to render an empty
+  // card with nothing in it — a blank patch of screen the trader couldn't explain
+  // (real user report).
   useEffect(() => {
     setTaState({ loading: false, data: null, error: null });
     setTaLive(false);
     setTaOpen(false);
     formingKeysRef.current = new Set();
-  }, [form.ticker, instrumentType, taTimeframe]);
+    taCacheRef.current = {}; // different instrument — every cached timeframe is stale now
+  }, [form.ticker, instrumentType]);
+
+  // Real user report 2026-08-17: switching just the analysis TIMEFRAME (same ticker,
+  // same instrument) used to run through the reset above too, closing the panel and
+  // jumping the page back up to the ticker field — jarring, since nothing about WHICH
+  // instrument changed, only which timeframe of it. A timeframe switch still clears the
+  // now-stale candles (M15 numbers must never linger under a D1 label) but leaves an
+  // already-open panel open, showing its own loading state in place instead of
+  // collapsing — the prefetch effect below fills the fresh data back in without the
+  // trader needing to re-click or losing their scroll position.
+  const prevTaTimeframeRef = useRef(taTimeframe);
+  useEffect(() => {
+    if (prevTaTimeframeRef.current === taTimeframe) return;
+    prevTaTimeframeRef.current = taTimeframe;
+    // Real user request 2026-08-17: cache each timeframe's result the first time it's
+    // fetched (see taCacheRef above) so flipping BACK to one already viewed this
+    // session is instant, no loading flash at all — only a genuinely never-seen
+    // timeframe shows the spinner while the prefetch effect below fills it in.
+    const cached = taCacheRef.current[analysisKey];
+    setTaState(cached ? { loading: false, data: cached, error: null } : { loading: taOpen, data: null, error: null });
+    setTaLive(false);
+    formingKeysRef.current = new Set();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taTimeframe]);
 
   // Scrolls the analysis panel into view. Two effects, because the panel can open in
   // two different states: with the background prefetch above, the common case now is
@@ -437,15 +481,32 @@ export default function Calculator() {
 
   // `silent` is true for background prefetching and live-polling ticks — those
   // shouldn't flash the loading spinner or steal focus by (re)opening the panel;
-  // only the first, manual click does that.
-  const loadAnalysis = async (silent = false) => {
-    if (!form.ticker) { if (!silent) toast.error('Введите тикер'); return; }
+  // only the first, manual click does that. `force` skips the "already have this"
+  // cache check — real user report 2026-08-17: «Подставить по стратегии» used
+  // whatever ATR/уровни were already on screen even if the price had since moved on,
+  // computing a stop/take from stale data. It now force-refreshes first (see that
+  // button's handler below) instead of trusting a snapshot that might be minutes old.
+  // Returns the freshly computed `{indicators, patterns, marketContext, candles}` (or
+  // the cached one, or null) so a caller can use it directly — reading `taState.data`
+  // right after calling this would still see the OLD value, since setState doesn't
+  // apply mid-function.
+  const loadAnalysis = async (silent = false, force = false) => {
+    if (!form.ticker) { if (!silent) toast.error('Введите тикер'); return null; }
     const key = analysisKey;
-    if (loadedAnalysisKeyRef.current === key && taState.data && !taState.loading) {
+    if (!force && loadedAnalysisKeyRef.current === key && taState.data && !taState.loading) {
       // Already have exactly this — a manual click just opens/scrolls to it instead
       // of re-fetching and flashing "Загружаем свечи..." for data already on screen.
       if (!silent) setTaOpen(true);
-      return;
+      return taState.data;
+    }
+    // A DIFFERENT timeframe than what's currently in taState, but one already fetched
+    // earlier this session — instant from cache, no spinner, no network call.
+    if (!force && taCacheRef.current[key]) {
+      const cached = taCacheRef.current[key];
+      setTaState({ loading: false, data: cached, error: null });
+      loadedAnalysisKeyRef.current = key;
+      if (!silent) setTaOpen(true);
+      return cached;
     }
     if (!silent) { setTaOpen(true); setTaState({ loading: true, data: null, error: null }); }
     try {
@@ -461,12 +522,25 @@ export default function Calculator() {
       const patterns = computePatternsAtEntry(candles, now, { timeframeMinutes: TIMEFRAMES[taTimeframe]?.minutes });
       const marketContext = computeMarketContextAtEntry(candles, now);
       if (!indicators) throw new Error('Нет исторических свечей по этому тикеру');
-      setTaState({ loading: false, data: { indicators, patterns, marketContext, candles }, error: null });
+      const freshData = { indicators, patterns, marketContext, candles };
+      setTaState({ loading: false, data: freshData, error: null });
       setTaUpdatedAt(new Date());
       loadedAnalysisKeyRef.current = key;
+      taCacheRef.current[key] = freshData;
       diffFormingStatuses(patterns);
+      return freshData;
     } catch (e) {
-      if (!silent) setTaState({ loading: false, data: null, error: e.message || 'Не удалось загрузить данные' });
+      // Real bug caught live 2026-08-17: this used to only update taState on a NON-
+      // silent failure, leaving loading:true forever whenever a silent background
+      // fetch (e.g. the timeframe-switch prefetch below) threw — invisible before,
+      // because the panel used to close outright on timeframe change; now that it
+      // stays open and shows its own loading spinner in place (see the taTimeframe
+      // effect above), a silently-swallowed error left that spinner stuck spinning
+      // with no way out. Always clear the spinner; only the intrusive toast stays
+      // silent — the in-panel error text is fine to show since the trader IS looking
+      // at this panel right now if it's open.
+      setTaState({ loading: false, data: null, error: e.message || 'Не удалось загрузить данные' });
+      return null;
     }
   };
 
@@ -682,7 +756,7 @@ export default function Calculator() {
         <div style={{width:1, background:'var(--border-subtle)', margin:'0 4px'}}/>
 
         {/* Источник цены */}
-        {[['tinkoff','🏦 Тинькофф'],['moex','📡 MOEX']].map(([val, label]) => (
+        {[['tinkoff','🏦 Т-Инвестиции'],['moex','📡 MOEX']].map(([val, label]) => (
           <button key={val}
             className={val === priceSource ? 'btn btn-secondary' : 'btn btn-ghost'}
             style={{fontSize:13, border: val === priceSource ? '1px solid var(--accent-primary)' : undefined, color: val === priceSource ? 'var(--accent-primary)' : undefined}}
@@ -698,7 +772,7 @@ export default function Calculator() {
 
       {priceSource === 'moex' && (
         <div style={{background:'rgba(245,158,11,0.1)',border:'1px solid rgba(245,158,11,0.3)',borderRadius:10,padding:'8px 14px',marginBottom:16,fontSize:12,color:'var(--gold)'}}>
-          ⚠️ MOEX: данные с задержкой ~15 минут. Работает без токена Тинькофф. Для фьючерсов ГО и шаг цены подтягиваются автоматически (если контракт сейчас торгуется), иначе — вводятся вручную.
+          ⚠️ MOEX: данные с задержкой ~15 минут. Работает без токена Т-Инвестиций. Для фьючерсов ГО и шаг цены подтягиваются автоматически (если контракт сейчас торгуется), иначе — вводятся вручную.
         </div>
       )}
 
@@ -888,15 +962,25 @@ export default function Calculator() {
                 silently skipped. */}
             {activeStrategy?.exitRules && form.entryPrice && activeDirection && (
               <div style={{marginBottom:16}}>
-                <button type="button" className="btn btn-secondary btn-sm" onClick={() => {
+                <button type="button" className="btn btn-secondary btn-sm" disabled={taState.loading} onClick={async () => {
                   const entry = parseFloat(form.entryPrice);
                   const rules = activeStrategy.exitRules;
                   const needsLiveData = rules.stopType === 'atr' || rules.takeType === 'atr' || rules.stopType === 'level' || rules.takeType === 'level';
-                  if (needsLiveData && !taState.data) {
-                    toast.error('Сначала загрузите «Технический анализ по тикеру» — ATR и уровни считаются оттуда');
-                    return;
+                  // Real user report 2026-08-17: this used to trust whatever ATR/уровни
+                  // were already sitting in taState.data, even if the trader had been
+                  // looking at this window for a while and the price had since moved —
+                  // stop/take got computed from a stale snapshot. Force a fresh fetch
+                  // right before computing (silent — no need to reopen/scroll the panel
+                  // just because this button was clicked) instead of trusting old data.
+                  let liveData = taState.data;
+                  if (needsLiveData) {
+                    liveData = await loadAnalysis(true, true);
+                    if (!liveData) {
+                      toast.error('Не удалось обновить технический анализ — ATR и уровни считаются оттуда');
+                      return;
+                    }
                   }
-                  const priceCtx = { atr: taState.data?.indicators?.atr14 ?? null, patterns: taState.data?.patterns ?? null };
+                  const priceCtx = { atr: liveData?.indicators?.atr14 ?? null, patterns: liveData?.patterns ?? null };
                   const stopPrice = computeStopPrice(activeDirection, entry, rules, priceCtx);
                   const takePrice = computeTakePrice(activeDirection, entry, rules, priceCtx);
                   const notes = [];
@@ -995,15 +1079,27 @@ export default function Calculator() {
                   </div>
                 </div>
 
-                {/* RR */}
-                <div className={`calc-metric-card ${!displayResult.rrValid && displayResult.rr !== 0 ? 'red' : displayResult.rr >= 2 ? 'green' : displayResult.rr >= 1 ? 'gold' : 'red'}`}>
-                  <div className="calc-metric-label">РИСК / ПРИБЫЛЬ</div>
-                  <div style={{fontSize:28,fontWeight:800,color:rrColor}}>{displayResult.rr > 0 ? `1:${formatNumber(displayResult.rr, 1)}` : '—'}</div>
-                  {!displayResult.rrValid && displayResult.rr !== 0 ? <div style={{fontSize:11,color:'var(--red)'}}>⚠️ TP не там!</div>
-                    : displayResult.rr >= 2 ? <div style={{fontSize:11,color:'var(--green)'}}>✅ Отличный</div>
-                    : displayResult.rr >= 1 ? <div style={{fontSize:11,color:'var(--gold)'}}>🟡 Приемлемый</div>
-                    : null}
-                </div>
+                {/* RR — real user report 2026-08-17: the badge could show "2.0" (the
+                    displayed value, rounded to 1 decimal) in yellow "Приемлемый"
+                    instead of green "Отличный", because the color threshold compared
+                    against the RAW 2-decimal rr (e.g. 1.97 displays as "2.0" but fails
+                    a >=2 check). Round to the SAME precision as what's on screen
+                    before comparing, so the badge always agrees with the number next
+                    to it. */}
+                {(() => {
+                  const rrDisplay = Math.round((displayResult.rr || 0) * 10) / 10;
+                  const cls = !displayResult.rrValid && displayResult.rr !== 0 ? 'red' : rrDisplay >= 2 ? 'green' : rrDisplay >= 1 ? 'gold' : 'red';
+                  return (
+                    <div className={`calc-metric-card ${cls}`}>
+                      <div className="calc-metric-label">РИСК / ПРИБЫЛЬ</div>
+                      <div style={{fontSize:28,fontWeight:800,color:rrColor}}>{displayResult.rr > 0 ? `1:${formatNumber(displayResult.rr, 1)}` : '—'}</div>
+                      {!displayResult.rrValid && displayResult.rr !== 0 ? <div style={{fontSize:11,color:'var(--red)'}}>⚠️ TP не там!</div>
+                        : rrDisplay >= 2 ? <div style={{fontSize:11,color:'var(--green)'}}>✅ Отличный</div>
+                        : rrDisplay >= 1 ? <div style={{fontSize:11,color:'var(--gold)'}}>🟡 Приемлемый</div>
+                        : null}
+                    </div>
+                  );
+                })()}
 
                 {/* ГО */}
                 <div className={`calc-metric-card ${(displayResult.marginUsagePercent||0) > (displayResult.maxMarginPercent||30) ? 'red' : 'blue'}`}>
@@ -1101,8 +1197,13 @@ export default function Calculator() {
 
               {/* Прогресс-бар — last card in the column, flex:1 so it (not empty page
                   space below it) absorbs any extra height the taller input form on the
-                  left forces onto this stretched grid row. */}
-              <div className="card" style={{flex:1, display:'flex', flexDirection:'column', justifyContent:'center'}}>
+                  left forces onto this stretched grid row. justifyContent:'flex-start'
+                  (not 'center' — real user report 2026-08-17): centering short content
+                  inside a tall stretched card left equally large gaps ABOVE and BELOW
+                  it, which read as broken/off — flush-top matches every other card in
+                  this column (title starts right at the top), leftover height just
+                  becomes one gap at the bottom instead of two split gaps. */}
+              <div className="card" style={{flex:1, display:'flex', flexDirection:'column', justifyContent:'flex-start'}}>
                 <div className="section-title"><div className="section-title-icon">⚡</div>Использование капитала</div>
                 <div className="risk-gauge-bar">
                   <div className="risk-gauge-fill" style={{width:`${Math.min(displayResult.marginUsagePercent||0,100)}%`,background:(displayResult.marginUsagePercent||0)>50?'linear-gradient(90deg,#f59e0b,#ef4444)':(displayResult.marginUsagePercent||0)>25?'linear-gradient(90deg,#4f46e5,#f59e0b)':'linear-gradient(90deg,#4f46e5,#10b981)'}}/>

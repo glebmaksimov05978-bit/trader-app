@@ -10,12 +10,40 @@
 // Admin-only tool for now (see AdminRoute in App.js) — this is the "internal instrument"
 // phase agreed with the trader: prove the numbers are honest on real history before any
 // client ever sees a backtest result.
-import { computeIndicatorsAtEntry } from '../analytics/indicators';
+import { computeIndicatorsAtEntry, sma } from '../analytics/indicators';
 import { computePatternsAtEntry } from '../analytics/patterns';
 import { computeMarketContextAtEntry } from '../analytics/marketContext';
 import { evaluateStrategy } from '../analytics/strategy';
-import { computeStopPrice, computeTakePrice, resolveTrailGiveBackPct, resolveTrailMinPeakPct } from '../analytics/exitRules';
+import { computeStopPrice, computeTakePrice, resolveTrailGiveBackPct, resolveTrailMinPeakPct, resolveTrailAdverseThresholdPct, isConfirmedReversal, profitCaptureScore } from '../analytics/exitRules';
 import { calcTrade } from '../../utils/calculator';
+
+// Market-regime filter (2026-08-17): the single strongest, most universal finding of the
+// 2026-08-13/17 session — block new LONG entries while the index itself (IMOEXF, D1) is
+// below its own SMA50 (i.e. the whole market is in a downtrend). Validated in
+// scripts/marketRegimeTest.mjs / trailAdverseSweep2.mjs: portfolio -8.0% -> +14.9% on the
+// base trail, and it held up on two OTHER strategies with no pattern logic at all
+// (scripts/multiStrategyUniversality.mjs) — this isn't specific to one entry signal, it
+// catches "the whole market is falling" regardless of what triggered this particular
+// trade. Shorts are never touched (the finding only ever applied to longs).
+// `indexCandles` is always the D1 index series regardless of the traded instrument's own
+// timeframe — SMA50-on-D1 is the "regime", not something that needs recalculating per
+// intraday bar.
+export function buildMarketRegimeFilter(indexCandles) {
+  if (!indexCandles || indexCandles.length < 50) return null;
+  const closes = indexCandles.map((c) => c.close);
+  const sma50 = sma(closes, 50);
+  const dates = indexCandles.map((c) => new Date(c.date).getTime());
+  return function isBelowSma50(date) {
+    const t = new Date(date).getTime();
+    let idx = -1;
+    // dates are in ascending order — linear scan is fine at D1 series lengths (~1-2k bars)
+    for (let i = 0; i < dates.length; i++) {
+      if (dates[i] <= t) idx = i; else break;
+    }
+    if (idx < 0 || sma50[idx] == null) return null; // not enough index history yet — don't filter
+    return closes[idx] < sma50[idx];
+  };
+}
 
 // Real position sizing (optional — see runBacktest's `riskSizing` param). Reuses the
 // EXACT same math the Calculator uses for a real trade (real user request: "зачем ты
@@ -91,17 +119,64 @@ function checkIntrabarExit(position, bar) {
 // it. Deliberately evaluated on the bar's CLOSE, not its low/high: an intrabar wick
 // dipping below the give-back line is exactly the noise this exit exists to survive, so
 // exiting on it would reintroduce the very problem a fixed stop has.
-function updateTrailAndCheckExit(position, bar) {
+// Profit-capture score, see exitRules.js profitCaptureScore for the calibration/rationale
+// — trader's idea 2026-08-16: the symmetric counterpart to the reversal signal, replacing
+// the blunt "give back 50% of peak" rule with a scored read of "is this move actually
+// topping out" once the trail has armed. Revised 2026-08-17 after a wider 27-feature
+// search (ADX + EMA13 + Bollinger10, threshold 4) beat both the blunt rule and the
+// original 12-feature version in every market-regime segment tested — see exitRules.js.
+function computeProfitCaptureScore(position, bar, candles, i, closeReturnPct) {
+  const dirSign = position.direction === 'long' ? 1 : -1;
+  const ind = computeIndicatorsAtEntry(candles, bar.date);
+  if (!ind) return null;
+  const barsSinceArm = i - position.armIndex;
+  const bollinger10PercentB = ind.bollinger10?.percentB != null
+    ? (dirSign === 1 ? ind.bollinger10.percentB : 1 - ind.bollinger10.percentB)
+    : null;
+  return profitCaptureScore(dirSign, {
+    currentRsi14: ind.rsi14, currentFavorablePct: closeReturnPct,
+    bollinger10PercentB, ema13DistancePct: ind.ema13Distance != null ? ind.ema13Distance * dirSign : null,
+    volumeRatio: ind.volumeRatio, barsSinceArm, adx14: ind.adx14,
+  });
+}
+
+function updateTrailAndCheckExit(position, bar, candles, i) {
   const { direction, entryPrice } = position;
+  const wasArmed = (position.peakFavorablePct ?? 0) >= position.trailMinPeakPct;
   const favorableHigh = direction === 'long'
     ? ((bar.high - entryPrice) / entryPrice) * 100
     : ((entryPrice - bar.low) / entryPrice) * 100;
   position.peakFavorablePct = Math.max(position.peakFavorablePct ?? 0, favorableHigh);
-  if (position.peakFavorablePct < position.trailMinPeakPct) return null;
 
   const closeReturnPct = direction === 'long'
     ? ((bar.close - entryPrice) / entryPrice) * 100
     : ((entryPrice - bar.close) / entryPrice) * 100;
+
+  // Symmetric adverse-side check (see exitRules.js resolveTrailAdverseThresholdPct for the
+  // full rationale) — evaluated on the bar's CLOSE, same discipline as the favorable side
+  // below, so an intrabar wick doesn't trip it. Checked before the favorable branch: a
+  // trade can only be adverse or favorable on a given bar, never both.
+  if (position.trailAdverseEnabled && position.trailAdverseThresholdPct != null
+    && -closeReturnPct >= position.trailAdverseThresholdPct) {
+    return { price: bar.close, reason: 'trail_adverse' };
+  }
+
+  if (position.peakFavorablePct < position.trailMinPeakPct) return null;
+
+  // First bar the trail arms (peak just crossed the noise threshold) — barsSinceArm below
+  // is measured from here, same "arm point" the calibration used.
+  if (!wasArmed) {
+    position.armIndex = i;
+  }
+
+  if (position.profitCaptureEnabled && closeReturnPct > 0) {
+    const score = computeProfitCaptureScore(position, bar, candles, i, closeReturnPct);
+    if (score != null && score >= position.profitCaptureThreshold) {
+      return { price: bar.close, reason: 'profit_score' };
+    }
+    return null; // profit capture replaces the blunt give-back rule entirely when enabled
+  }
+
   const keepFraction = 1 - position.trailGiveBackPct / 100;
   if (closeReturnPct <= position.peakFavorablePct * keepFraction) {
     return { price: bar.close, reason: 'trail' };
@@ -181,6 +256,7 @@ export function runBacktest({
   exitRules = null, // defaults to strategy.exitRules if not given an explicit override
   warmupBars = DEFAULT_WARMUP_BARS,
   riskSizing = null,
+  marketRegimeFilter = null, // (date) => true|false|null — see buildMarketRegimeFilter
 }) {
   const { strategy: backtestStrategy, hadCustom } = stripCustomConditions(strategy);
   const threshold = backtestStrategy.readinessThreshold ?? 60;
@@ -206,10 +282,32 @@ export function runBacktest({
         continue;
       }
 
+      // Post-entry indicator dynamics ("откат vs разворот", trader's idea 2026-08-14,
+      // validated on D1+H1 holdout — see exitRules.js isConfirmedReversal). Checked before
+      // the blunt trailAdverse fallback so it can fire EARLIER when the strongest
+      // confirmed combo (RSI dropped sharply + price below EMA100/200) is already present,
+      // rather than waiting for the cruder ×3 threshold. Gated on the same noise-unit
+      // (`trailMinPeakPct`) used to arm the favorable trail — matches exactly how the
+      // calibration script measured it (only evaluated once genuine noise is exceeded).
+      if (position.signalExitEnabled) {
+        const closeReturnPct = position.direction === 'long'
+          ? ((bar.close - position.entryPrice) / position.entryPrice) * 100
+          : ((position.entryPrice - bar.close) / position.entryPrice) * 100;
+        if (-closeReturnPct >= position.trailMinPeakPct) {
+          const nowIndicators = computeIndicatorsAtEntry(candles, bar.date);
+          const dirSign = position.direction === 'long' ? 1 : -1;
+          if (isConfirmedReversal(dirSign, position.entryRsi14, nowIndicators?.rsi14, nowIndicators?.ema100Distance, nowIndicators?.ema200Distance)) {
+            trades.push(finalizeTrade(position, i, bar.date, bar.close, 'signal_reversal'));
+            position = null;
+            continue;
+          }
+        }
+      }
+
       // Checked AFTER stop/take so a hard stop still wins on the same bar — the trail is
       // meant to bank a fading move, never to override the trader's own risk limit.
       if (position.trailEnabled) {
-        const trailExit = updateTrailAndCheckExit(position, bar);
+        const trailExit = updateTrailAndCheckExit(position, bar, candles, i);
         if (trailExit) {
           trades.push(finalizeTrade(position, i, bar.date, trailExit.price, trailExit.reason));
           position = null;
@@ -246,7 +344,8 @@ export function runBacktest({
 
     const long = readinessPercent(backtestStrategy, { ...baseCtx, direction: 'long' });
     const short = readinessPercent(backtestStrategy, { ...baseCtx, direction: 'short' });
-    const qualifiesLong = long.total > 0 && long.pct >= threshold;
+    const marketBearish = marketRegimeFilter ? marketRegimeFilter(bar.date) === true : false;
+    const qualifiesLong = long.total > 0 && long.pct >= threshold && !marketBearish;
     const qualifiesShort = short.total > 0 && short.pct >= threshold;
 
     let direction = null, entryPercent = null;
@@ -273,11 +372,18 @@ export function runBacktest({
     position = {
       direction, entryIndex: i + 1, entryDate: nextBar.date, entryPrice, entryPercent,
       stopPrice, takePrice, barsHeld: 0,
+      signalExitEnabled: !!rules.signalExitEnabled,
+      entryRsi14: baseCtx.indicators.rsi14 ?? null,
       sizing: sizePosition(entryPrice, stopPrice, riskSizing),
       trailEnabled: !!rules.trailEnabled,
       trailGiveBackPct: resolveTrailGiveBackPct(rules, drivingPattern),
       trailMinPeakPct: resolveTrailMinPeakPct(rules, entryPrice, priceCtx.atr),
       peakFavorablePct: 0,
+      trailAdverseEnabled: !!rules.trailEnabled && rules.trailAdverseEnabled !== false,
+      trailAdverseThresholdPct: resolveTrailAdverseThresholdPct(rules, entryPrice, priceCtx.atr),
+      profitCaptureEnabled: !!rules.profitCaptureEnabled,
+      profitCaptureThreshold: rules.profitCaptureThreshold ?? 2,
+      armIndex: null,
     };
   }
 

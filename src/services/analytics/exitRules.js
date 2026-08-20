@@ -95,6 +95,22 @@ export function defaultExitRules() {
     trailMinPeakAtrMult: DEFAULT_TRAIL_MIN_PEAK_ATR_MULT,      // "at least half an ATR of favorable move before tracking give-back"
     trailMinPeakPct: 1,   // used only when trailMinPeakMode === 'pct', or as ATR fallback when ATR isn't available yet
     trailPerPattern: false,
+    // On by default whenever trailEnabled is — the "hangs open forever, invisible to
+    // stats" bug is a correctness issue, not an optional style choice. Kept togglable for
+    // a trader who explicitly wants the old one-sided behaviour (e.g. always exits via a
+    // real stop instead, so this would never fire anyway).
+    trailAdverseEnabled: true,
+    trailAdverseMult: DEFAULT_TRAIL_ADVERSE_MULT,
+    // Opt-in like the other trail features — new, only wired in 2026-08-14, not yet
+    // proven to be PROFITABLE (only proven to correctly predict recovery vs reversal;
+    // see HANDOFF_NEXT_SESSION.md for the honesty caveat). Off by default until a money
+    // backtest confirms it's worth the added complexity for every existing strategy.
+    signalExitEnabled: false,
+    // Opt-in like the other trail refinements — validated to beat the blunt "give back 50%
+    // of peak" rule (portfolio +18.4% -> +23.7% in the 2026-08-16 backtest), but new and
+    // not yet live-tested in the browser. Off by default until that happens.
+    profitCaptureEnabled: false,
+    profitCaptureThreshold: DEFAULT_PROFIT_CAPTURE_SCORE_THRESHOLD,
   };
 }
 
@@ -108,6 +124,128 @@ export function resolveTrailMinPeakPct(exitRules, entryPrice, atr) {
     return (atr * mult / entryPrice) * 100;
   }
   return exitRules?.trailMinPeakPct ?? 1;
+}
+
+// --- Symmetric adverse-side exit -------------------------------------------------------
+//
+// Real bug found live-testing (2026-08-13): the trail above only fires on a give-back
+// from a FAVORABLE peak. A position that moves against entry right away and never comes
+// back has no favorable peak to give back from — the trail has nothing to track, so the
+// position just sits open until history runs out (status:'open'/exitReason:'end_of_data'),
+// invisible to win-rate/return stats (calcStats only counts realized P&L) even though the
+// trader can see it marked-to-market at -15%/-18%/-30% in the trade list. This is WHY
+// adding a plain % stop (tested 10/15/20/30%) made results measurably worse rather than
+// better: it wasn't "saving" bad trades, it was churning — closing a trade early frees the
+// single position slot for another (often lower-quality) entry sooner, so trade count
+// exploded (920 vs 239 on the same tickers) while quality dropped. A blanket % stop reacts
+// to ordinary entry noise the same as a real trend against the position; it can't tell them
+// apart.
+//
+// This mirrors the favorable side's OWN noise filter instead: the same ATR-scaled unit
+// that arms the favorable trail (resolveTrailMinPeakPct) is reused here, multiplied by
+// `trailAdverseMult` — so a move has to be several ATR units deep AND still un-recovered
+// on a bar's CLOSE (not a wick) before this counts as "confirmed trend against us," not
+// noise. That's the same bar-close discipline the favorable trail already uses.
+// 2.0, не 3.0 (проверено 2026-08-16): ×3 было поставлено на глаз при первом внедрении, и
+// оказалось, что именно оно ЗАДАЁТ размер среднего убытка — типичный ATR ≈2.5% цены, ×3 =
+// 7.5%, и средний убыток на прогоне вышел ровно −7.56%. Из-за этого получался перекос:
+// прибыль фиксировалась рано (отдали 50% пика → +3.4%), а убыток отпускался вдвое дальше.
+// Прогон 21 тикера поверх фильтра рынка (scripts/adverseMultRetest.mjs):
+//   ×3   → выигрыш +2.61% / убыток −5.22% (RR 0.50), портфель +14.9%, просадка 4.0%
+//   ×2   → выигрыш +2.51% / убыток −4.18% (RR 0.60), портфель +18.4%, просадка 4.3%
+//   ×1.5 → выигрыш +2.45% / убыток −3.67% (RR 0.67), портфель +18.6%, просадка 3.2%
+// Узкий порог режет почти только плохое: выигрыш просел на 0.16 п.п., убыток — на 1.55.
+// Взят ×2, а не крайний ×1.5 — результат практически тот же при большем запасе прочности
+// (×1.5 ближе к обычному рыночному шуму, риск ложных срабатываний на тихих инструментах).
+export const DEFAULT_TRAIL_ADVERSE_MULT = 2;
+
+export function resolveTrailAdverseThresholdPct(exitRules, entryPrice, atr) {
+  const minPeakPct = resolveTrailMinPeakPct(exitRules, entryPrice, atr);
+  const mult = exitRules?.trailAdverseMult ?? DEFAULT_TRAIL_ADVERSE_MULT;
+  return minPeakPct * mult;
+}
+
+// --- Post-entry indicator dynamics ("откат vs разворот") -------------------------------
+//
+// Trader's own idea (2026-08-14), validated on real holdout data (D1: 4733 cases, H1:
+// 33717 cases — see HANDOFF_NEXT_SESSION.md "НАСТОЯЩАЯ НАХОДКА"): the CHANGE in RSI from
+// entry to the moment price first crosses the adverse noise threshold — not RSI's value at
+// entry, which every earlier calibration this session already showed doesn't predict
+// anything — combined with which side of EMA100/200 price is on, splits what happens next
+// far better than chance:
+//   RSI dropped sharply (>=10 points against us) + price below EMA100 (or EMA200)
+//     -> only ~18-24% of these recovered; ~76-82% kept going against the position.
+//     This is the single strongest, most-confirmed combo (survived the D1 AND H1 holdout
+//     checks with the biggest, most stable margin of everything tested).
+// Only this one combo is wired in — several others (RSI unchanged + various pairings) also
+// validated as PULLBACK signals, but they're weaker/noisier and not used to override
+// anything yet; this exit only ever fires EARLY (before the blunt trailAdverseMult
+// fallback), never suppresses the existing safety net.
+export function isConfirmedReversal(direction, entryRsi14, currentRsi14, currentEma100Distance, currentEma200Distance) {
+  if (entryRsi14 == null || currentRsi14 == null) return false;
+  const rsiChange = (currentRsi14 - entryRsi14) * direction;
+  if (rsiChange > -10) return false;
+  const belowEma100 = currentEma100Distance != null && currentEma100Distance * direction < 0;
+  const belowEma200 = currentEma200Distance != null && currentEma200Distance * direction < 0;
+  return belowEma100 || belowEma200;
+}
+
+// --- Profit-capture score ("движение выдыхается, пора фиксировать") --------------------
+//
+// Trader's idea (2026-08-16): the symmetric problem to isConfirmedReversal above — instead
+// of detecting "this loss is real, cut it," detect "this gain is topping out, bank it,"
+// rather than the blunt "give back 50% of whatever the peak was" rule the trail uses by
+// default. Validated on real holdout data: 81385 labeled points on winning trades (was the
+// remaining move to the trade's ACTUAL eventual peak small (<20% of what's already banked,
+// "near_top") or large (>50% more, "still_running")?), 11 of 12 tested features confirmed.
+// See HANDOFF_NEXT_SESSION.md "профит-капчур" section for the full calibration and the
+// money backtest (portfolio return +18.4% -> +23.7% swapping the blunt give-back rule for
+// this score at threshold >=2, on top of the market-regime filter + the tightened
+// trailAdverseMult=2 safety net).
+//
+// Each signal is +1 ("bank now") or -1 ("still room") — simple integer weights, same
+// discipline as isConfirmedReversal: only features with a validated >=4pp effect on
+// holdout are included, nothing hand-tuned beyond the sign and the >=4pp cutoff.
+// Updated 2026-08-17 after a wider feature search (27 candidates vs the original 12) with
+// full 2/3-way combo search, requested by the trader after asking "did you check every
+// indicator or just the ones you picked?" — honest answer at the time was "just picked",
+// so this reran it properly. Money-tested (scripts/profitScoreComparisonMatrix.mjs, 21
+// tickers, holdout, segmented by market regime) against both the blunt give-back rule and
+// the original 12-feature score:
+//   blunt give-back:          all +19.4% | trending +13.0% | ranging +15.2%
+//   original 12-feature (>=2): all +25.3% | trending +12.1% | ranging  +11.2% (WORSE than blunt in ranging markets!)
+//   this version (>=4):        all +29.1% | trending +17.0% | ranging  +14.3%
+// The old score's weakness in ranging markets only showed up once results were segmented
+// by regime — the aggregate number alone hid it. This version adds ADX (trend strength)
+// and swaps EMA9->EMA13, Bollinger(20)->Bollinger(10), raises thresholds (5%->8% profit,
+// 10->15 bars) based on what the full search actually found working, not hand-picked guesses.
+export const DEFAULT_PROFIT_CAPTURE_SCORE_THRESHOLD = 4;
+
+/**
+ * @param {number} direction ±1 (long/short)
+ * @param {object} ctx
+ * @param {number} ctx.currentRsi14
+ * @param {number} ctx.currentFavorablePct - current close-based return, % of entry
+ * @param {number|null} ctx.bollinger10PercentB - direction-adjusted percentB of the 10-period band
+ * @param {number|null} ctx.ema13DistancePct - signed, direction-adjusted (positive = extended in our favor)
+ * @param {number|null} ctx.volumeRatio - current bar volume / 20-bar average
+ * @param {number} ctx.barsSinceArm
+ * @param {number|null} ctx.adx14 - 0-100, low = weak/no trend (choppy/ranging), validated to
+ *   amplify the RSI-extreme signal specifically (see full-search combos in HANDOFF)
+ */
+export function profitCaptureScore(direction, ctx) {
+  let score = 0;
+  const rsiExtreme = direction === 1 ? ctx.currentRsi14 > 70 : ctx.currentRsi14 < 30;
+  if (rsiExtreme) score += 1;
+  if (ctx.ema13DistancePct != null && ctx.ema13DistancePct > 4) score += 1;
+  if (ctx.currentFavorablePct > 8) score += 1;
+  if (ctx.bollinger10PercentB != null && ctx.bollinger10PercentB > 0.85) score += 1;
+  if (ctx.barsSinceArm >= 15) score += 1;
+  if (ctx.adx14 != null && ctx.adx14 < 15) score += 1;
+  if (ctx.volumeRatio != null && ctx.volumeRatio > 1.8) score += 1;
+  if (ctx.barsSinceArm <= 2) score -= 1;
+
+  return score;
 }
 
 // Whether the stop/take side sits BELOW or ABOVE entry, expressed as ±1 — a stop and a

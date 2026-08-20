@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, calcStats, computeLiveBalance } from '../../services/trades';
-import { formatCurrency, formatNumber, calcTrade } from '../../utils/calculator';
+import { formatCurrency, formatNumber } from '../../utils/calculator';
 import { CONDITION_CATALOG, defaultStrategy, getStrategies, STRATEGY_TEMPLATES, CUSTOM_CONDITION_PRESETS } from '../../services/analytics/strategy';
 import { PATTERN_LABELS, PATTERN_DIRECTIONS } from '../shared/TechnicalAnalysisBlock';
 import ExitRulesEditor from '../shared/ExitRulesEditor';
@@ -243,18 +243,6 @@ export default function Capital() {
   const maxDailyLoss = parseFloat(settings.dailyLossLimit) || 3;
   const maxTradesPerRisk = Math.floor(maxDailyLoss / riskPct);
 
-  // Calc max contracts for given params
-  const contractCalc = calcTrade({
-    entryPrice: settings.entryPrice,
-    stopLoss: settings.stopLoss,
-    depositSize: settings.depositSize,
-    riskPercent: settings.maxRiskPerTrade,
-    lot: settings.lot,
-    minStep: settings.minStep,
-    minStepAmount: settings.minStepAmount,
-    initialMargin: settings.initialMargin,
-  });
-
   // Current day PnL from journal
   const today = new Date().toDateString();
   const todayTrades = trades.filter(t => {
@@ -329,8 +317,13 @@ export default function Capital() {
       <div className="grid-2">
         {/* Limits gauges */}
         <div className="flex flex-col gap-4" style={{height:'100%'}}>
-          {/* Daily loss gauge */}
-          <div className="card">
+          {/* Daily loss gauge — flex:1 so it alone fills the column height now that the
+              contracts calculator card below was removed (dead weight: never used
+              anywhere else, fully duplicated the same риск% calc already in Калькулятор,
+              see real user report 2026-08-17 — was already flagged confusing once
+              before, adding an explanation didn't fix it because the panel itself was
+              the problem, not unclear copy). */}
+          <div className="card" style={{flex:1}}>
             <div className="section-title">
               <div className="section-title-icon">📉</div>
               Дневной лимит убытка
@@ -366,79 +359,6 @@ export default function Capital() {
             </div>
           </div>
 
-          {/* Max contracts calculator — flex:1 so it (not the shorter daily-loss card
-              above it) absorbs any extra height from the taller settings column. */}
-          <div className="card" style={{flex:1, display:'flex', flexDirection:'column'}}>
-            <div className="section-title">
-              <div className="section-title-icon">🔢</div>
-              Сколько контрактов торговать?
-            </div>
-            {/* Real user report: "не понимаю для чего эта модальное окно, что она
-                регулирует". Clarifying what makes this different from the full
-                Calculator — nothing is "regulated" here, it's a read-only sanity check
-                against the risk settings saved in the card to the right. */}
-            <p className="text-xs text-muted" style={{marginBottom:12}}>
-              Быстрая прикидка по риску из настроек справа — без тикера и Тейк-профита,
-              просто «сколько контрактов позволяет мой риск при этой цене входа и стопе».
-              Полный расчёт сделки (с тикером, планом и сохранением в журнал) — в Калькуляторе.
-            </p>
-            <div className="grid-2" style={{marginBottom:12}}>
-              <div className="input-group">
-                <label className="input-label">Цена входа</label>
-                <input className="input" type="number" value={settings.entryPrice}
-                  onChange={e => set('entryPrice', e.target.value)} placeholder="0"/>
-              </div>
-              <div className="input-group">
-                <label className="input-label">Стоп-лосс</label>
-                <input className="input" type="number" value={settings.stopLoss}
-                  onChange={e => set('stopLoss', e.target.value)} placeholder="0"/>
-              </div>
-              <div className="input-group">
-                <label className="input-label">Шаг цены</label>
-                <input className="input" type="number" value={settings.minStep}
-                  onChange={e => set('minStep', e.target.value)} placeholder="1"/>
-              </div>
-              <div className="input-group">
-                <label className="input-label">Стоим. шага (₽)</label>
-                <input className="input" type="number" value={settings.minStepAmount}
-                  onChange={e => set('minStepAmount', e.target.value)} placeholder="0"/>
-              </div>
-              <div className="input-group">
-                <label className="input-label">ГО (₽ / контракт)</label>
-                <input className="input" type="number" value={settings.initialMargin}
-                  onChange={e => set('initialMargin', e.target.value)} placeholder="0"/>
-              </div>
-              <div className="input-group">
-                <label className="input-label">Лот</label>
-                <input className="input" type="number" value={settings.lot}
-                  onChange={e => set('lot', e.target.value)} placeholder="1"/>
-              </div>
-            </div>
-
-            {contractCalc ? (
-              <div className="capital-result-box">
-                <div className="capital-result-main">
-                  <span className="capital-result-num">{contractCalc.contracts}</span>
-                  <span className="capital-result-label">контрактов</span>
-                </div>
-                <div className="grid-2" style={{width:'100%'}}>
-                  <div className="stat-row"><span className="stat-row-label">Риск (₽)</span>
-                    <span className="stat-row-value text-red">{formatCurrency(contractCalc.riskAmount)}</span></div>
-                  <div className="stat-row"><span className="stat-row-label">ГО (₽)</span>
-                    <span className="stat-row-value">{formatCurrency(contractCalc.totalMargin)}</span></div>
-                  <div className="stat-row"><span className="stat-row-label">Тиков до SL</span>
-                    <span className="stat-row-value">{contractCalc.ticksToSL}</span></div>
-                  <div className="stat-row"><span className="stat-row-label">Загрузка деп.</span>
-                    <span className="stat-row-value" style={{color: contractCalc.marginUsagePercent > 50 ? 'var(--red)' : 'var(--text-primary)'}}>
-                      {contractCalc.marginUsagePercent}%</span></div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-muted text-sm" style={{flex:1, display:'flex', alignItems:'center', justifyContent:'center', padding:'12px 0'}}>
-                Заполните цену входа и стоп-лосс
-              </div>
-            )}
-          </div>
         </div>
 
         {/* Settings */}

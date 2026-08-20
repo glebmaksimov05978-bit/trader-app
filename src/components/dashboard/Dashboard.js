@@ -26,7 +26,10 @@ const INSTRUMENT_LABELS = { stock: 'Акции', future: 'Фьючерсы', cur
 // still exists, it just opens a small shared modal now instead of flipping the card.
 function KpiCard({ className, front, onInfo }) {
   return (
-    <div className={`kpi-card ${className || ''}`} style={{position:'relative'}}>
+    <div className={`kpi-card ${className || ''}`} style={{position:'relative', cursor:'pointer'}}
+      onClick={onInfo} role="button" tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onInfo(); } }}
+    >
       <button
         className="kpi-info-badge"
         style={{border:'none', cursor:'pointer'}}
@@ -104,6 +107,17 @@ export default function Dashboard() {
   };
 
   const deposit = userProfile?.depositSize ?? 0;
+  // Real user report (2026-08-17): the pre-anchor segment of the equity curve is
+  // BACKWARD-EXTRAPOLATED from the deposit figure typed into Капитал, not a verified
+  // historical fact (see buildEquityCurve's comment). Split into two dataKeys so the
+  // chart can draw it visibly differently (dashed/muted) instead of implying the trader
+  // definitely had that much money at that point in the past.
+  const hasEstimatedHistory = equity.some((p) => p.estimated);
+  const equityChartData = equity.map((p) => ({
+    ...p,
+    balanceEstimated: p.estimated ? p.balance : null,
+    balanceReal: (!p.estimated || p.boundary) ? p.balance : null,
+  }));
   const lastEquity = equity[equity.length - 1]?.balance || deposit;
   const pnlTotal = lastEquity - deposit;
   // Депозит может быть ещё не загружен (например, офлайн — не достучались до профиля в
@@ -248,21 +262,34 @@ export default function Dashboard() {
             Кривая капитала
           </div>
           {equity.length > 1 ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart data={equity} margin={{top:5, right:10, bottom:5, left:0}}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
-                <XAxis dataKey="date" tick={{fill:'var(--text-muted)', fontSize:11}} tickLine={false} />
-                <YAxis tick={{fill:'var(--text-muted)', fontSize:11}} tickLine={false} axisLine={false}
-                  tickFormatter={(v) => `${(v/1000).toFixed(1)}k`}
-                  domain={['auto', 'auto']} width={48} />
-                <Tooltip
-                  contentStyle={{background:'var(--bg-surface-3)', border:'1px solid var(--border-medium)', borderRadius:12, fontSize:12}}
-                  formatter={(v) => [formatCurrency(v), 'Баланс']}
-                />
-                <Line type="monotone" dataKey="balance" stroke="var(--accent-primary)" strokeWidth={2}
-                  dot={false} activeDot={{r:4, fill:'var(--accent-primary)'}} />
-              </LineChart>
-            </ResponsiveContainer>
+            <>
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={equityChartData} margin={{top:5, right:10, bottom:5, left:0}}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
+                  <XAxis dataKey="date" tick={{fill:'var(--text-muted)', fontSize:11}} tickLine={false} />
+                  <YAxis tick={{fill:'var(--text-muted)', fontSize:11}} tickLine={false} axisLine={false}
+                    tickFormatter={(v) => `${(v/1000).toFixed(1)}k`}
+                    domain={['auto', 'auto']} width={48} />
+                  <Tooltip
+                    contentStyle={{background:'var(--bg-surface-3)', border:'1px solid var(--border-medium)', borderRadius:12, fontSize:12}}
+                    formatter={(v, name) => v == null ? [] : [formatCurrency(v), name === 'balanceEstimated' ? 'Оценка (не факт)' : 'Баланс']}
+                  />
+                  {hasEstimatedHistory && (
+                    <Line type="monotone" dataKey="balanceEstimated" stroke="var(--text-muted)" strokeWidth={2}
+                      strokeDasharray="5 4" dot={false} activeDot={{r:4, fill:'var(--text-muted)'}} connectNulls={false} />
+                  )}
+                  <Line type="monotone" dataKey="balanceReal" stroke="var(--accent-primary)" strokeWidth={2}
+                    dot={false} activeDot={{r:4, fill:'var(--accent-primary)'}} connectNulls={false} />
+                </LineChart>
+              </ResponsiveContainer>
+              {hasEstimatedHistory && (
+                <div style={{fontSize:11, color:'var(--text-muted)', marginTop:6}}>
+                  Пунктир — оценка по сделкам ДО того, как вы в последний раз указали капитал в
+                  Капитале: расчёт назад от текущей суммы, а не подтверждённый факт из прошлого
+                  (не учитывает довнесения/снятия и всё, что не залогировано в Журнале).
+                </div>
+              )}
+            </>
           ) : (
             <div className="empty-state" style={{padding:'40px 20px'}}>
               <div className="empty-state-icon">📊</div>
@@ -405,7 +432,7 @@ export default function Dashboard() {
       <div className="card" style={{marginBottom: 24}}>
         <div className="section-title" style={{alignItems:'baseline'}}>
           <div className="section-title-icon">🎯</div>
-          3 привычки недели
+          Что стоит вам денег
           <span style={{fontWeight:400, fontSize:12, color:'var(--text-muted)', marginLeft:8}}>
             {windowUsed === '30d'
               ? `за последние ${windowDays} дней`

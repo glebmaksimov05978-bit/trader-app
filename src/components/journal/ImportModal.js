@@ -325,7 +325,7 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
                               ? <span style={{ color: t.pnl >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>
                                   {t.pnl >= 0 ? '+' : ''}{formatCurrency(Math.round(t.pnl))}
                                 </span>
-                              : t.pnlNeedsSpecs ? <span className="text-muted" title="Нет токена Тинькофф или спецификация недоступна">н/д</span> : '—'}
+                              : t.pnlNeedsSpecs ? <span className="text-muted" title="Нет токена Т-Инвестиций или спецификация недоступна">н/д</span> : '—'}
                           </td>
                           <td>
                             <span className={`badge ${STATUS_LABEL[c.status].cls}`}>{STATUS_LABEL[c.status].text}</span>

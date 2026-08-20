@@ -240,23 +240,39 @@ export function buildEquityCurve(trades, initialBalance = 100000, depositSetAt =
   const curve = [];
   if (pre.length) {
     // Walk backward from the anchor's known balance through pre-anchor trades to
-    // reconstruct what balance looked like historically, purely for the chart.
+    // reconstruct what balance looked like historically, purely for the chart. Real
+    // user report (2026-08-17): with a big gap between the imported trades and
+    // depositSetAt (a YEAR of untracked deposits/withdrawals in between is entirely
+    // plausible), this backward math quietly presents a made-up number as if it were
+    // fact — "у меня было 112000, хотя у меня их не было". The math itself is fine (it's
+    // just "what balance would have to have been, if literally nothing but these logged
+    // trades moved money"), the problem was presenting it with the same visual weight as
+    // the real, anchored number. `estimated: true` lets the chart mark this segment
+    // differently instead of pretending it's a verified historical fact.
     let bal = initialBalance;
     const preCurve = [];
     for (let i = pre.length - 1; i >= 0; i--) {
-      preCurve.unshift({ date: fmtCurveDate(pre[i]), balance: Math.round(bal), pnl: pre[i].pnl });
+      preCurve.unshift({ date: fmtCurveDate(pre[i]), balance: Math.round(bal), pnl: pre[i].pnl, estimated: true });
       bal -= pre[i].pnl;
     }
-    curve.push({ date: 'Start', balance: Math.round(bal) }, ...preCurve);
+    curve.push({ date: 'Start', balance: Math.round(bal), estimated: true }, ...preCurve);
   } else {
-    curve.push({ date: 'Start', balance: initialBalance });
+    curve.push({ date: 'Start', balance: initialBalance, estimated: false });
   }
 
   let balance = initialBalance;
   post.forEach((t) => {
     balance += t.pnl;
-    curve.push({ date: fmtCurveDate(t), balance: Math.round(balance), pnl: t.pnl });
+    curve.push({ date: fmtCurveDate(t), balance: Math.round(balance), pnl: t.pnl, estimated: false });
   });
+  // The last "estimated" point and the first "real" point are the same moment
+  // (depositSetAt) by construction — mark that boundary point as NOT estimated too, so
+  // a chart drawing two differently-styled line segments off `estimated` has a shared
+  // point to connect them at, instead of a visible gap.
+  if (pre.length) {
+    const boundaryIdx = curve.findIndex((p) => !p.estimated);
+    if (boundaryIdx > 0) curve[boundaryIdx - 1] = { ...curve[boundaryIdx - 1], boundary: true };
+  }
   return curve;
 }
 
