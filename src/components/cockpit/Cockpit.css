@@ -1,0 +1,184 @@
+/* src/components/cockpit/Cockpit.css
+   Строгая, плотная подача: тонкие линии, приглушённые акценты, моноширинные цифры.
+   Токены берутся из globals.css — вкладка живёт в той же системе, что остальное
+   приложение, но выглядит собраннее: меньше скруглений и свечений, больше воздуха
+   между смысловыми блоками. */
+
+.ck-wrap { padding: 4px 0 48px; }
+
+.ck-top { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
+.ck-title { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
+.ck-sub { color: var(--text-secondary); font-size: 13px; margin-top: 2px; }
+.ck-top-right { margin-left: auto; display: flex; gap: 8px; }
+
+.ck-btn {
+  padding: 8px 14px; border-radius: var(--radius-xs); border: 1px solid var(--border-medium);
+  background: transparent; color: var(--text-secondary); font-size: 12.5px; font-weight: 600;
+  cursor: pointer; transition: var(--transition); font-family: inherit; text-decoration: none;
+  display: inline-flex; align-items: center;
+}
+.ck-btn:hover { color: var(--text-primary); border-color: var(--accent-primary); }
+.ck-btn-primary { background: var(--accent-primary); border-color: transparent; color: #fff; }
+.ck-btn-primary:hover { background: var(--accent-secondary); color: #fff; }
+
+.ck-layout { display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .ck-layout { grid-template-columns: 1fr; } }
+
+.ck-panel {
+  background: var(--bg-surface); border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm); padding: 16px 18px;
+}
+.ck-main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.ck-loading, .ck-empty { color: var(--text-muted); font-size: 13px; padding: 24px 0; text-align: center; }
+.ck-error { border-color: rgba(239, 68, 68, 0.35); color: var(--red); font-size: 13px; }
+.ck-muted { color: var(--text-muted); }
+.ck-k { font-size: 10px; font-weight: 800; letter-spacing: 0.07em; text-transform: uppercase; color: var(--text-muted); }
+.ck-note { margin-top: 10px; font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+.up { color: var(--green); } .down { color: var(--red); } .gold { color: var(--gold); }
+
+/* пустое состояние */
+.ck-blank { max-width: 620px; }
+.ck-blank h2 { margin: 0 0 10px; font-size: 18px; }
+.ck-blank p { color: var(--text-secondary); font-size: 13.5px; line-height: 1.6; margin: 0 0 8px; }
+
+/* список позиций */
+.ck-list { padding: 10px 8px; }
+.ck-list-head {
+  padding: 4px 8px 10px; font-size: 10px; font-weight: 800; letter-spacing: 0.07em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.ck-pos {
+  display: block; width: 100%; text-align: left; padding: 10px 10px; border-radius: var(--radius-xs);
+  border: 1px solid transparent; background: transparent; cursor: pointer; color: inherit;
+  font-family: inherit; transition: var(--transition); position: relative;
+}
+.ck-pos:hover { background: var(--bg-surface-2); }
+.ck-pos.on { background: var(--bg-surface-2); border-color: rgba(79, 70, 229, 0.4); }
+.ck-pos.on::after {
+  content: ''; position: absolute; left: 0; top: 12px; width: 2px; height: 28px;
+  border-radius: 0 2px 2px 0; background: var(--accent-primary);
+}
+.ck-pos-row { display: flex; align-items: center; gap: 7px; }
+.ck-ticker { font-weight: 800; font-size: 14px; letter-spacing: -0.01em; }
+.ck-pos-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.ck-dir { font-size: 9.5px; font-weight: 800; padding: 3px 6px; border-radius: 4px; letter-spacing: 0.04em; }
+.ck-dir.long { background: rgba(16, 185, 129, 0.14); color: var(--green); }
+.ck-dir.short { background: rgba(239, 68, 68, 0.14); color: var(--red); }
+
+/* шапка позиции */
+.ck-head { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+.ck-head-id { display: flex; align-items: center; gap: 9px; }
+.ck-head-ticker { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+
+.ck-lines { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ck-line {
+  display: flex; flex-direction: column; gap: 2px; padding: 9px 13px; min-width: 122px;
+  border-radius: var(--radius-xs); border: 1.5px solid transparent; background: var(--bg-surface-2);
+  cursor: pointer; text-align: left; color: inherit; font-family: inherit; transition: var(--transition);
+}
+.ck-line:hover { background: var(--bg-surface-3); }
+.ck-line.on { border-color: var(--accent-primary); background: rgba(79, 70, 229, 0.1); }
+.ck-line.off { opacity: 0.45; background: transparent; }
+.ck-line-v { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ck-line-sub { font-size: 10.5px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.ck-delta {
+  padding: 6px 11px; border-radius: 5px; font-size: 11px; font-weight: 700;
+  border: 1px solid var(--border-subtle); color: var(--text-secondary); background: var(--bg-surface-2);
+}
+.ck-delta.good { color: var(--green); border-color: rgba(16, 185, 129, 0.25); }
+.ck-delta.bad { color: var(--red); border-color: rgba(239, 68, 68, 0.25); }
+
+.ck-stats { display: flex; gap: 20px; flex-wrap: wrap; margin-left: auto; }
+.ck-stat { display: flex; flex-direction: column; gap: 1px; }
+.ck-v { font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* вердикт */
+.ck-verdict { display: flex; align-items: center; gap: 14px; }
+.ck-verdict-bar { width: 3px; align-self: stretch; border-radius: 2px; background: var(--text-muted); flex: none; }
+.ck-verdict.act { border-color: rgba(245, 158, 11, 0.32); }
+.ck-verdict.act .ck-verdict-bar { background: var(--gold); }
+.ck-verdict-text { flex: 1; min-width: 0; }
+.ck-verdict-label {
+  font-size: 9.5px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text-muted); margin-bottom: 3px;
+}
+.ck-verdict.act .ck-verdict-label { color: var(--gold); }
+.ck-verdict-title { font-weight: 800; font-size: 14.5px; margin-bottom: 2px; }
+.ck-verdict-body { color: var(--text-secondary); font-size: 12.5px; line-height: 1.5; }
+
+/* график + лесенка */
+.ck-chart-row { display: grid; grid-template-columns: minmax(0, 1fr) 214px; gap: 16px; align-items: start; }
+@media (max-width: 1100px) { .ck-chart-row { grid-template-columns: 1fr; } }
+.ck-chart { padding: 12px; }
+.ck-ladder { padding: 10px 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.ck-rung {
+  position: relative; padding: 8px 10px 8px 22px; border-radius: var(--radius-xs);
+  background: var(--bg-surface-2); border: 1px solid var(--border-subtle); font-size: 11.5px;
+}
+.ck-rung::before {
+  content: ''; position: absolute; left: 9px; top: 13px; width: 6px; height: 6px;
+  border-radius: 50%; background: var(--green);
+}
+.ck-rung.sys { border-style: dashed; border-color: rgba(245, 158, 11, 0.4); }
+.ck-rung.sys::before { background: var(--gold); }
+.ck-rung.now { background: var(--bg-surface-3); }
+.ck-rung.now::before { background: var(--text-primary); }
+.ck-rung.muted::before { background: var(--text-muted); }
+.ck-rung-1 { font-weight: 700; font-variant-numeric: tabular-nums; }
+.ck-rung-2 { color: var(--text-secondary); font-size: 10.5px; margin-top: 2px; }
+
+/* калькулятор */
+.ck-calc h3, .ck-score h3 {
+  margin: 0; font-size: 12.5px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;
+}
+.ck-shares { display: flex; gap: 6px; margin: 12px 0; }
+.ck-share {
+  padding: 6px 12px; border-radius: 5px; border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-2); color: var(--text-muted); font-size: 11.5px; font-weight: 600;
+  cursor: pointer; font-family: inherit;
+}
+.ck-share.on { background: rgba(79, 70, 229, 0.14); border-color: rgba(79, 70, 229, 0.35); color: var(--text-primary); }
+.ck-calc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 10px; }
+.ck-calc-grid > div { display: flex; flex-direction: column; gap: 2px; }
+.ck-calc-grid b { font-size: 14px; font-variant-numeric: tabular-nums; }
+
+/* панели систем */
+.ck-two { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 980px) { .ck-two { grid-template-columns: 1fr; } }
+.ck-score-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.ck-hint { font-size: 10.5px; color: var(--text-muted); margin-top: 3px; max-width: 220px; line-height: 1.35; }
+.ck-score-num {
+  font-size: 24px; font-weight: 800; letter-spacing: -0.03em; line-height: 1;
+  color: var(--text-secondary); font-variant-numeric: tabular-nums;
+}
+.ck-score-num.gold { color: var(--gold); }
+.ck-score-num.red { color: var(--red); }
+.ck-score-num small { font-size: 13px; font-weight: 600; color: var(--text-muted); }
+
+.ck-gauge { position: relative; height: 6px; border-radius: 3px; background: var(--bg-surface-3); margin: 0 0 18px; }
+.ck-gauge i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--text-muted); }
+.ck-gauge i.gold { background: var(--gold); }
+.ck-gauge i.red { background: var(--red); }
+.ck-th { position: absolute; top: -4px; width: 2px; height: 14px; border-radius: 1px; background: var(--text-secondary); opacity: 0.7; }
+.ck-th-label {
+  position: absolute; top: -19px; transform: translateX(-50%); font-size: 9px; font-weight: 700;
+  color: var(--text-muted); white-space: nowrap;
+}
+
+.ck-comps { display: flex; flex-direction: column; gap: 4px; }
+.ck-comp {
+  display: flex; align-items: center; gap: 9px; padding: 6px 9px; border-radius: var(--radius-xs);
+  background: var(--bg-surface-2); font-size: 11.5px; border: 1px solid transparent;
+}
+.ck-comp.on { background: rgba(79, 70, 229, 0.11); border-color: rgba(79, 70, 229, 0.22); }
+.ck-comp.pen.on { background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.22); }
+.ck-flag {
+  width: 15px; height: 15px; border-radius: 4px; flex: none; display: grid; place-items: center;
+  font-size: 9px; font-weight: 800; border: 1px solid var(--border-medium); color: var(--text-muted);
+}
+.ck-comp.on .ck-flag { background: var(--accent-primary); border-color: transparent; color: #fff; }
+.ck-comp.pen.on .ck-flag { background: var(--red); border-color: transparent; color: #fff; }
+.ck-comp-label { flex: 1; color: var(--text-secondary); }
+.ck-comp.on .ck-comp-label { color: var(--text-primary); font-weight: 600; }
+.ck-comp-detail { font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.ck-comp.on .ck-comp-detail { color: var(--text-primary); font-weight: 600; }

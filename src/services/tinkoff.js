@@ -122,6 +122,85 @@ export class TinkoffAPI {
     const data = await this.request('/tinkoff.public.invest.api.contract.v1.UsersService/GetAccounts', {});
     return data.accounts || [];
   }
+
+  // --- Позиции и сделки счёта -----------------------------------------------------------
+  //
+  // Нужны «Сопровождению»: панель ведения открытой позиции должна знать, что реально
+  // открыто и по каким ценам трейдер фиксировал часть — иначе «лесенку фиксаций» пришлось
+  // бы заполнять руками. Оба метода только читают: права на выставление заявок токену НЕ
+  // нужны, и намеренно не используются нигде в приложении.
+
+  // Текущий портфель: что открыто, сколько штук, по какой средней цене.
+  async getPortfolio(accountId) {
+    const data = await this.request('/tinkoff.public.invest.api.contract.v1.OperationsService/GetPortfolio', {
+      accountId,
+    });
+    return (data.positions || []).map(parsePortfolioPosition);
+  }
+
+  // Исполненные операции за период. `figi` не обязателен — без него приходят все
+  // инструменты, что и нужно, когда сопоставляем сразу несколько открытых сделок.
+  // Пагинация у GetOperations отсутствует, ответ ограничен периодом — поэтому запрашиваем
+  // окно от даты открытия сделки, а не «всю историю».
+  async getOperations(accountId, from, to, figi = null) {
+    const body = {
+      accountId,
+      from: (from instanceof Date ? from : new Date(from)).toISOString(),
+      to: (to instanceof Date ? to : new Date(to ?? Date.now())).toISOString(),
+      state: 'OPERATION_STATE_EXECUTED',
+    };
+    if (figi) body.figi = figi;
+    const data = await this.request('/tinkoff.public.invest.api.contract.v1.OperationsService/GetOperations', body);
+    return (data.operations || []).map(parseOperation).filter((op) => op.isTrade);
+  }
+}
+
+// Позиция портфеля в понятном приложению виде. Количество у Tinkoff приходит как
+// Quotation (units/nano), а не числом, — та же ловушка, что с деньгами.
+export function parsePortfolioPosition(p) {
+  if (!p) return null;
+  const quantity = moneyToFloat(p.quantity);
+  return {
+    figi: p.figi,
+    ticker: p.ticker ?? null,
+    instrumentType: p.instrumentType ?? null,
+    quantity,
+    direction: quantity < 0 ? 'short' : 'long',
+    averagePrice: moneyToFloat(p.averagePositionPrice),
+    currentPrice: moneyToFloat(p.currentPrice),
+    expectedYield: moneyToFloat(p.expectedYield),
+  };
+}
+
+// Операция по счёту. Нас интересуют только сделки купли-продажи: комиссии, налоги и
+// пополнения приходят тем же списком и к «лесенке» отношения не имеют.
+const TRADE_OPERATION_TYPES = new Set([
+  'OPERATION_TYPE_BUY',
+  'OPERATION_TYPE_SELL',
+  'OPERATION_TYPE_BUY_CARD',
+  'OPERATION_TYPE_BUY_MARGIN',
+  'OPERATION_TYPE_SELL_MARGIN',
+]);
+
+export function parseOperation(op) {
+  if (!op) return null;
+  const type = op.operationType;
+  const isSell = type === 'OPERATION_TYPE_SELL' || type === 'OPERATION_TYPE_SELL_MARGIN';
+  return {
+    id: op.id,
+    figi: op.figi,
+    date: op.date,
+    isTrade: TRADE_OPERATION_TYPES.has(type),
+    side: isSell ? 'sell' : 'buy',
+    // `quantity` — сколько лотов запрошено, `quantityRest` — сколько НЕ исполнилось.
+    // Реально исполненный объём — разница, иначе частично исполненная заявка запишется
+    // в историю целиком и остаток позиции разъедется с брокерским.
+    quantity: (parseInt(op.quantity || 0, 10) - parseInt(op.quantityRest || 0, 10)) || parseInt(op.quantity || 0, 10),
+    price: moneyToFloat(op.price),
+    payment: moneyToFloat(op.payment),
+    currency: op.currency,
+    operationType: type,
+  };
 }
 
 // Helper: Tinkoff MoneyValue to float

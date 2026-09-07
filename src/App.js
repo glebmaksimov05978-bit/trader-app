@@ -15,6 +15,7 @@ import Advisor from './components/advisor/Advisor';
 import Settings from './components/settings/Settings';
 import AdminPanel from './components/admin/AdminPanel';
 import Backtest from './components/backtest/Backtest';
+import Cockpit from './components/cockpit/Cockpit';
 import LoadingScreen from './components/LoadingScreen';
 import { TRUSTED_UIDS } from './constants/trustedUids';
 import './styles/globals.css';
@@ -72,6 +73,9 @@ function AppRoutes() {
         } />
         <Route path="backtest" element={
           <TrustedRoute><Backtest /></TrustedRoute>
+        } />
+        <Route path="cockpit" element={
+          <TrustedRoute><Cockpit /></TrustedRoute>
         } />
       </Route>
     </Routes>

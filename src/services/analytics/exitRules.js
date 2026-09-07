@@ -234,18 +234,45 @@ export const DEFAULT_PROFIT_CAPTURE_SCORE_THRESHOLD = 4;
  *   amplify the RSI-extreme signal specifically (see full-search combos in HANDOFF)
  */
 export function profitCaptureScore(direction, ctx) {
-  let score = 0;
-  const rsiExtreme = direction === 1 ? ctx.currentRsi14 > 70 : ctx.currentRsi14 < 30;
-  if (rsiExtreme) score += 1;
-  if (ctx.ema13DistancePct != null && ctx.ema13DistancePct > 4) score += 1;
-  if (ctx.currentFavorablePct > 8) score += 1;
-  if (ctx.bollinger10PercentB != null && ctx.bollinger10PercentB > 0.85) score += 1;
-  if (ctx.barsSinceArm >= 15) score += 1;
-  if (ctx.adx14 != null && ctx.adx14 < 15) score += 1;
-  if (ctx.volumeRatio != null && ctx.volumeRatio > 1.8) score += 1;
-  if (ctx.barsSinceArm <= 2) score -= 1;
+  return profitCaptureBreakdown(direction, ctx)
+    .reduce((sum, c) => sum + (c.on ? c.weight : 0), 0);
+}
 
-  return score;
+/**
+ * Тот же самый расчёт, но с расшифровкой по признакам — чтобы «Сопровождение» могло
+ * показать трейдеру, из чего сложился балл и чего не хватает до порога. Балл считается
+ * СУММОЙ этого списка (см. profitCaptureScore выше), поэтому панель на экране физически
+ * не может разойтись с тем, что использует движок.
+ */
+export function profitCaptureBreakdown(direction, ctx) {
+  const rsiExtreme = direction === 1 ? ctx.currentRsi14 > 70 : ctx.currentRsi14 < 30;
+  const fmt = (v, suffix = '', digits = 1) => (v == null ? '—' : `${v.toFixed(digits)}${suffix}`);
+  return [
+    { key: 'rsi', weight: 1, on: !!rsiExtreme,
+      label: direction === 1 ? 'RSI(14) выше 70' : 'RSI(14) ниже 30',
+      detail: fmt(ctx.currentRsi14, '', 0) },
+    { key: 'ema13', weight: 1, on: ctx.ema13DistancePct != null && ctx.ema13DistancePct > 4,
+      label: 'Отход от EMA13 в нашу пользу больше 4%',
+      detail: fmt(ctx.ema13DistancePct, '%') },
+    { key: 'profit', weight: 1, on: ctx.currentFavorablePct > 8,
+      label: 'Текущая прибыль больше 8%',
+      detail: fmt(ctx.currentFavorablePct, '%') },
+    { key: 'boll', weight: 1, on: ctx.bollinger10PercentB != null && ctx.bollinger10PercentB > 0.85,
+      label: 'Цена у края Боллинджера(10)',
+      detail: ctx.bollinger10PercentB == null ? '—' : ctx.bollinger10PercentB.toFixed(2) },
+    { key: 'bars', weight: 1, on: ctx.barsSinceArm >= 15,
+      label: 'Прошло 15 баров и больше',
+      detail: ctx.barsSinceArm == null ? '—' : String(ctx.barsSinceArm) },
+    { key: 'adx', weight: 1, on: ctx.adx14 != null && ctx.adx14 < 15,
+      label: 'ADX(14) ниже 15 — тренд ослаб',
+      detail: fmt(ctx.adx14, '', 0) },
+    { key: 'volume', weight: 1, on: ctx.volumeRatio != null && ctx.volumeRatio > 1.8,
+      label: 'Объём выше среднего в 1.8 раза',
+      detail: ctx.volumeRatio == null ? '—' : `${ctx.volumeRatio.toFixed(1)}×` },
+    { key: 'tooEarly', weight: -1, penalty: true, on: ctx.barsSinceArm <= 2,
+      label: 'Штраф: слишком рано (2 бара и меньше)',
+      detail: ctx.barsSinceArm == null ? '—' : String(ctx.barsSinceArm) },
+  ];
 }
 
 // Whether the stop/take side sits BELOW or ABOVE entry, expressed as ±1 — a stop and a
@@ -439,6 +466,66 @@ export function computeTakePrice(direction, entryPrice, exitRules, ctx) {
     levelSource: exitRules.takeLevelSource, tolerancePct: exitRules.takeLevelTolerancePct,
     levelFallbackPct: exitRules.takeLevelFallbackPct,
   }, ctx);
+}
+
+// --- Loss-side score ("дно близко или ещё падать?") ------------------------------------
+//
+// Mirror of profitCaptureScore, for the side of the trade that's currently underwater.
+// Calibrated features come from the 2026-08-17 loss-dynamics study (HANDOFF п.23/25,
+// 77964 labelled points, best combo 64.6% on n=1207 and universal across two unrelated
+// strategies): these predict "near_bottom" — the loss is close to its worst point and
+// price is about to turn — versus "still_worsening".
+//
+// ⚠️ Direction of use matters and was very likely got BACKWARDS the first time (which is
+// the leading suspect for why a 65%-accurate signal lost money in п.23's test). A HIGH
+// score means the bottom is near — i.e. exiting right now locks in the loss at its worst
+// point, moments before recovery. The signal to CUT is a LOW score: "no sign of a bottom,
+// this is still deteriorating". Both readings are exposed here so they can be tested head
+// to head instead of assumed (see scripts/lossVariantsTest.mjs).
+//
+// Returns a "near-bottom" score. Higher = bottom looks close (hold). Lower = still
+// getting worse (cut).
+export function lossNearBottomScore(direction, ctx) {
+  return lossNearBottomBreakdown(direction, ctx)
+    .reduce((sum, c) => sum + (c.on ? c.weight : 0), 0);
+}
+
+/** Расшифровка near-bottom score по признакам — см. profitCaptureBreakdown. */
+export function lossNearBottomBreakdown(direction, ctx) {
+  const rsiExtremeAgainst = direction === 1 ? ctx.currentRsi14 < 30 : ctx.currentRsi14 > 70;
+  const fmt = (v, suffix = '', digits = 1) => (v == null ? '—' : `${v.toFixed(digits)}${suffix}`);
+  return [
+    // Признаки капитуляции — исторически кучкуются ровно на дне.
+    { key: 'rsiAgainst', weight: 1, on: !!rsiExtremeAgainst,
+      label: direction === 1 ? 'RSI(14) ниже 30 — капитуляция' : 'RSI(14) выше 70 — капитуляция',
+      detail: fmt(ctx.currentRsi14, '', 0) },
+    { key: 'rsiDrop', weight: 1, on: ctx.rsiChangeAgainst != null && ctx.rsiChangeAgainst <= -10,
+      label: 'RSI упал против нас на 10 пунктов и больше',
+      detail: fmt(ctx.rsiChangeAgainst, ' п.') },
+    { key: 'ema21', weight: 1, on: ctx.ema21DistanceAgainstPct != null && ctx.ema21DistanceAgainstPct > 4,
+      label: 'Ушли от EMA21 против нас больше чем на 4%',
+      detail: fmt(ctx.ema21DistanceAgainstPct, '%') },
+    { key: 'farBand', weight: 1, on: !!ctx.bollingerFarBand,
+      label: 'Пробит дальний край Боллинджера',
+      detail: ctx.bollingerFarBand ? 'да' : 'нет' },
+    { key: 'deepLoss', weight: 1, on: ctx.currentLossPct != null && ctx.currentLossPct > 5,
+      label: 'Убыток больше 5%',
+      detail: fmt(ctx.currentLossPct, '%') },
+    { key: 'held', weight: 1, on: ctx.barsHeld >= 10,
+      label: 'В сделке 10 баров и больше',
+      detail: ctx.barsHeld == null ? '—' : String(ctx.barsHeld) },
+    // Признаки того, что дна ещё НЕ было — предсказывали дальнейшее ухудшение.
+    { key: 'rsiStable', weight: -1, penalty: true,
+      on: ctx.rsiChangeAgainst != null && ctx.rsiChangeAgainst > -3,
+      label: 'Штраф: RSI стабилен — разворота не видно',
+      detail: fmt(ctx.rsiChangeAgainst, ' п.') },
+    { key: 'tooEarly', weight: -1, penalty: true, on: ctx.barsHeld <= 2,
+      label: 'Штраф: слишком рано (2 бара и меньше)',
+      detail: ctx.barsHeld == null ? '—' : String(ctx.barsHeld) },
+    { key: 'slowed', weight: -1, penalty: true, on: !!ctx.candlesSlowed,
+      label: 'Штраф: свечи замедлились',
+      detail: ctx.candlesSlowed ? 'да' : 'нет' },
+  ];
 }
 
 // Human-readable reason a stop/take field couldn't get a number — shown in the

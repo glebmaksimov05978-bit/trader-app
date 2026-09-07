@@ -1,0 +1,34 @@
+name: Уведомления по открытым позициям
+
+# Проверка идёт только в торговые часы Мосбиржи (10:00-18:40 МСК = 07:00-15:40 UTC),
+# по будням. Сам скрипт ещё раз проверяет сессию и молча выходит, если рынок закрыт, —
+# на случай, если расписание сработает с задержкой.
+on:
+  schedule:
+    - cron: '*/15 7-15 * * 1-5'
+  workflow_dispatch:        # кнопка «запустить вручную» во вкладке Actions
+
+# Без этого GitHub отключает расписание в репозиториях, где давно не было коммитов.
+# Если увидишь, что уведомления перестали приходить, — зайди в Actions и нажми Enable.
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Установить firebase-admin
+        run: npm install firebase-admin@12 --no-save
+
+      - name: Проверить позиции и отправить уведомления
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          ALERT_UIDS: ${{ secrets.ALERT_UIDS }}
+        run: node scripts/alerts/runAlerts.mjs

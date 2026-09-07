@@ -21,5 +21,6 @@ export const ADMIN_ITEMS = [
 // Внутренний инструмент, не готовый для клиентов — виден админам и тому же списку
 // доверенных аккаунтов, что обходит стену верификации почты (см. TRUSTED_UIDS).
 export const TRUSTED_ITEMS = [
+  { path: '/cockpit', icon: '🎛️', label: 'Сопровождение', mobileLabel: 'Ведение' },
   { path: '/backtest', icon: '🧪', label: 'Бэктест' },
 ];

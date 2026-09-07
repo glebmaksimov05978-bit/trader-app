@@ -2,6 +2,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, addTrade, updateTrade, deleteTrade, calcStats, resolveOpenedAt, resolveClosedAt } from '../../services/trades';
+import { fetchTradeLegs, resolveAccountId } from '../../services/positionSync';
 import { formatCurrency, formatNumber } from '../../utils/calculator';
 import { fetchDailyCandles, availableTimeframes, recommendTimeframe, TIMEFRAMES, DEFAULT_TIMEFRAME } from '../../services/marketData/candles';
 import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
@@ -38,6 +39,9 @@ export default function Journal() {
   const [closePrice, setClosePrice] = useState('');
   const [closedAt, setClosedAt] = useState('');
   const [closing, setClosing] = useState(false);
+  // Частичная фиксация: сколько контрактов закрываем этой операцией. Пусто = весь остаток.
+  const [closeQty, setCloseQty] = useState('');
+  const [syncingId, setSyncingId] = useState(null);
   const [importOpen, setImportOpen] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   // tradeId -> { loading, data, error }
@@ -154,16 +158,30 @@ export default function Journal() {
   const openClose = (trade) => {
     setCloseModal(trade);
     setClosePrice('');
+    setCloseQty('');
     const now = new Date();
     const pad = (n) => String(n).padStart(2, '0');
     setClosedAt(`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`);
   };
 
+  // Сколько объёма ещё открыто и сколько закрываем этой операцией. Пустое поле объёма
+  // означает «весь остаток» — так поведение по умолчанию не меняется для тех, кто просто
+  // закрывает сделку целиком, как раньше.
+  const remainingOf = (trade) =>
+    parseFloat(trade?.remainingVolume ?? trade?.volume) || 0;
+  const closingQty = () => {
+    const remaining = remainingOf(closeModal);
+    const asked = parseFloat(closeQty);
+    if (!closeQty || isNaN(asked) || asked <= 0) return remaining;
+    return Math.min(asked, remaining);
+  };
+  const isPartialClose = () => closingQty() < remainingOf(closeModal) - 1e-9;
+
   // Автоматический расчёт P&L при закрытии
   const calcQuickPnl = () => {
     const exit = parseFloat(closePrice);
     const entry = parseFloat(closeModal?.entryPrice);
-    const vol = parseFloat(closeModal?.remainingVolume ?? closeModal?.volume) || 1;
+    const vol = closingQty() || 1;
     const lot = parseFloat(closeModal?.lot) || 1;
     const step = parseFloat(closeModal?.minStep) || 1;
     const stepAmt = parseFloat(closeModal?.minStepAmount) || 0;
@@ -185,42 +203,101 @@ export default function Journal() {
     return { pnl: Math.round(net * 100) / 100, commission: Math.round(commission * 100) / 100 };
   };
 
+  // Подтянуть реальную историю операций по сделке из Т-Банка. Заполняет ступени и
+  // остаток из брокерских данных — руками вводить каждую фиксацию не нужно.
+  const handleSyncFromBroker = async (trade) => {
+    const token = userProfile?.tinkoffToken;
+    if (!token) {
+      toast.error('Сначала укажите токен Т-Банка в Настройках');
+      return;
+    }
+    setSyncingId(trade.id);
+    try {
+      const accountId = await resolveAccountId({ token, profile: userProfile });
+      const res = await fetchTradeLegs({
+        token, accountId, trade, openedAt: resolveOpenedAt(trade),
+      });
+      if (!res.legs.length) {
+        toast('По этой сделке у брокера операций не нашлось', { icon: 'ℹ️' });
+        return;
+      }
+      const closedAll = res.remainingVolume <= 0;
+      await updateTrade(trade.id, {
+        legs: res.legs,
+        remainingVolume: res.remainingVolume,
+        status: closedAll ? 'closed' : (res.closedQuantity > 0 ? 'partial' : 'open'),
+        ...(res.averageEntryPrice ? { entryPrice: res.averageEntryPrice } : {}),
+      });
+      toast.success(
+        `Из Т-Банка: ${res.legs.length} операций, в рынке ${res.remainingVolume} из ${res.openedQuantity}`,
+      );
+      await load();
+    } catch (e) {
+      toast.error(e.message || 'Не удалось получить данные из Т-Банка');
+    } finally {
+      setSyncingId(null);
+    }
+  };
+
   const handleQuickClose = async () => {
     if (!closePrice || !closeModal) return;
     setClosing(true);
     try {
       const result = calcQuickPnl();
       const closedAtDate = closedAt ? new Date(closedAt) : new Date();
-      const remaining = closeModal.remainingVolume ?? closeModal.volume;
+      const remaining = remainingOf(closeModal);
+      const qty = closingQty();
+      const partial = isPartialClose();
       const patch = {
         ...closeModal,
         exitPrice: parseFloat(closePrice),
-        status: 'closed',
-        remainingVolume: 0,
+        // Частичная фиксация оставляет позицию открытой: статус 'partial', остаток
+        // уменьшается на закрытый объём. Полное закрытие ведёт себя как раньше.
+        status: partial ? 'partial' : 'closed',
+        remainingVolume: partial ? remaining - qty : 0,
         // Add to whatever P&L/commission the position already accumulated from
         // earlier partial closes, rather than overwriting it.
         pnl: (closeModal.pnl ?? 0) + (result?.pnl ?? 0),
         commission: (closeModal.commission ?? 0) + (result?.commission ?? 0),
-        closeDate: closedAtDate.toISOString(),
-        closedAt: closedAtDate.toISOString(),
       };
-      // Manually closing an imported position that still has a step-by-step history
-      // appends one more "close" leg instead of silently disappearing from it.
-      if (Array.isArray(closeModal.legs)) {
-        patch.legs = [...closeModal.legs, {
-          type: 'close',
-          side: closeModal.direction === 'long' ? 'sell' : 'buy',
-          price: parseFloat(closePrice),
-          quantity: remaining,
-          commission: result?.commission ?? 0,
-          timestampUtc: closedAtDate.toISOString(),
-          dealNumber: null,
-        }];
+      if (partial) {
+        // Сделка ещё в рынке — дата закрытия не проставляется, иначе она уедет
+        // в «закрытые» и посчитается как завершённая.
+        delete patch.closeDate;
+        delete patch.closedAt;
+      } else {
+        patch.closeDate = closedAtDate.toISOString();
+        patch.closedAt = closedAtDate.toISOString();
       }
+      // Каждая фиксация дописывается ступенью в историю сделки. Раньше история велась
+      // только для импортированных из отчёта брокера сделок; теперь она заводится и для
+      // ручных — иначе «лесенку фиксаций» нечем наполнить.
+      const legs = Array.isArray(closeModal.legs) ? [...closeModal.legs] : [{
+        type: 'open',
+        side: closeModal.direction === 'long' ? 'buy' : 'sell',
+        price: parseFloat(closeModal.entryPrice) || null,
+        quantity: parseFloat(closeModal.volume) || null,
+        commission: 0,
+        timestampUtc: (resolveOpenedAt(closeModal) || closedAtDate).toISOString(),
+        dealNumber: null,
+      }];
+      patch.legs = [...legs, {
+        type: 'close',
+        side: closeModal.direction === 'long' ? 'sell' : 'buy',
+        price: parseFloat(closePrice),
+        quantity: qty,
+        commission: result?.commission ?? 0,
+        timestampUtc: closedAtDate.toISOString(),
+        dealNumber: null,
+      }];
       await updateTrade(closeModal.id, patch);
-      toast.success(`Сделка закрыта. P&L: ${patch.pnl >= 0 ? '+' : ''}${formatCurrency(patch.pnl)}`);
+      const money = `${result?.pnl >= 0 ? '+' : ''}${formatCurrency(result?.pnl ?? 0)}`;
+      toast.success(partial
+        ? `Зафиксировано ${qty} из ${remaining}: ${money}. В рынке осталось ${remaining - qty}.`
+        : `Сделка закрыта. P&L: ${patch.pnl >= 0 ? '+' : ''}${formatCurrency(patch.pnl)}`);
       setCloseModal(null);
       setClosePrice('');
+      setCloseQty('');
       await load();
     } catch (e) {
       toast.error('Ошибка закрытия сделки');
@@ -652,9 +729,20 @@ export default function Journal() {
                               boxShadow: '0 2px 8px rgba(16,185,129,0.3)',
                             }}
                             onClick={() => openClose(trade)}
-                            title="Закрыть сделку"
+                            title="Закрыть сделку или зафиксировать часть"
                           >
                             ✅ Закрыть
+                          </button>
+                        )}
+                        {(trade.status === 'open' || trade.status === 'partial') && userProfile?.tinkoffToken && (
+                          <button
+                            className="btn btn-ghost btn-sm"
+                            style={{width:'100%', padding:'5px 0', fontSize:10, whiteSpace:'nowrap'}}
+                            onClick={() => handleSyncFromBroker(trade)}
+                            disabled={syncingId === trade.id}
+                            title="Подтянуть реальные операции по этой сделке из Т-Банка"
+                          >
+                            {syncingId === trade.id ? '…' : '⇩ Из Т-Банка'}
                           </button>
                         )}
                       </div>
@@ -947,7 +1035,7 @@ export default function Journal() {
               the inset to match on all sides. */}
           <div className="modal" style={{maxWidth:400}} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">✅ Закрыть сделку</h3>
+              <h3 className="modal-title">{isPartialClose() ? '✂️ Зафиксировать часть' : '✅ Закрыть сделку'}</h3>
               <button className="modal-close" onClick={() => setCloseModal(null)}>✕</button>
             </div>
 
@@ -969,8 +1057,13 @@ export default function Journal() {
                   <span style={{fontWeight:600}}>{formatNumber(closeModal.entryPrice, 2)}</span>
                 </div>
                 <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
-                  <span style={{color:'var(--text-muted)',fontSize:12}}>Объём</span>
-                  <span style={{fontWeight:600}}>{closeModal.volume} конт.</span>
+                  <span style={{color:'var(--text-muted)',fontSize:12}}>В рынке сейчас</span>
+                  <span style={{fontWeight:600}}>
+                    {formatNumber(remainingOf(closeModal), 0)} конт.
+                    {remainingOf(closeModal) !== parseFloat(closeModal.volume) && (
+                      <span style={{color:'var(--text-muted)',fontWeight:400}}> из {closeModal.volume}</span>
+                    )}
+                  </span>
                 </div>
                 <div style={{display:'flex',justifyContent:'space-between'}}>
                   <span style={{color:'var(--text-muted)',fontSize:12}}>Направление</span>
@@ -1013,6 +1106,61 @@ export default function Journal() {
                 </div>
               </div>
 
+              {/* Объём фиксации — сколько контрактов закрываем этой операцией.
+                  Пусто = весь остаток, поэтому обычное «закрыть целиком» работает
+                  ровно как раньше, без лишних действий. */}
+              <div style={{marginTop:12, marginBottom:4}}>
+                <label style={{
+                  display:'block', fontSize:11, fontWeight:500,
+                  color:'rgba(255,255,255,0.4)', letterSpacing:'0.3px',
+                  marginBottom:4, paddingLeft:4,
+                }}>
+                  Сколько закрываем
+                </label>
+                <div style={{display:'flex', gap:6}}>
+                  <input
+                    type="number"
+                    step="any"
+                    min="0"
+                    max={remainingOf(closeModal)}
+                    placeholder={`весь остаток (${formatNumber(remainingOf(closeModal), 0)})`}
+                    value={closeQty}
+                    onChange={e => setCloseQty(e.target.value)}
+                    className="input"
+                    style={{flex:1}}
+                  />
+                  {[25, 50, 100].map(share => {
+                    const qty = Math.max(1, Math.round(remainingOf(closeModal) * share / 100));
+                    const active = share === 100
+                      ? !closeQty || parseFloat(closeQty) >= remainingOf(closeModal)
+                      : parseFloat(closeQty) === qty;
+                    return (
+                      <button
+                        key={share}
+                        className="btn btn-sm"
+                        onClick={() => setCloseQty(share === 100 ? '' : String(qty))}
+                        style={{
+                          padding:'0 10px', fontSize:11, fontWeight:700, borderRadius:8,
+                          border:`1px solid ${active ? 'rgba(79,70,229,0.6)' : 'var(--border-medium)'}`,
+                          background: active ? 'rgba(79,70,229,0.18)' : 'transparent',
+                          color: active ? 'var(--text-primary)' : 'var(--text-muted)',
+                        }}
+                      >
+                        {share}%
+                      </button>
+                    );
+                  })}
+                </div>
+                {isPartialClose() && (
+                  <div style={{fontSize:11, color:'var(--text-muted)', marginTop:6, paddingLeft:4}}>
+                    Позиция останется открытой: в рынке будет{' '}
+                    <strong style={{color:'var(--text-primary)'}}>
+                      {formatNumber(remainingOf(closeModal) - closingQty(), 0)} конт.
+                    </strong>
+                  </div>
+                )}
+              </div>
+
               {/* Время закрытия */}
               <div style={{marginTop:12, marginBottom:4}}>
                 <label style={{
@@ -1020,7 +1168,7 @@ export default function Journal() {
                   color:'rgba(255,255,255,0.4)', letterSpacing:'0.3px',
                   marginBottom:4, paddingLeft:4,
                 }}>
-                  Время закрытия
+                  {isPartialClose() ? 'Время фиксации' : 'Время закрытия'}
                 </label>
                 <input
                   type="datetime-local"
@@ -1041,7 +1189,9 @@ export default function Journal() {
                   borderRadius:12,
                 }}>
                   <div style={{display:'flex',justifyContent:'space-between',marginBottom:6}}>
-                    <span style={{color:'var(--text-muted)',fontSize:12}}>P&L (с комиссией)</span>
+                    <span style={{color:'var(--text-muted)',fontSize:12}}>
+                      {isPartialClose() ? 'P&L этой фиксации (с комиссией)' : 'P&L (с комиссией)'}
+                    </span>
                     <span style={{
                       fontWeight:700,
                       fontSize:16,
@@ -1066,7 +1216,9 @@ export default function Journal() {
                 disabled={!closePrice || closing}
                 style={{background:'linear-gradient(135deg,#10b981,#059669)'}}
               >
-                {closing ? 'Закрываем...' : '✅ Закрыть сделку'}
+                {closing
+                  ? (isPartialClose() ? 'Фиксируем...' : 'Закрываем...')
+                  : (isPartialClose() ? '✂️ Зафиксировать часть' : '✅ Закрыть сделку')}
               </button>
             </div>
           </div>
