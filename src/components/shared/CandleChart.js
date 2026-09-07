@@ -16,6 +16,8 @@ import { TIMEFRAMES } from '../../services/marketData/candles';
 const LAYER_DEFS = [
   { key: 'sr', label: 'Уровни S/R', defaultOn: true },
   { key: 'ema9', label: 'EMA9', defaultOn: false, colorable: true },
+  { key: 'ema13', label: 'EMA13', defaultOn: false, colorable: true },
+  { key: 'ema21', label: 'EMA21', defaultOn: false, colorable: true },
   { key: 'ema100', label: 'EMA100', defaultOn: false, colorable: true },
   { key: 'ema200', label: 'EMA200', defaultOn: false, colorable: true },
   { key: 'bollinger', label: 'Боллинджер', defaultOn: false, colorable: true },
@@ -35,7 +37,7 @@ const LAYER_DEFS = [
 
 const DEFAULT_COLORS_KEY = 'traderpro-chart-colors';
 const DEFAULT_COLOR_FALLBACKS = {
-  ema9: '#3b82f6', ema100: '#f59e0b', ema200: '#ef4444', bollinger: '#9ca3af',
+  ema9: '#3b82f6', ema13: '#eab308', ema21: '#a78bfa', ema100: '#f59e0b', ema200: '#ef4444', bollinger: '#9ca3af',
 };
 
 function loadSavedColors() {
@@ -436,7 +438,7 @@ export default function CandleChart({
       });
     }
 
-    [9, 100, 200].forEach((period) => {
+    [9, 13, 21, 100, 200].forEach((period) => {
       if (!layers[`ema${period}`]) return;
       const values = ema(closes, period);
       const data = times.map((t, i) => (values[i] != null ? { time: t, value: values[i] } : null)).filter(Boolean);

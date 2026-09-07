@@ -1,5 +1,6 @@
 // src/components/journal/Journal.js
 import React, { useEffect, useState, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, addTrade, updateTrade, deleteTrade, calcStats, resolveOpenedAt, resolveClosedAt } from '../../services/trades';
 import { fetchTradeLegs, resolveAccountId } from '../../services/positionSync';
@@ -82,6 +83,24 @@ export default function Journal() {
   }, [user]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Переход из «Сопровождения»: там показывают состояние сделки и предлагают долю для
+  // фиксации, но саму фиксацию считает Журнал — своей же формулой (шаг цены, комиссия),
+  // чтобы не завести вторую копию этого расчёта. Ссылка вида
+  // /journal?close=<id>&qty=<штук> просто открывает готовую к подтверждению модалку.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const closeId = searchParams.get('close');
+    if (!closeId || !trades.length) return;
+    const trade = trades.find((t) => t.id === closeId);
+    if (trade) {
+      openClose(trade);
+      const qty = searchParams.get('qty');
+      if (qty) setCloseQty(qty);
+    }
+    setSearchParams((p) => { p.delete('close'); p.delete('qty'); return p; }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trades]);
 
   // Manual fallback for futures whose tick value neither Tinkoff nor the free MOEX
   // lookup could resolve (see resolveFuturesPnl/resolveFuturesSpecFromMoex) — asking

@@ -9,7 +9,7 @@
 // полей журнала, что показывает Журнал. Иначе панель и бэктест начнут расходиться, и
 // доверять будет нечему.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, resolveOpenedAt } from '../../services/trades';
@@ -19,7 +19,9 @@ import { getActiveStrategy } from '../../services/analytics/strategy';
 import { computeBothLines } from '../../services/backtest/livePosition';
 import { computeProfitBreakdown, computeLossBreakdown } from '../../services/backtest/engine';
 import { evaluateAlerts, DEFAULT_ALERT_PREFS } from '../../services/alerts';
+import { loadBacktestSample, findSimilar, probabilityOfGoal } from '../../services/backtest/similarTrades';
 import CandleChart from '../shared/CandleChart';
+import RadarPanel from './RadarPanel';
 import './Cockpit.css';
 
 const fmtPct = (v, d = 2) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(d)}%`);
@@ -73,6 +75,7 @@ function ScorePanel({ title, hint, score, threshold, max, breakdown, reached, to
 
 export default function Cockpit() {
   const { user, userProfile } = useAuth();
+  const navigate = useNavigate();
   const [trades, setTrades] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -85,6 +88,10 @@ export default function Cockpit() {
   const [showSys, setShowSys] = useState(true);
   const [closeShare, setCloseShare] = useState(100);
   const [tfOverride, setTfOverride] = useState(null);
+  const [sample, setSample] = useState(null);
+  const [goal, setGoal] = useState(5);
+
+  useEffect(() => { loadBacktestSample().then(setSample); }, []);
 
   const strategy = useMemo(() => getActiveStrategy(userProfile), [userProfile]);
   const exitRules = strategy?.exitRules || {};
@@ -216,6 +223,26 @@ export default function Cockpit() {
     };
   }, [state, trade, candles, closeShare]);
 
+  // Похожие исторические ситуации — та же когорта (число фиксаций профит-системы) и
+  // направление, что у сделки сейчас. Датасет собран на дневном графике; если сама сделка
+  // ведётся на другом таймфрейме, честно показываем это несовпадение, а не молчим о нём.
+  const similar = useMemo(() => {
+    if (!sample || !state?.actual) return null;
+    return findSimilar(sample, { cohort: state.actual.cohort, direction: trade?.direction === 'short' ? 'short' : 'long' });
+  }, [sample, state, trade]);
+  const goalProbability = useMemo(
+    () => (similar ? probabilityOfGoal(similar.deciles, goal) : null),
+    [similar, goal],
+  );
+
+  // Саму фиксацию/закрытие всегда делает Журнал — тем же расчётом (шаг цены, комиссия),
+  // которым уже считает P&L. Кабина только подсказывает долю и открывает готовую модалку.
+  const goToClose = useCallback((t, qty) => {
+    const params = new URLSearchParams({ close: t.id });
+    if (qty != null) params.set('qty', String(Math.max(1, Math.round(qty))));
+    navigate(`/journal?${params.toString()}`);
+  }, [navigate]);
+
   const tfOptions = useMemo(
     () => Object.keys(TIMEFRAMES).filter((k) => !TIMEFRAMES[k].requiresToken || userProfile?.tinkoffToken),
     [userProfile?.tinkoffToken],
@@ -269,16 +296,21 @@ export default function Cockpit() {
             const rem = parseFloat(t.remainingVolume ?? t.volume) || 0;
             const vol = parseFloat(t.volume) || 0;
             return (
-              <button key={t.id} className={`ck-pos ${on ? 'on' : ''}`} onClick={() => setActiveId(t.id)}>
-                <div className="ck-pos-row">
-                  <span className="ck-ticker">{t.ticker}</span>
-                  <span className={`ck-dir ${t.direction}`}>{t.direction === 'long' ? 'ЛОНГ' : 'ШОРТ'}</span>
-                </div>
-                <div className="ck-pos-sub">
-                  {t.status === 'partial' ? `в рынке ${fmtNum(rem, 0)} из ${fmtNum(vol, 0)}` : `${fmtNum(vol, 0)} конт.`}
-                </div>
-                <div className="ck-pos-sub">вход {fmtNum(t.entryPrice)}</div>
-              </button>
+              <div key={t.id} className={`ck-pos ${on ? 'on' : ''}`}>
+                <button className="ck-pos-main" onClick={() => setActiveId(t.id)}>
+                  <div className="ck-pos-row">
+                    <span className="ck-ticker">{t.ticker}</span>
+                    <span className={`ck-dir ${t.direction}`}>{t.direction === 'long' ? 'ЛОНГ' : 'ШОРТ'}</span>
+                  </div>
+                  <div className="ck-pos-sub">
+                    {t.status === 'partial' ? `в рынке ${fmtNum(rem, 0)} из ${fmtNum(vol, 0)}` : `${fmtNum(vol, 0)} конт.`}
+                  </div>
+                  <div className="ck-pos-sub">вход {fmtNum(t.entryPrice)}</div>
+                </button>
+                <button className="ck-pos-close" onClick={() => goToClose(t)} title="Закрыть или зафиксировать часть">
+                  Закрыть
+                </button>
+              </div>
             );
           })}
         </aside>
@@ -379,7 +411,13 @@ export default function Cockpit() {
                       + `, лосс-система ${a?.now?.lossScore ?? '—'} из ${exitRules.lossScoreThreshold ?? 2}.`}
                 </div>
               </div>
-              <Link className="ck-btn ck-btn-primary" to="/journal">Зафиксировать в Журнале</Link>
+              <button
+                className="ck-btn ck-btn-primary"
+                onClick={() => goToClose(trade, alerts[0]?.suggestedShare && money
+                  ? money.remainingVol * (alerts[0].suggestedShare / 100) : undefined)}
+              >
+                Зафиксировать в Журнале
+              </button>
             </section>
           )}
 
@@ -464,8 +502,72 @@ export default function Cockpit() {
                 <div><span className="ck-k">Итого по сделке</span>
                   <b className={money.net >= 0 ? 'up' : 'down'}>{fmtRub(money.net)}</b></div>
               </div>
-              <div className="ck-note">
-                Цифры считаются теми же полями сделки, что и в Журнале — шаг цены, стоимость шага, комиссия.
+              <div className="ck-calc-foot">
+                <div className="ck-note">
+                  Цифры считаются теми же полями сделки, что и в Журнале — шаг цены, стоимость шага, комиссия.
+                </div>
+                <button className="ck-btn ck-btn-primary" onClick={() => goToClose(trade, money.closingVol)}>
+                  Зафиксировать {closeShare}% в Журнале
+                </button>
+              </div>
+            </section>
+          )}
+
+          {/* ---------- похожие исторические ситуации ---------- */}
+          {similar && (
+            <section className="ck-panel ck-hist">
+              <div className="ck-hist-top">
+                <h3>Что было дальше в похожих ситуациях</h3>
+                {similar.timeframe !== timeframe && (
+                  <span className="ck-hist-warn">
+                    выборка с {similar.timeframe === 'D1' ? 'дневного' : similar.timeframe} графика — сделка ведётся на {timeframe}
+                  </span>
+                )}
+              </div>
+              <div className="ck-hist-note">
+                {similar.n} сделок из бэктеста той же когорты ({base.cohort} фикс.) и направления · это реальный результат исследования, не прогноз
+              </div>
+              <div className="ck-hist-grid">
+                <div>
+                  <div className="ck-dec">
+                    {similar.deciles.map((d, i) => {
+                      const dmax = Math.max(...similar.deciles.map((x) => Math.abs(x)), 1);
+                      return (
+                        <i key={i} style={{
+                          height: `${Math.max(6, (Math.abs(d) / dmax) * 70)}px`,
+                          background: d >= 0 ? 'var(--green)' : 'var(--red)',
+                          opacity: 0.35 + 0.6 * (Math.abs(d) / dmax),
+                        }} />
+                      );
+                    })}
+                  </div>
+                  <div className="ck-decax"><span>худшие 10%</span><span>медиана</span><span>лучшие 10%</span></div>
+                  <div className="ck-hist-reasons">
+                    {similar.exitReasons.map((r) => (
+                      <div key={r.reason} className="ck-hist-reason">
+                        <span>{r.reason}</span>
+                        <span className="ck-muted">{Math.round(r.share * 100)}% · {fmtPct(r.avgPnl, 1)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="ck-fore">
+                  <div className="ck-goal-row">
+                    <span className="ck-k">Цель</span>
+                    <div className="ck-stepper">
+                      <button onClick={() => setGoal((g) => g - 1)}>−</button>
+                      <span className="ck-gv">{goal >= 0 ? '+' : ''}{goal}%</span>
+                      <button onClick={() => setGoal((g) => g + 1)}>+</button>
+                    </div>
+                  </div>
+                  <div className="ck-gnum">
+                    <b>{goalProbability}%</b>
+                    <span>сделок из этой когорты дошли до {goal >= 0 ? '+' : ''}{goal}%</span>
+                  </div>
+                  <div className="ck-note">
+                    Средний срок такой сделки — {similar.avgBars.toFixed(0)} баров ({similar.timeframe}).
+                  </div>
+                </div>
               </div>
             </section>
           )}
@@ -494,6 +596,8 @@ export default function Cockpit() {
             />
           </div>
         </main>
+
+        <RadarPanel />
       </div>
     </div>
   );
