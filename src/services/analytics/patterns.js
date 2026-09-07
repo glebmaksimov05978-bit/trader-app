@@ -15,7 +15,7 @@
 // alternation-of-corrections rule, no larger-degree wave context). Its confidence is
 // capped well below 100% for exactly this reason, and it always reports its own
 // checklist so the trader can see which rules passed and correct the read themselves.
-import { ema } from './indicators';
+import { ema, indexAtOrBefore } from './indicators';
 import { detectCandlestickPatterns } from './candlestickPatterns';
 
 const EMA_PERIODS = [9, 100, 200];
@@ -97,7 +97,12 @@ export function swingPatternsAllowedForTimeframe(timeframeMinutes) {
 // A bar is a swing high if its high is the max within `lookback` bars on both sides,
 // swing low symmetrically for lows. Consecutive same-type swings collapse to the most
 // extreme one, so the result always alternates high/low/high/low — a clean zig-zag.
-export function findSwingPoints(candles, lookback = 3) {
+// Сырые точки разворота (до схлопывания подряд идущих одного типа). Вынесено отдельно,
+// потому что этот набор ПРИЧИННЫЙ: точка на баре k подтверждается баром k+lookback, то
+// есть для истории, обрезанной на баре i, набор — в точности префикс полного набора с
+// центрами ≤ i-lookback. Значит его можно посчитать один раз на массив, а не заново на
+// каждом баре (см. swingsUpTo ниже).
+function rawSwingPoints(candles, lookback) {
   const raw = [];
   for (let i = lookback; i < candles.length - lookback; i++) {
     const windowSlice = candles.slice(i - lookback, i + lookback + 1);
@@ -107,6 +112,43 @@ export function findSwingPoints(candles, lookback = 3) {
     if (isHigh) raw.push({ index: i, date: candles[i].date, price: candles[i].high, type: 'high' });
     else if (isLow) raw.push({ index: i, date: candles[i].date, price: candles[i].low, type: 'low' });
   }
+  return raw;
+}
+
+const rawSwingCache = new WeakMap();
+function cachedRawSwings(candles, lookback) {
+  let byLookback = rawSwingCache.get(candles);
+  if (!byLookback) { byLookback = new Map(); rawSwingCache.set(candles, byLookback); }
+  const hit = byLookback.get(lookback);
+  if (hit && hit.length === candles.length) return hit.raw;
+  const raw = rawSwingPoints(candles, lookback);
+  byLookback.set(lookback, { length: candles.length, raw });
+  return raw;
+}
+
+// Точки разворота, видимые на баре `index` — ровно то же, что вернул бы
+// findSwingPoints(candles.slice(0, index + 1), lookback), но без пересчёта всей истории.
+export function swingsUpTo(candles, index, lookback = 3) {
+  const raw = cachedRawSwings(candles, lookback);
+  const limit = index - lookback;
+  const out = [];
+  for (const p of raw) {
+    if (p.index > limit) break;
+    const last = out[out.length - 1];
+    if (!last) { out.push(p); continue; }
+    if (last.type === p.type) {
+      if ((p.type === 'high' && p.price > last.price) || (p.type === 'low' && p.price < last.price)) {
+        out[out.length - 1] = p;
+      }
+    } else {
+      out.push(p);
+    }
+  }
+  return out;
+}
+
+export function findSwingPoints(candles, lookback = 3) {
+  const raw = rawSwingPoints(candles, lookback);
   const out = [];
   for (const p of raw) {
     const last = out[out.length - 1];
@@ -124,11 +166,25 @@ export function findSwingPoints(candles, lookback = 3) {
 
 // --- Levels: EMA9/100/200 as moving support/resistance + static swing-based levels ---
 
-export function computeEmaLevelsAtIndex(candles, index) {
+// EMA-серии причинные, как и остальные индикаторы, — считаем их один раз на массив свечей
+// и дальше только индексируем. Раньше каждый вызов строил все серии заново по всей
+// истории, а движок зовёт это на каждом баре (см. тот же приём в indicators.js).
+const emaSeriesCache = new WeakMap();
+function emaSeriesFor(candles) {
+  const hit = emaSeriesCache.get(candles);
+  if (hit && hit.length === candles.length) return hit;
   const closes = candles.map((c) => c.close);
+  const built = { length: candles.length, closes, byPeriod: {} };
+  for (const period of EMA_PERIODS) built.byPeriod[period] = ema(closes, period);
+  emaSeriesCache.set(candles, built);
+  return built;
+}
+
+export function computeEmaLevelsAtIndex(candles, index) {
+  const { closes, byPeriod } = emaSeriesFor(candles);
   const result = {};
   for (const period of EMA_PERIODS) {
-    const series = ema(closes, period);
+    const series = byPeriod[period];
     const value = series[index];
     if (value == null) { result[`ema${period}`] = null; continue; }
     const trendRef = series[Math.max(0, index - 10)];
@@ -830,15 +886,9 @@ function amplitudeBonusFor(candidate, currentPrice) {
 // --- Entry point: everything computed as of the entry bar, no lookahead --------------
 
 export function computePatternsAtEntry(candles, atDate, { swingLookback = 3, timeframeMinutes = null } = {}) {
-  const target = new Date(atDate).getTime();
-  const index = (() => {
-    let idx = -1;
-    for (let i = 0; i < candles.length; i++) {
-      if (candles[i].date.getTime() <= target) idx = i;
-      else break;
-    }
-    return idx;
-  })();
+  // Тот же результат, что прежний линейный перебор, но двоичным поиском — свечи
+  // отсортированы по времени, а функция зовётся на каждом баре бэктеста.
+  const index = indexAtOrBefore(candles, atDate);
   if (index === -1) return null;
 
   // Only candles up to and including the entry bar — no hindsight.
@@ -853,7 +903,9 @@ export function computePatternsAtEntry(candles, atDate, { swingLookback = 3, tim
   // patterns (pin bar, engulfing) stay honest on any timeframe since they don't depend
   // on swing confirmation lag.
   const swingsAllowed = swingPatternsAllowedForTimeframe(timeframeMinutes);
-  const swings = swingsAllowed ? findSwingPoints(visibleCandles, swingLookback) : [];
+  // Эквивалентно findSwingPoints(visibleCandles, swingLookback), но с кешем по всему
+  // массиву — без этого движок пересчитывал точки разворота по всей истории на каждом баре.
+  const swings = swingsAllowed ? swingsUpTo(candles, index, swingLookback) : [];
   // `levels` (shown to the trader / used by the breakout detector) stays trimmed to the 6
   // nearest the CURRENT price — beyond that it's noise on screen. But level-confluence
   // scoring needs the full set: a double top's peaks can sit far from today's price, and
@@ -862,11 +914,13 @@ export function computePatternsAtEntry(candles, atDate, { swingLookback = 3, tim
   const allLevels = swingsAllowed ? findSupportResistance(swings, currentPrice) : [];
   const levels = allLevels.slice(0, 6);
 
-  const volumes = visibleCandles.map((c) => c.volume);
-  const avgVol20 = volumes.length >= 21
-    ? volumes.slice(-21, -1).reduce((s, v) => s + v, 0) / 20
+  // Раньше здесь строился массив объёмов по ВСЕЙ видимой истории только ради последних
+  // двадцати баров — на часовом графике это лишние десятки тысяч операций на каждом баре.
+  // Считаем ровно те же 20 баров (index-20 .. index-1) напрямую.
+  const avgVol20 = index >= 20
+    ? (() => { let s = 0; for (let i = index - 20; i < index; i++) s += candles[i].volume; return s / 20; })()
     : null;
-  const volumeRatio = avgVol20 ? volumes[volumes.length - 1] / avgVol20 : null;
+  const volumeRatio = avgVol20 ? candles[index].volume / avgVol20 : null;
 
   // Only scan the most recent swings for double top/bottom — otherwise a year of history
   // throws off dozens of coincidental matches nobody was actually watching form. Also

@@ -157,13 +157,19 @@ function volumeRatioAt(volumes, index, period = 20) {
 // Finds the last candle at or before `atDate` — shared by indicators and pattern
 // detection so both anchor to the exact same bar (and neither peeks at candles that
 // didn't exist yet when the trade was opened — that would be hindsight, not analysis).
+// Свечи всегда отсортированы по времени (на этом же построен ранний выход из прежнего
+// линейного перебора), поэтому «последний бар не позже даты» ищется двоичным поиском.
+// Результат тот же, но на часовой истории в 14 000 баров это 14 сравнений вместо 14 000 —
+// а движок зовёт эту функцию на каждом баре.
 export function indexAtOrBefore(candles, atDate) {
   if (!candles?.length) return -1;
   const target = new Date(atDate).getTime();
+  let lo = 0;
+  let hi = candles.length - 1;
   let index = -1;
-  for (let i = 0; i < candles.length; i++) {
-    if (candles[i].date.getTime() <= target) index = i;
-    else break;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (candles[mid].date.getTime() <= target) { index = mid; lo = mid + 1; } else { hi = mid - 1; }
   }
   return index;
 }
@@ -171,22 +177,50 @@ export function indexAtOrBefore(candles, atDate) {
 // Reports every indicator as of the bar at/before `atDate`. Indicators that don't have
 // enough history yet (e.g. SMA200 on a freshly-listed ticker) come back null rather than
 // a misleading partial number — the caller must show "нет данных", never guess.
+// Все серии ниже причинные: значение на баре i зависит только от баров до i включительно,
+// поэтому наличие в массиве более поздних баров его не меняет. Раньше функция считала
+// весь набор серий по всей истории заново НА КАЖДЫЙ вызов, а движок бэктеста зовёт её на
+// каждом баре — получалось квадратично по длине истории. На дневках (≈700 баров) это было
+// незаметно, на часовом графике (≈14 000 баров) один прогон 36 тикеров занимал 13.5 часов,
+// что делало исследование H1 практически невозможным.
+//
+// Кешируем набор серий на массив свечей (WeakMap — не держит массив в памяти лишнего) и
+// пересчитываем, если длина массива изменилась, чтобы дописанные свечи не читались из
+// устаревшего кеша. Числа при этом ровно те же — это ускорение, а не изменение расчёта.
+const seriesCache = new WeakMap();
+
+function seriesFor(candles) {
+  const cached = seriesCache.get(candles);
+  if (cached && cached.length === candles.length) return cached;
+
+  const closes = candles.map((c) => c.close);
+  const volumes = candles.map((c) => c.volume);
+  const built = {
+    length: candles.length,
+    closes,
+    volumes,
+    sma200: sma(closes, 200),
+    ema9Series: ema(closes, 9),
+    ema13Series: ema(closes, 13),
+    ema100Series: ema(closes, 100),
+    ema200Series: ema(closes, 200),
+    rsi14: rsi(closes, 14),
+    histogram: macd(closes).histogram,
+    atr14: atr(candles, 14),
+    adx14: adxLite(candles, 14),
+  };
+  seriesCache.set(candles, built);
+  return built;
+}
+
 export function computeIndicatorsAtEntry(candles, atDate) {
   const index = indexAtOrBefore(candles, atDate);
   if (index === -1) return null;
 
-  const closes = candles.map((c) => c.close);
-  const volumes = candles.map((c) => c.volume);
-
-  const sma200 = sma(closes, 200);
-  const ema9Series = ema(closes, 9);
-  const ema13Series = ema(closes, 13);
-  const ema100Series = ema(closes, 100);
-  const ema200Series = ema(closes, 200);
-  const rsi14 = rsi(closes, 14);
-  const { histogram } = macd(closes);
-  const atr14 = atr(candles, 14);
-  const adx14 = adxLite(candles, 14);
+  const {
+    closes, volumes, sma200, ema9Series, ema13Series, ema100Series, ema200Series,
+    rsi14, histogram, atr14, adx14,
+  } = seriesFor(candles);
 
   const closeAtIndex = closes[index];
   const sma200AtIndex = sma200[index];
