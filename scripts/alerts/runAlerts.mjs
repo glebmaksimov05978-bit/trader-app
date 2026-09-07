@@ -13,8 +13,12 @@
 // Переменные окружения (задаются в Secrets репозитория):
 //   FIREBASE_SERVICE_ACCOUNT  - JSON сервисного аккаунта Firebase, одной строкой
 //   TELEGRAM_BOT_TOKEN        - токен бота от @BotFather
-//   TELEGRAM_CHAT_ID          - твой chat id (см. инструкцию в README рядом)
+//   TELEGRAM_CHAT_ID          - твой chat id
 //   ALERT_UIDS                - через запятую: uid пользователей, чьи сделки проверять
+//   CF_API_TOKEN, CF_ACCOUNT_ID, CF_KV_NAMESPACE_ID
+//                             - доступ к очереди решений от кнопок (см. workers/telegram-
+//                               webhook/README.md). Не заданы — кнопки просто не разбираются,
+//                               остальная рассылка работает как обычно.
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -51,8 +55,7 @@ const candlesUrl = esmify(path.join(repoRoot, 'src/services/marketData/candles.j
 
 const { computeLiveState } = await import(liveUrl);
 const {
-  evaluateAlerts, filterNew, formatForTelegram, isTradingHours, DEFAULT_ALERT_PREFS,
-  buildKeyboard, buildReasonKeyboard, escapeHtml, SKIP_REASONS,
+  evaluateAlerts, filterNew, formatForTelegram, isTradingHours, DEFAULT_ALERT_PREFS, buildKeyboard,
 } = await import(alertsUrl);
 const { fetchDailyCandles } = await import(candlesUrl);
 
@@ -91,70 +94,55 @@ async function sendTelegram(text, keyboard = null) {
   });
 }
 
-// --- Ответы на нажатия кнопок ---------------------------------------------------------
+// --- Разбор очереди решений от кнопок ---------------------------------------------------
 //
-// Вебхука нет (для него нужен постоянно живущий адрес), поэтому нажатия забираем тем же
-// расписанием: getUpdates с сохранённым offset. Задержка до 15 минут — для записи причины
-// в дневник это не важно, Telegram подтверждает нажатие мгновенно на стороне телефона.
-async function processCallbacks(db, uid, stateRef, state) {
-  let updates;
-  try {
-    updates = await tg('getUpdates', { offset: state.offset || 0, timeout: 0, allowed_updates: ['callback_query'] });
-  } catch (e) {
-    console.error(`getUpdates: ${e.message}`);
-    return;
-  }
-  if (!updates.length) return;
+// Кнопки под уведомлением обрабатывает отдельный Cloudflare Worker (workers/telegram-
+// webhook) — он отвечает Telegram мгновенно, что и требуется, чтобы кнопка не крутилась
+// вечно. Сюда воркер лишь кладёт решение в очередь (Cloudflare KV); здесь, раз в 15 минут,
+// очередь разбирается и решения ложатся в Firestore — туда же, где остальная история сделки.
+const CF_API = 'https://api.cloudflare.com/client/v4';
 
-  for (const u of updates) {
-    state.offset = u.update_id + 1;
-    const cq = u.callback_query;
-    if (!cq?.data?.startsWith('d|')) continue;
+async function cfKv(path, opts = {}) {
+  const token = process.env.CF_API_TOKEN;
+  const account = process.env.CF_ACCOUNT_ID;
+  const ns = process.env.CF_KV_NAMESPACE_ID;
+  if (!token || !account || !ns) return null; // Worker ещё не настроен — не ошибка, просто пропускаем
+  const res = await fetch(`${CF_API}/accounts/${account}/storage/kv/namespaces/${ns}${path}`, {
+    headers: { Authorization: `Bearer ${token}` }, ...opts,
+  });
+  if (!res.ok) throw new Error(`Cloudflare KV ${path}: ${res.status} ${await res.text()}`);
+  return res;
+}
 
-    const [, tradeId, code] = cq.data.split('|');
-    const tradeRef = db.collection('trades').doc(tradeId);
-    const trade = (await tradeRef.get()).data();
-    const tag = trade ? `${trade.ticker}` : tradeId;
-    let note = '';
+async function applyPendingDecisions(db, uid, runState) {
+  const listRes = await cfKv('/keys?limit=1000');
+  if (!listRes) return; // секреты CF_* не заданы
+  const { result: keys } = await listRes.json();
+  if (!keys?.length) return;
 
-    if (code === 'sn4') {
-      state.snooze = state.snooze || {};
-      state.snooze[tradeId] = Date.now() + 4 * 60 * 60 * 1000;
-      note = 'Не буду дёргать по этой сделке 4 часа.';
-      await tg('editMessageReplyMarkup', { chat_id: cq.message.chat.id, message_id: cq.message.message_id, reply_markup: { inline_keyboard: [] } });
-    } else if (code === 'sk') {
-      // Второй экран — за что именно пропустил.
-      await tg('editMessageReplyMarkup', {
-        chat_id: cq.message.chat.id, message_id: cq.message.message_id,
-        reply_markup: buildReasonKeyboard(tradeId),
-      });
-      await tg('answerCallbackQuery', { callback_query_id: cq.id, text: 'Почему пропустил?' });
-      continue;
-    } else {
-      const reason = SKIP_REASONS.find((r) => r.code === code);
-      const action = code === 'fp' ? 'fixed_partial' : code === 'fa' ? 'closed_full' : 'skipped';
-      const label = code === 'fp' ? 'Снял часть'
-        : code === 'fa' ? 'Закрыл целиком'
-          : (reason?.label || 'Ничего не делал');
-      // Решение пишется в саму сделку — там же, где живёт её история, чтобы потом
-      // «Сопровождение» могло показать, какие причины сколько стоили.
-      await tradeRef.set({
-        decisions: admin.firestore.FieldValue.arrayUnion({
-          at: new Date().toISOString(), action, reason: reason?.label || null, via: 'telegram',
-        }),
-      }, { merge: true });
-      note = action === 'skipped' ? `Записала причину: ${label.toLowerCase()}.` : `Записала: ${label.toLowerCase()}.`;
-      await tg('editMessageText', {
-        chat_id: cq.message.chat.id, message_id: cq.message.message_id,
-        text: `${cq.message.text ? escapeHtml(cq.message.text) : tag}\n\n<i>→ ${escapeHtml(label)}</i>`,
-        parse_mode: 'HTML',
-      });
+  for (const { name } of keys) {
+    try {
+      const valueRes = await cfKv(`/values/${encodeURIComponent(name)}`);
+      const entry = JSON.parse(await valueRes.text());
+      const tag = entry.tradeId;
+
+      if (entry.action === 'snoozed') {
+        runState.snooze[entry.tradeId] = Date.now() + 4 * 60 * 60 * 1000;
+      } else {
+        // Решение пишется в саму сделку — там же, где живёт её история, чтобы потом
+        // «Сопровождение» могло показать, какие причины сколько стоили.
+        await db.collection('trades').doc(entry.tradeId).set({
+          decisions: admin.firestore.FieldValue.arrayUnion({
+            at: entry.at, action: entry.action, reason: entry.label, via: 'telegram',
+          }),
+        }, { merge: true });
+      }
+      await cfKv(`/values/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      console.log(`[${uid}] решение по ${tag}: ${entry.label}`);
+    } catch (e) {
+      console.error(`[${uid}] решение ${name}: ${e.message}`);
     }
-
-    await tg('answerCallbackQuery', { callback_query_id: cq.id, text: note });
-    console.log(`[${uid}] нажатие по ${tag}: ${code} — ${note}`);
   }
-  await stateRef.set({ offset: state.offset, snooze: state.snooze || {} }, { merge: true });
 }
 
 // --- Основной проход -----------------------------------------------------------------
@@ -217,7 +205,7 @@ async function checkTrade(db, uid, trade, prefs, sentMap) {
 }
 
 async function main() {
-  const force = process.argv.includes('--force');
+  const force = process.argv.includes('--force') || process.env.FORCE_CHECK === 'true';
   if (!force && !isTradingHours()) {
     console.log('Вне торговой сессии — проверять нечего.');
     return;
@@ -242,11 +230,11 @@ async function main() {
     const stateRef = db.collection('users').doc(uid).collection('alertState').doc('sent');
     const saved = (await stateRef.get()).data() || {};
     const sentMap = saved.keys || {};
-    const runState = { offset: saved.offset || 0, snooze: saved.snooze || {} };
+    const runState = { snooze: saved.snooze || {} };
 
     // Сначала разбираем, что нажали с прошлого раза, — иначе «не дёргать 4 часа»
     // применится только со следующего запуска, и одно лишнее сообщение всё равно уйдёт.
-    await processCallbacks(db, uid, stateRef, runState);
+    await applyPendingDecisions(db, uid, runState);
 
     const snap = await db.collection('trades')
       .where('userId', '==', uid)
@@ -271,9 +259,7 @@ async function main() {
     const cutoff = Date.now() - 24 * 60 * 60 * 1000;
     for (const k of Object.keys(sentMap)) if (sentMap[k] < cutoff) delete sentMap[k];
     for (const k of Object.keys(runState.snooze)) if (runState.snooze[k] < Date.now()) delete runState.snooze[k];
-    await stateRef.set({
-      keys: sentMap, offset: runState.offset, snooze: runState.snooze, updatedAt: Date.now(),
-    });
+    await stateRef.set({ keys: sentMap, snooze: runState.snooze, updatedAt: Date.now() });
   }
 }
 

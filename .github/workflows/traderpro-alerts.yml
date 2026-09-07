@@ -7,6 +7,11 @@ on:
   schedule:
     - cron: '*/15 7-15 * * 1-5'
   workflow_dispatch:        # кнопка «запустить вручную» во вкладке Actions
+    inputs:
+      force:
+        description: 'Проверить даже вне торговой сессии (для теста)'
+        type: boolean
+        default: false
 
 # Без этого GitHub отключает расписание в репозиториях, где давно не было коммитов.
 # Если увидишь, что уведомления перестали приходить, — зайди в Actions и нажми Enable.
@@ -31,4 +36,8 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           ALERT_UIDS: ${{ secrets.ALERT_UIDS }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
+          FORCE_CHECK: ${{ github.event.inputs.force }}
         run: node scripts/alerts/runAlerts.mjs

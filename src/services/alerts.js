@@ -208,3 +208,16 @@ export function buildReasonKeyboard(tradeId) {
     inline_keyboard: SKIP_REASONS.map((r) => ([{ text: r.label, callback_data: `d|${tradeId}|${r.code}` }])),
   };
 }
+
+/**
+ * Код кнопки → что это значит по-русски. Общая для Cloudflare Worker (мгновенный ответ
+ * Telegram) и фонового раннера (запись в Firestore) — чтобы формулировки не разъехались
+ * между «что увидел трейдер» и «что легло в дневник причин».
+ */
+export function describeDecision(code) {
+  if (code === 'fp') return { action: 'fixed_partial', label: 'Снял часть' };
+  if (code === 'fa') return { action: 'closed_full', label: 'Закрыл целиком' };
+  if (code === 'sn4') return { action: 'snoozed', label: 'Тихий режим на 4 часа' };
+  const reason = SKIP_REASONS.find((r) => r.code === code);
+  return { action: 'skipped', label: reason?.label || 'Ничего не делал' };
+}
