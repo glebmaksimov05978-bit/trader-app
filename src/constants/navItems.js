@@ -10,6 +10,12 @@ export const NAV_ITEMS = [
   { path: '/calculator', icon: '🧮', label: 'Калькулятор', mobileLabel: 'Расчёт' },
   { path: '/journal', icon: '📓', label: 'Журнал' },
   { path: '/report', icon: '🗓', label: 'Отчёт за месяц', mobileLabel: 'Отчёт' },
+  // «Сопровождение» открыто всем: вести открытую позицию, следить за радаром и считать
+  // «если закрыть сейчас» полезно с любой стратегией. Части вкладки, завязанные на
+  // конкретные системы выхода (профит-/лосс-счёт, история по когортам фиксаций),
+  // показываются только той стратегии, которая ими действительно пользуется, — см.
+  // usesProfitSystem/usesLossSystem в Cockpit.js.
+  { path: '/cockpit', icon: '🎛️', label: 'Сопровождение', mobileLabel: 'Ведение' },
   { path: '/capital', icon: '💰', label: 'Капитал' },
   { path: '/advisor', icon: '🤖', label: 'AI Советник', mobileLabel: 'AI' },
   { path: '/settings', icon: '⚙️', label: 'Настройки' },
@@ -22,6 +28,5 @@ export const ADMIN_ITEMS = [
 // Внутренний инструмент, не готовый для клиентов — виден админам и тому же списку
 // доверенных аккаунтов, что обходит стену верификации почты (см. TRUSTED_UIDS).
 export const TRUSTED_ITEMS = [
-  { path: '/cockpit', icon: '🎛️', label: 'Сопровождение', mobileLabel: 'Ведение' },
   { path: '/backtest', icon: '🧪', label: 'Бэктест' },
 ];

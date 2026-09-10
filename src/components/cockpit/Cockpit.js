@@ -75,6 +75,23 @@ function ScorePanel({ title, hint, score, threshold, max, breakdown, reached, to
   );
 }
 
+// Место панели, которой у этой стратегии нет. Пустое место или ноль на шкале читались бы
+// как «система молчит», а она просто не включена — это разные вещи.
+function SystemOff({ title, text }) {
+  return (
+    <div className="ck-panel ck-score ck-score-off">
+      <div className="ck-score-head">
+        <div>
+          <h3>{title}</h3>
+          <div className="ck-hint">не используется вашей стратегией</div>
+        </div>
+      </div>
+      <div className="ck-off-text">{text}</div>
+      <Link className="ck-btn" to="/capital">Настроить правила выхода</Link>
+    </div>
+  );
+}
+
 export default function Cockpit() {
   const { user, userProfile } = useAuth();
   const navigate = useNavigate();
@@ -107,6 +124,11 @@ export default function Cockpit() {
     [strategies, strategyId, userProfile],
   );
   const exitRules = strategy?.exitRules || {};
+  // Какими системами выхода стратегия реально пользуется. От этого зависит, что вкладке
+  // осмысленно показывать: у стратегии без частичных фиксаций «когорта фиксаций» и счёт
+  // профит-системы — числа без применения.
+  const usesProfitSystem = !!exitRules.profitCaptureEnabled;
+  const usesLossSystem = exitRules.trailLossRule === 'score';
 
   // --- открытые позиции ---
   useEffect(() => {
@@ -559,8 +581,11 @@ export default function Cockpit() {
             </section>
           )}
 
-          {/* ---------- похожие исторические ситуации ---------- */}
-          {similar && (
+          {/* ---------- похожие исторические ситуации ----------
+              Выборка получена прогоном стратегии с частичными фиксациями, и разрезана она
+              по числу этих фиксаций. Стратегии без них она бы ничего не сказала: когорта
+              «0 фиксаций» у неё была бы всегда, то есть разреза нет. */}
+          {similar && usesProfitSystem && (
             <section className="ck-panel ck-hist">
               <div className="ck-hist-top">
                 <h3>Что было дальше в похожих ситуациях</h3>
@@ -618,28 +643,49 @@ export default function Cockpit() {
             </section>
           )}
 
-          {/* ---------- системы ---------- */}
+          {/* ---------- системы ----------
+              Панели показываются, только если ВАША стратегия действительно этими
+              системами пользуется. Показывать счёт системы, которая в стратегии
+              выключена, — значит предлагать решение по правилам, по которым сделка не
+              ведётся: цифра есть, а смысла у неё нет. */}
           <div className="ck-two">
-            <ScorePanel
-              title="Профит-система"
-              hint="когда фиксировать часть прибыли"
-              score={a?.now?.profitScore}
-              threshold={exitRules.profitCaptureThreshold ?? 4}
-              max={8}
-              breakdown={breakdowns.profit}
-              reached={(a?.now?.profitScore ?? -99) >= (exitRules.profitCaptureThreshold ?? 4)}
-              tone="gold"
-            />
-            <ScorePanel
-              title="Лосс-система"
-              hint="выше — похоже на дно, ниже — падение продолжается"
-              score={a?.now?.lossScore}
-              threshold={exitRules.lossScoreThreshold ?? 2}
-              max={6}
-              breakdown={breakdowns.loss}
-              reached={(a?.now?.lossScore ?? 99) <= (exitRules.lossScoreThreshold ?? 2)}
-              tone="red"
-            />
+            {usesProfitSystem ? (
+              <ScorePanel
+                title="Профит-система"
+                hint="когда фиксировать часть прибыли"
+                score={a?.now?.profitScore}
+                threshold={exitRules.profitCaptureThreshold ?? 4}
+                max={8}
+                breakdown={breakdowns.profit}
+                reached={(a?.now?.profitScore ?? -99) >= (exitRules.profitCaptureThreshold ?? 4)}
+                tone="gold"
+              />
+            ) : (
+              <SystemOff
+                title="Профит-система"
+                text="Ваша стратегия не фиксирует прибыль частями. Включите это в правилах выхода —
+                      и здесь появится счёт: по каким признакам стоит снять часть прямо сейчас."
+              />
+            )}
+            {usesLossSystem ? (
+              <ScorePanel
+                title="Лосс-система"
+                hint="выше — похоже на дно, ниже — падение продолжается"
+                score={a?.now?.lossScore}
+                threshold={exitRules.lossScoreThreshold ?? 2}
+                max={6}
+                breakdown={breakdowns.loss}
+                reached={(a?.now?.lossScore ?? 99) <= (exitRules.lossScoreThreshold ?? 2)}
+                tone="red"
+              />
+            ) : (
+              <SystemOff
+                title="Лосс-система"
+                text="Убытки в вашей стратегии закрываются обычным стопом, без разбора динамики.
+                      Если включить правило выхода по счёту, здесь будет видно, похоже ли текущее
+                      падение на дно или на продолжение."
+              />
+            )}
           </div>
         </main>
 

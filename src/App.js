@@ -76,9 +76,10 @@ function AppRoutes() {
         <Route path="backtest" element={
           <TrustedRoute><Backtest /></TrustedRoute>
         } />
-        <Route path="cockpit" element={
-          <TrustedRoute><Cockpit /></TrustedRoute>
-        } />
+        {/* «Сопровождение» открыто всем — см. комментарий в constants/navItems.js:
+            сама вкладка полезна с любой стратегией, а её части, завязанные на конкретные
+            системы выхода, показываются только той стратегии, которая ими пользуется. */}
+        <Route path="cockpit" element={<Cockpit />} />
       </Route>
     </Routes>
   );
