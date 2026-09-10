@@ -246,6 +246,14 @@ export function computeIndicatorsAtEntry(candles, atDate) {
     ema100Distance: ema100AtIndex != null ? ((closeAtIndex - ema100AtIndex) / ema100AtIndex) * 100 : null,
     ema200Distance: ema200AtIndex != null ? ((closeAtIndex - ema200AtIndex) / ema200AtIndex) * 100 : null,
     volumeRatio: volumeRatioAt(volumes, index),
+    // Импульс за 3 бара в процентах — тот самый фильтр входа, на котором построено всё
+    // исследование бэктеста (там он зовётся mom3). Значение сырое, без привязки к
+    // направлению сделки: знак = сторона движения, а условие стратегии уже разворачивает
+    // его под лонг или шорт. До этого собрать в приложении стратегию, которой пользуются
+    // наши алгоритмы, было физически нельзя — такого условия в конструкторе не было.
+    momentum3Pct: (index >= 3 && closes[index - 3])
+      ? ((closes[index] - closes[index - 3]) / closes[index - 3]) * 100
+      : null,
     bollinger: bollingerAt(closes, index),
     // Shorter-period band (10 vs the default 20) — reacts faster, validated 2026-08-17 as
     // part of the profit-capture score's feature search alongside adxLite above.

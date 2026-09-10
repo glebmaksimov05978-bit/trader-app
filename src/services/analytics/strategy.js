@@ -191,6 +191,27 @@ export const CONDITION_CATALOG = [
     },
   },
   {
+    // Тот самый вход, на котором построено всё исследование бэктеста (там он зовётся
+    // mom3 > 1). До этого условия собрать в конструкторе стратегию, которой пользуются
+    // наши алгоритмы, было нельзя — фильтр импульса жил только в исследовательских
+    // скриптах и передавался в движок отдельным параметром, мимо конструктора.
+    id: 'momentum_favor', category: 'market', label: 'Импульс за 3 бара в сторону сделки больше X%',
+    paramLabel: 'Импульс больше, %', defaultParam: 1,
+    evaluate: (ctx, param) => {
+      const m = ctx.indicators?.momentum3Pct;
+      if (m == null) return { na: true };
+      const fmt = (v) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
+      // Направление ещё не выбрано (Радар смотрит инструмент до решения о стороне) —
+      // считаем по модулю и называем сторону, иначе условие всегда было бы неприменимо.
+      if (!ctx.direction) {
+        const ok = Math.abs(m) > param;
+        return { passed: ok, detail: `Импульс ${fmt(m)} (${m >= 0 ? 'вверх' : 'вниз'}) ${ok ? '>' : '≤'} ${param}%` };
+      }
+      const favor = ctx.direction === 'short' ? -m : m;
+      return { passed: favor > param, detail: `Импульс в нашу сторону ${fmt(favor)} ${favor > param ? '>' : '≤'} ${param}%` };
+    },
+  },
+  {
     id: 'market_trending', category: 'market', label: 'Рынок в тренде (не в боковике)',
     evaluate: (ctx) => {
       const t = ctx.marketContext?.trend;
