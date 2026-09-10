@@ -383,20 +383,23 @@ export function computeFibonacciLevels(swings) {
 // bars never produce a confirmed swing no matter how extreme they are. This is exactly
 // where a "forming" setup lives: a peak/trough that's real on the chart right now but
 // hasn't had time to prove itself yet.
-function tailExtreme(candles, lookback, type) {
-  const tail = candles.slice(-lookback);
-  if (!tail.length) return null;
-  const tailStartIndex = candles.length - tail.length;
-  let bestIdx = tailStartIndex;
-  let bestVal = type === 'high' ? tail[0].high : tail[0].low;
-  tail.forEach((c, i) => {
-    const v = type === 'high' ? c.high : c.low;
+// uptoIndex — тот же смысл, что раньше давала обрезка массива до текущего бара: искать
+// хвост нужно ДО этого индекса, а не в реальном конце массива candles (он в бэктесте
+// длиннее — там вся история тикера). Раньше эту границу задавали через .slice(0, i+1)
+// перед вызовом; здесь она передаётся числом, без копирования массива на каждом баре.
+function tailExtreme(candles, uptoIndex, lookback, type) {
+  const start = Math.max(0, uptoIndex - lookback + 1);
+  if (start > uptoIndex) return null;
+  let bestIdx = start;
+  let bestVal = type === 'high' ? candles[start].high : candles[start].low;
+  for (let i = start; i <= uptoIndex; i++) {
+    const v = type === 'high' ? candles[i].high : candles[i].low;
     if ((type === 'high' && v > bestVal) || (type === 'low' && v < bestVal)) {
       bestVal = v;
-      bestIdx = tailStartIndex + i;
+      bestIdx = i;
     }
-  });
-  return { index: bestIdx, price: bestVal, barsAgo: candles.length - 1 - bestIdx };
+  }
+  return { index: bestIdx, price: bestVal, barsAgo: uptoIndex - bestIdx };
 }
 
 // A live, still-developing double top/bottom: the tail (unconfirmed) extreme sits near
@@ -405,16 +408,16 @@ function tailExtreme(candles, lookback, type) {
 // hasn't had enough bars yet to count as a confirmed swing. `status: 'forming'` only
 // becomes meaningful with live polling (Calculator's "🔴 Live" toggle) — on a frozen
 // historical view (Journal) it's really just "what the chart looked like right then."
-function detectFormingDoubleTopBottom(swings, visibleCandles, swingLookback, matchTolerancePct = 2) {
+function detectFormingDoubleTopBottom(swings, candles, uptoIndex, swingLookback, matchTolerancePct = 2) {
   if (!swings.length) return [];
   const lastSwing = swings[swings.length - 1];
-  const tail = tailExtreme(visibleCandles, swingLookback, lastSwing.type);
+  const tail = tailExtreme(candles, uptoIndex, swingLookback, lastSwing.type);
   if (!tail || tail.index <= lastSwing.index) return [];
 
   const diffPct = (Math.abs(tail.price - lastSwing.price) / lastSwing.price) * 100;
   if (diffPct > matchTolerancePct) return [];
 
-  const currentPrice = visibleCandles[visibleCandles.length - 1].close;
+  const currentPrice = candles[uptoIndex].close;
   const pulledBack = lastSwing.type === 'high' ? currentPrice < tail.price * 0.997 : currentPrice > tail.price * 1.003;
   if (!pulledBack) return [];
 
@@ -891,10 +894,15 @@ export function computePatternsAtEntry(candles, atDate, { swingLookback = 3, tim
   const index = indexAtOrBefore(candles, atDate);
   if (index === -1) return null;
 
-  // Only candles up to and including the entry bar — no hindsight.
-  const visibleCandles = candles.slice(0, index + 1);
+  // Раньше здесь была visibleCandles = candles.slice(0, index+1) — копия массива на
+  // КАЖДЫЙ бар бэктеста ради «нет заглядывания вперёд». На дневном графике (~2000
+  // баров) это было терпимо, на часовом (~8-10 тысяч) — квадратичный рост, который на
+  // 24 тикерах × несколько вариантов растягивал калибровку на часы вместо минут.
+  // Все функции ниже и так получают явный index/uptoIndex — они попросту НЕ смотрят
+  // дальше него, так что можно отдавать им полный массив без копирования: правило «нет
+  // заглядывания вперёд» соблюдается через переданный индекс, а не через длину массива.
   const emaLevels = computeEmaLevelsAtIndex(candles, index);
-  const currentPrice = visibleCandles[visibleCandles.length - 1].close;
+  const currentPrice = candles[index].close;
 
   // Swing-based figures (double top/bottom, H&S, flags/triangles/wedges, static S/R)
   // need M15+ to mean anything — below that, a 3-candle lookback window is mostly
@@ -927,17 +935,17 @@ export function computePatternsAtEntry(candles, atDate, { swingLookback = 3, tim
   // gated on real bar-age (see MAX_DOUBLE_PATTERN_AGE_BARS) so a stale pair can't keep
   // winning just because too few new swings have formed to push it out of the count window.
   const recentDoubles = swingsAllowed
-    ? detectDoubleTopBottom(swings, 2, 2, swings.length - 15, visibleCandles.length - 1, visibleCandles)
+    ? detectDoubleTopBottom(swings, 2, 2, swings.length - 15, index, candles)
     : [];
 
   const rawCandidates = [
     ...recentDoubles,
-    ...(swingsAllowed ? detectFormingDoubleTopBottom(swings, visibleCandles, swingLookback) : []),
-    ...(swingsAllowed ? detectBreakout(visibleCandles, visibleCandles.length - 1, levels, volumeRatio) : []),
+    ...(swingsAllowed ? detectFormingDoubleTopBottom(swings, candles, index, swingLookback) : []),
+    ...(swingsAllowed ? detectBreakout(candles, index, levels, volumeRatio) : []),
     swingsAllowed ? classifyConsolidation(swings) : null,
     swingsAllowed ? detectHeadAndShoulders(swings) : null,
     swingsAllowed ? detectFiveWaveStructure(swings) : null,
-    ...detectCandlestickPatterns(visibleCandles, visibleCandles.length - 1),
+    ...detectCandlestickPatterns(candles, index),
   ].filter(Boolean);
 
   // Most candidates are built from confirmed swings/closed candles → status 'confirmed'.
@@ -999,7 +1007,7 @@ export function computePatternsAtEntry(candles, atDate, { swingLookback = 3, tim
   }
 
   return {
-    date: visibleCandles[visibleCandles.length - 1].date,
+    date: candles[index].date,
     emaLevels,
     supportResistance: levels,
     fibonacci,
