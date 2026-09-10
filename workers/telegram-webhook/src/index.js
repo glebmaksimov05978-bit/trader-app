@@ -13,7 +13,14 @@
 //      в Firestore — та же функция, что уже писала их напрямую, просто источник другой.
 // Вся смысловая логика (что означает какая кнопка) — в src/services/alerts.js, один файл
 // на приложение, воркер и раннер, чтобы формулировки не могли разойтись.
+//
+// Второй адрес того же воркера — отправка заявок брокеру (/order, см. orders.js).
+// Почему в том же воркере, а не в отдельном: это личный воркер трейдера, и вторая
+// установка означала бы второй деплой, второй набор секретов и второй источник
+// расхождений. Обработчики при этом полностью раздельны — общего между ними ровно
+// ничего, кроме адреса.
 import { buildReasonKeyboard, describeDecision, escapeHtml } from '../../../src/services/alerts.js';
+import { handleOrder, handleOrderConfig } from './orders.js';
 
 async function tg(token, method, body) {
   const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
@@ -26,6 +33,11 @@ async function tg(token, method, body) {
 
 export default {
   async fetch(request, env) {
+    const path = new URL(request.url).pathname;
+    if (path === '/order') return handleOrder(request, env);
+    if (path === '/order/config') return handleOrderConfig(request, env);
+
+    // Всё остальное — вебхук Telegram: он ходит на корень адреса.
     if (request.method !== 'POST') return new Response('ok');
 
     // Секретный заголовок Telegram сам подставляет в каждый запрос на этот адрес —

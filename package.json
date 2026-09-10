@@ -20,6 +20,7 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "test:import": "node scripts/goldenImportTests.mjs",
+    "test:orders": "node scripts/orderGatesTests.mjs",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {

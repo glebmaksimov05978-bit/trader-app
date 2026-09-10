@@ -13,6 +13,8 @@ import { computeMarketContextAtEntry } from '../../services/analytics/marketCont
 import { fetchActiveFutureCard, fetchMoexSecurityInfo } from '../../services/marketData/futuresSpecs';
 import { evaluateStrategy, getActiveStrategy, getStrategies } from '../../services/analytics/strategy';
 import { computeBaskets, capitalForStrategy, getPortfolio } from '../../services/analytics/portfolio';
+import { fetchOrderConfig } from '../../services/broker';
+import OrderModal from './OrderModal';
 import { computeStopPrice, computeTakePrice, exitTypeLabel } from '../../services/analytics/exitRules';
 import TechnicalAnalysisBlock, { PATTERN_LABELS, InfoTip } from '../shared/TechnicalAnalysisBlock';
 import CandleChart from '../shared/CandleChart';
@@ -88,6 +90,11 @@ export default function Calculator() {
   const [showTinkoffModal, setShowTinkoffModal] = useState(false);
   const [showAtrModal, setShowAtrModal] = useState(false);
   const [tinkoffCopied, setTinkoffCopied] = useState('');
+  // Отправка заявки из приложения. Настраивается на сервере (личный воркер трейдера) —
+  // если он не настроен, конфиг не приедет и кнопки просто не будет: показывать кнопку,
+  // которая всегда отвечает ошибкой, хуже, чем не показывать её вовсе.
+  const [orderCfg, setOrderCfg] = useState(null);
+  const [showOrderModal, setShowOrderModal] = useState(false);
   const [journalExtra, setJournalExtra] = useState({ setup: '', emotion: '', notes: '' });
   const [savingTrade, setSavingTrade] = useState(false);
   const [forcedDir, setForcedDir] = useState(draft?.forcedDir || null);
@@ -181,6 +188,11 @@ export default function Calculator() {
     if (!user) return;
     getUserTrades(user.uid).then(setLiveTrades);
   }, [user]);
+
+  useEffect(() => {
+    if (!user) { setOrderCfg(null); return; }
+    fetchOrderConfig(userProfile).then(setOrderCfg);
+  }, [user, userProfile]);
 
   useEffect(() => {
     if (userProfile) {
@@ -1177,6 +1189,22 @@ export default function Calculator() {
                   }}>T</span>
                   В Т-Банк
                 </button>
+                {/* Отправка заявки прямо отсюда — то самое «купить, не заходя в Т-Банк».
+                    Кнопка появляется, только если сервер настроен И тикер в белом списке:
+                    иначе она гарантированно ответила бы отказом, а кнопка, которая всегда
+                    отказывает, хуже отсутствующей. Ничего не отправляется по нажатию —
+                    открывается окно подтверждения, где сервер сначала показывает, что
+                    именно уйдёт. */}
+                {orderCfg?.enabled && form.ticker
+                  && orderCfg.whitelist?.includes(form.ticker.toUpperCase()) && (
+                  <button
+                    className="btn btn-secondary"
+                    style={{flex:1}}
+                    onClick={() => setShowOrderModal(true)}
+                  >
+                    ⚡ {activeDirection === 'short' ? 'Продать' : 'Купить'} сразу
+                  </button>
+                )}
                 {/* Real user request: no way to move a ticker being planned in the
                     Calculator into the Radar watchlist without retyping it by hand in
                     Journal's separate "+ Добавить в радар" form. */}
@@ -1365,6 +1393,20 @@ export default function Calculator() {
       )}
 
       {/* Модалка Т-Банк */}
+      <OrderModal
+        open={showOrderModal}
+        onClose={() => setShowOrderModal(false)}
+        userProfile={userProfile}
+        intent={form.ticker ? {
+          ticker: form.ticker.toUpperCase(),
+          instrumentType,
+          direction: activeDirection === 'short' ? 'sell' : 'buy',
+          lots: effectiveContracts,
+          price: parseFloat(form.entryPrice) || null,
+        } : null}
+        onPlaced={() => toast.success('Заявка отправлена брокеру')}
+      />
+
       {showTinkoffModal && displayResult && (
         <div className="calc-modal-overlay" onClick={() => setShowTinkoffModal(false)}>
           <div className="calc-modal" onClick={e => e.stopPropagation()}>
