@@ -137,7 +137,14 @@ export default function Dashboard() {
   }));
 
   const instrumentPnl = detectPnlByInstrumentType(trades);
-  const { top: weeklyHabits, all: allHabits, windowUsed, windowDays } = computeWeeklyHabits(trades, userProfile || {});
+  // Правила активной стратегии нужны детектору когорт: разрез «снимали часть или нет»
+  // осмыслен только для стратегии, которая вообще предполагает частичные фиксации.
+  // У стратегии без этого детектор выключается сам — вместо вывода про механику,
+  // которой трейдер не пользуется.
+  const { top: weeklyHabits, all: allHabits, windowUsed, windowDays } = computeWeeklyHabits(
+    trades,
+    { ...(userProfile || {}), __activeExitRules: activeStrategy?.exitRules || null },
+  );
 
   if (loading) return (
     <div className="page" style={{display:'flex',alignItems:'center',justifyContent:'center',minHeight:'60vh'}}>

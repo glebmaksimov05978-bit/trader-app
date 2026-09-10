@@ -551,6 +551,168 @@ export function detectMarketContextLosses(trades) {
   };
 }
 
+// --- Детекторы на данных «разбора сделки» (tradePostmortem.js) ------------------------
+//
+// Эти четыре появились позже остальных и опираются на то, чего в журнале раньше просто
+// не было: пик сделки, отдачу от пика, число фиксаций и теневую линию движка. Они
+// считаются при закрытии сделки и лежат готовыми числами в самой сделке — здесь только
+// арифметика, как и у первых восьми детекторов.
+//
+// Сделки, закрытые ДО появления разбора, этих полей не имеют — они просто не попадают в
+// выборку, а детектор честно говорит, что данных пока мало.
+
+// Сколько рублей стоит один процент движения В ЭТОЙ сделке. Масштаб внутри одной сделки
+// постоянный (тот же инструмент, тот же объём), поэтому пересчёт корректен; небольшая
+// погрешность — комиссия, вшитая в pnl. Возвращает null там, где считать нечестно:
+// сделка закрылась почти в ноль, и деление раздувает любую ошибку.
+function rubPerPercentOf(t) {
+  const entry = parseFloat(t.entryPrice);
+  const exit = parseFloat(t.exitPrice);
+  if (!entry || !exit || t.pnl == null) return null;
+  const dirSign = t.direction === 'short' ? -1 : 1;
+  const pctMove = ((exit - entry) / entry) * 100 * dirSign;
+  if (Math.abs(pctMove) < 0.1) return null;
+  return t.pnl / pctMove;
+}
+
+const GIVEBACK_SHARE_THRESHOLD = 40; // отдано больше 40% от пика — уже привычка, а не шум
+
+export function detectGivebackFromPeak(trades) {
+  const eligible = trades.filter((t) => hasRealizedPnl(t)
+    && t.peakPct != null && t.givebackPct != null && t.peakPct > 0);
+  const sampleSize = eligible.length;
+  const confidence = sampleSize >= MIN_SAMPLE ? 'confirmed' : 'hypothesis';
+
+  const shares = eligible.map((t) => (t.givebackPct / t.peakPct) * 100);
+  const medianShare = median(shares);
+  const triggered = sampleSize > 0 && medianShare >= GIVEBACK_SHARE_THRESHOLD;
+
+  // Цена привычки — сколько рублей «дошло до пика, но не дошло до выхода».
+  let costRub = 0;
+  for (const t of eligible) {
+    const scale = rubPerPercentOf(t);
+    if (scale != null && t.givebackPct > 0) costRub += t.givebackPct * Math.abs(scale);
+  }
+  const example = eligible.slice().sort((a, b) => b.givebackPct - a.givebackPct)[0] || null;
+
+  return {
+    id: 'giveback_from_peak',
+    title: triggered ? 'Отдаёте прибыль от лучшей точки' : 'Удержание пика: в порядке',
+    sampleSize, confidence, triggered, costRub,
+    example,
+    detail: sampleSize === 0
+      ? 'Пока нет сделок с разбором — он считается при закрытии, так что данные начнут копиться со следующих закрытых сделок.'
+      : `В типичной сделке вы доходите до ${median(eligible.map((t) => t.peakPct)).toFixed(1)}% прибыли, `
+        + `а закрываете, отдав ${medianShare.toFixed(0)}% от этого максимума`
+        + (example ? `. Худший случай — ${example.ticker}: пик ${example.peakPct.toFixed(1)}%, отдано ${example.givebackPct.toFixed(1)} п.п.` : '.'),
+  };
+}
+
+// Когорты по числу частичных фиксаций. Детектор осмыслен только для стратегии, которая
+// вообще предполагает фиксацию частями — у стратегии без этого он выключается сам, а не
+// показывает пользователю вывод про механику, которой он не пользуется.
+export function detectNoPartialFixes(trades, profile = {}) {
+  const strategyUsesPartials = !!(profile?.__activeExitRules?.profitCaptureEnabled);
+  const eligible = trades.filter((t) => hasRealizedPnl(t) && t.cohort != null);
+  const sampleSize = eligible.length;
+  const confidence = sampleSize >= MIN_SAMPLE ? 'confirmed' : 'hypothesis';
+
+  const none = eligible.filter((t) => t.cohort === '0');
+  const some = eligible.filter((t) => t.cohort !== '0');
+  const avgNone = avg(none.map((t) => t.pnl));
+  const avgSome = avg(some.map((t) => t.pnl));
+  const triggered = strategyUsesPartials && none.length > 0 && some.length > 0 && avgNone < avgSome;
+  const costRub = triggered ? Math.abs(avgSome - avgNone) * none.length : 0;
+
+  return {
+    id: 'no_partial_fixes',
+    title: triggered ? 'Не снимаете часть прибыли по пути' : 'Частичные фиксации: в порядке',
+    sampleSize, confidence, triggered, costRub,
+    example: none.slice().sort((a, b) => a.pnl - b.pnl)[0] || null,
+    detail: !strategyUsesPartials
+      ? 'Ваша стратегия не предполагает фиксацию частями — этот разрез для неё не считается.'
+      : sampleSize === 0
+        ? 'Пока нет сделок с разбором — данные начнут копиться со следующих закрытых сделок.'
+        : `Сделки без единой частичной фиксации (${none.length} шт.) в среднем дают `
+          + `${Math.round(avgNone).toLocaleString('ru-RU')} ₽, а сделки, где вы снимали часть (${some.length} шт.) — `
+          + `${Math.round(avgSome).toLocaleString('ru-RU')} ₽.`,
+  };
+}
+
+// Расхождение с системой: теневая линия считает, что было бы, если следовать сигналам.
+export function detectSystemDiscipline(trades) {
+  const eligible = trades.filter((t) => hasRealizedPnl(t) && t.vsSystemPct != null);
+  const sampleSize = eligible.length;
+  const confidence = sampleSize >= MIN_SAMPLE ? 'confirmed' : 'hypothesis';
+
+  const behind = eligible.filter((t) => t.vsSystemPct < 0);
+  let costRub = 0;
+  for (const t of behind) {
+    const scale = rubPerPercentOf(t);
+    if (scale != null) costRub += Math.abs(t.vsSystemPct) * Math.abs(scale);
+  }
+  const triggered = sampleSize > 0 && behind.length > eligible.length / 2;
+
+  // Причины пропусков трейдер отмечает кнопками в уведомлениях (поле decisions).
+  const skipReasons = {};
+  for (const t of eligible) {
+    for (const d of (t.decisions || [])) {
+      if (d.action === 'skipped' && d.reason) skipReasons[d.reason] = (skipReasons[d.reason] || 0) + 1;
+    }
+  }
+  const topReason = Object.entries(skipReasons).sort((a, b) => b[1] - a[1])[0];
+
+  return {
+    id: 'system_discipline',
+    title: triggered ? 'Ваши решения отстают от системы' : 'Согласие с системой: в порядке',
+    sampleSize, confidence, triggered, costRub,
+    example: eligible.slice().sort((a, b) => a.vsSystemPct - b.vsSystemPct)[0] || null,
+    detail: sampleSize === 0
+      ? 'Пока нет сделок с разбором — данные начнут копиться со следующих закрытых сделок.'
+      : `В ${behind.length} из ${eligible.length} сделок система на вашем месте закрыла бы лучше`
+        + (topReason ? `. Чаще всего вы пропускали сигнал с причиной «${topReason[0]}» (${topReason[1]} раз).` : '.'),
+  };
+}
+
+// Растёт ли объём как раз перед провалами. Чистая арифметика по журналу — разбор не нужен.
+export function detectSizeVsOutcome(trades) {
+  const eligible = trades.filter(hasRealizedPnl).map((t) => {
+    const entry = parseFloat(t.entryPrice);
+    const notional = entry * (parseFloat(t.volume) || 0) * (parseFloat(t.lot) || 1);
+    return { t, notional, retPct: notional > 0 ? (t.pnl / notional) * 100 : null };
+  }).filter((x) => x.notional > 0 && x.retPct != null);
+  const sampleSize = eligible.length;
+  const confidence = sampleSize >= MIN_SAMPLE ? 'confirmed' : 'hypothesis';
+
+  if (sampleSize < 8) {
+    return {
+      id: 'size_vs_outcome', title: 'Размер позиции и результат', sampleSize, confidence,
+      triggered: false, costRub: 0, example: null,
+      detail: `Нужно хотя бы 8 сделок с известным объёмом, сейчас ${sampleSize}.`,
+    };
+  }
+
+  const sorted = [...eligible].sort((a, b) => b.notional - a.notional);
+  const bigCount = Math.max(1, Math.round(sorted.length / 4)); // верхняя четверть по объёму
+  const big = sorted.slice(0, bigCount);
+  const rest = sorted.slice(bigCount);
+  const avgBig = avg(big.map((x) => x.retPct));
+  const avgRest = avg(rest.map((x) => x.retPct));
+  const triggered = avgBig < avgRest && rest.length > 0;
+  // Цена привычки: насколько хуже отработали крупные сделки, в рублях их же масштаба.
+  const costRub = triggered ? big.reduce((s, x) => s + ((avgRest - x.retPct) / 100) * x.notional, 0) : 0;
+
+  return {
+    id: 'size_vs_outcome',
+    title: triggered ? 'Крупные сделки отрабатывают хуже' : 'Размер позиции: без перекоса',
+    sampleSize, confidence, triggered, costRub: Math.max(0, costRub),
+    example: big.slice().sort((a, b) => a.retPct - b.retPct)[0]?.t || null,
+    detail: `Самая крупная четверть сделок (${big.length} шт.) даёт в среднем ${avgBig.toFixed(2)}% на вложенное, `
+      + `остальные (${rest.length} шт.) — ${avgRest.toFixed(2)}%.`
+      + (triggered ? ' Чем больше заходите, тем хуже результат — типичный признак, что размер растёт на эмоциях.' : ''),
+  };
+}
+
 // --- Engine (7.1): rank triggered conclusions by money impact, cap the dashboard view ---
 
 export const WEEKLY_HABITS_LIMIT = 3;
@@ -566,6 +728,10 @@ function runAllDetectors(trades, profile) {
     detectExpiredFutures(trades),
     detectTimeMap(trades),
     detectMarketContextLosses(trades),
+    detectGivebackFromPeak(trades),
+    detectNoPartialFixes(trades, profile),
+    detectSystemDiscipline(trades),
+    detectSizeVsOutcome(trades),
   ];
 }
 
