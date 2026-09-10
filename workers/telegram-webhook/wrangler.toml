@@ -16,10 +16,10 @@ account_id = "7572bca2bf8f1423bb850a0d1296fb1c"
 # TICKER_WHITELIST — единственный список, по которому вообще разрешено торговать.
 # Пустой список = запрещено всё: молчание не должно открывать доступ.
 [vars]
-FIREBASE_PROJECT_ID = ""
-OWNER_UID = ""
-ALLOWED_ORIGIN = "*"
-TICKER_WHITELIST = ""
+FIREBASE_PROJECT_ID = "trader-app-6517b"
+OWNER_UID = ""            # впишите свой uid — см. инструкцию, как его найти
+ALLOWED_ORIGIN = "*"      # замените на адрес приложения, когда он появится (https://ваш-домен)
+TICKER_WHITELIST = "SBER, GAZP, LKOH"   # впишите СВОИ разрешённые тикеры через запятую
 # MAX_ORDER_RUB = "100000"   # потолок суммы одной заявки; не задан — не проверяется
 
 kv_namespaces = [

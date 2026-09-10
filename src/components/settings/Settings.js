@@ -87,6 +87,27 @@ export default function Settings() {
               <input className="input" value={form.displayName}
                 onChange={e => set('displayName', e.target.value)} placeholder="Имя трейдера"/>
             </div>
+            {/* Нужен, чтобы настроить OWNER_UID в воркере отправки заявок (см.
+                workers/telegram-webhook/README.md) — без него владелец не мог найти
+                свой uid иначе как через консоль разработчика. Не секрет: uid сам по
+                себе бесполезен без пароля и Firebase-токена. */}
+            {user?.uid && (
+              <div className="input-group">
+                <label className="input-label">
+                  Ваш ID (uid)
+                  <span className="text-xs text-muted" style={{fontWeight:400}}> — нужен для настройки отправки заявок</span>
+                </label>
+                <div style={{display:'flex', gap:8}}>
+                  <input className="input" value={user.uid} readOnly style={{fontFamily:'monospace', fontSize:12}} />
+                  <button
+                    type="button" className="btn btn-secondary btn-sm"
+                    onClick={() => { navigator.clipboard.writeText(user.uid).catch(() => {}); toast.success('Скопировано'); }}
+                  >
+                    Копировать
+                  </button>
+                </div>
+              </div>
+            )}
             {/* A single "Сохранить все настройки" button at the very bottom of a long
                 page was easy to miss — the trader looked for a save control right next
                 to the field they'd just edited and didn't find one (real user report). */}
@@ -140,6 +161,8 @@ export default function Settings() {
             <div className="input-hint">Токен хранится в вашем профиле Firestore, не передаётся третьим лицам</div>
           </div>
         </div>
+
+        <OrderWorkerCard userProfile={userProfile} updateUserProfile={updateUserProfile} />
 
         <div className="card" style={{marginBottom:20}}>
           <div className="section-title">
@@ -225,6 +248,88 @@ export default function Settings() {
           {saving ? <><div className="spinner" style={{width:16,height:16}}/> Сохранение...</> : '💾 Сохранить все настройки'}
         </button>
       </div>
+    </div>
+  );
+}
+
+// Адрес воркера, который отправляет заявки брокеру, — не сам торговый токен (тот живёт
+// только на сервере, см. workers/telegram-webhook/README.md), а публичный адрес, куда
+// приложение стучится. Показывает живую проверку готовности через fetchOrderConfig,
+// чтобы не гадать, настроено ли всё на сервере правильно.
+function OrderWorkerCard({ userProfile, updateUserProfile }) {
+  const [url, setUrl] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [cfg, setCfg] = useState(null);
+
+  useEffect(() => {
+    setUrl(userProfile?.orderWorkerUrl || '');
+  }, [userProfile]);
+
+  const check = async () => {
+    setChecking(true);
+    setCfg(null);
+    try {
+      const { fetchOrderConfig } = await import('../../services/broker');
+      const res = await fetchOrderConfig({ ...userProfile, orderWorkerUrl: url });
+      setCfg(res || { enabled: false, reason: 'сервер не ответил' });
+    } finally {
+      setChecking(false);
+    }
+  };
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await updateUserProfile({ orderWorkerUrl: url.trim() });
+      toast.success('Адрес сохранён');
+    } catch (e) {
+      toast.error('Ошибка сохранения: ' + (e.message || 'неизвестная ошибка'));
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="card" style={{marginBottom:20}}>
+      <div className="section-title">
+        <div className="section-title-icon">⚡</div>
+        Отправка заявок брокеру
+      </div>
+      <p className="text-sm text-secondary" style={{marginBottom:12}}>
+        Кнопка «Купить сразу» в Калькуляторе работает через ваш личный сервер (Cloudflare
+        Worker) — сам торговый токен туда не попадает, он остаётся на сервере. Подробная
+        инструкция по настройке: <code>workers/telegram-webhook/README.md</code> в проекте.
+      </p>
+      <div className="input-group">
+        <label className="input-label">Адрес воркера</label>
+        <input
+          className="input" value={url} onChange={(e) => setUrl(e.target.value)}
+          placeholder="https://traderpro-telegram-webhook.ваш-аккаунт.workers.dev"
+        />
+        <div className="input-hint">Тот же адрес, что уже используется для кнопок в Telegram-уведомлениях.</div>
+      </div>
+      <div className="flex gap-2" style={{marginTop:8, flexWrap:'wrap'}}>
+        <button className="btn btn-secondary btn-sm" onClick={save} disabled={saving || !url.trim()}>
+          {saving ? 'Сохранение...' : '💾 Сохранить адрес'}
+        </button>
+        <button className="btn btn-ghost btn-sm" onClick={check} disabled={checking || !url.trim()}>
+          {checking ? 'Проверяю...' : '🔍 Проверить готовность'}
+        </button>
+      </div>
+      {cfg && (
+        <div className="text-sm" style={{
+          marginTop:12, padding:'10px 14px', borderRadius:'var(--radius-sm)',
+          background: cfg.enabled ? 'rgba(16,185,129,0.08)' : 'rgba(245,158,11,0.08)',
+          border: `1px solid ${cfg.enabled ? 'rgba(16,185,129,0.3)' : 'rgba(245,158,11,0.3)'}`,
+          color: cfg.enabled ? 'var(--green)' : 'var(--gold)',
+        }}>
+          {cfg.enabled
+            ? `Готово к работе. Разрешённые тикеры: ${cfg.whitelist?.join(', ') || '—'}${cfg.maxOrderRub ? `, потолок заявки ${cfg.maxOrderRub.toLocaleString('ru-RU')} ₽` : ''}.`
+            : cfg.killSwitch
+              ? 'Отправка выключена стоп-краном на сервере (TRADING_DISABLED).'
+              : `Сервер отвечает, но отправка ещё не настроена: ${cfg.reason || 'не заданы торговый токен, номер счёта или белый список тикеров'}.`}
+        </div>
+      )}
     </div>
   );
 }
