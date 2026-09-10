@@ -97,9 +97,11 @@ export function checkOrderGates(env, body) {
   if (!env.TINKOFF_TRADE_TOKEN) {
     return { ok: false, status: 503, error: 'На сервере не задан торговый токен — отправка заявок не настроена.' };
   }
-  if (!env.TINKOFF_ACCOUNT_ID) {
-    return { ok: false, status: 503, error: 'На сервере не задан номер счёта.' };
-  }
+  // Номер счёта здесь НЕ проверяется: один торговый токен может открывать доступ сразу
+  // к нескольким счетам (обычный/ИИС и т.д.), поэтому счёт выбирается в самой заявке
+  // (body.accountId), а не зашивается на сервере одним значением. Резолвится и
+  // проверяется он ниже, в handleOrder — там же, где нужен реальный список счетов
+  // с биржи, а не здесь, в синхронной проверке без сети.
   if (!body) return { ok: false, status: 400, error: 'Тело запроса не разобрано' };
 
   const ticker = String(body.ticker || '').trim().toUpperCase();
@@ -127,6 +129,21 @@ export function checkOrderGates(env, body) {
   }
 
   return { ok: true, intent: { ticker, direction, lots, orderType, price, dryRun: !!body.dryRun } };
+}
+
+// Список счетов, которые открывает этот торговый токен. Один трейдер обычно имеет
+// несколько (обычный брокерский, ИИС...) — поэтому счёт нельзя зашивать в настройках
+// одним значением, его выбирают в самой заявке, а здесь только проверяют, что выбранный
+// счёт действительно принадлежит этому токену (а не подставлен произвольно из браузера).
+async function listAccounts(env) {
+  const data = await tinkoff(env, 'UsersService/GetAccounts', {});
+  return (data?.accounts || [])
+    .filter((a) => a.status === 'ACCOUNT_STATUS_OPEN')
+    .map((a) => ({
+      id: a.id,
+      name: a.name || a.id,
+      type: a.type || null,
+    }));
 }
 
 async function resolveInstrument(env, ticker, instrumentType) {
@@ -176,7 +193,33 @@ export async function handleOrder(request, env) {
   if (!gate.ok) return json(env, { error: gate.error }, gate.status);
   const { ticker, direction, lots, orderType, price, dryRun } = gate.intent;
 
-  // 3. Что именно покупаем. Резолвит сервер, а не браузер.
+  // 3. Какой счёт. Браузер присылает id счёта, который трейдер выбрал в окне
+  // подтверждения, — но сервер не доверяет ему вслепую: id сверяется со СПИСКОМ
+  // РЕАЛЬНЫХ счетов этого токена, полученным прямо у брокера. Иначе подменённый запрос
+  // мог бы указать чужой accountId и отправить заявку не туда.
+  let accounts;
+  try {
+    accounts = await listAccounts(env);
+  } catch (e) {
+    return json(env, { error: `Не удалось получить список счетов: ${e.message}` }, 502);
+  }
+  if (!accounts.length) {
+    return json(env, { error: 'У этого токена нет открытых счетов на бирже.' }, 502);
+  }
+  const requestedAccountId = String(body.accountId || '').trim();
+  const account = requestedAccountId
+    ? accounts.find((a) => a.id === requestedAccountId)
+    : (accounts.length === 1 ? accounts[0] : null);
+  if (!account) {
+    return json(env, {
+      error: requestedAccountId
+        ? 'Указанный счёт не найден среди счетов по этому токену.'
+        : 'У токена несколько счетов — нужно выбрать, на какой отправлять заявку.',
+      accounts,
+    }, 400);
+  }
+
+  // 4. Что именно покупаем. Резолвит сервер, а не браузер.
   let instrument;
   try {
     instrument = await resolveInstrument(env, ticker, body.instrumentType);
@@ -185,7 +228,7 @@ export async function handleOrder(request, env) {
   }
   if (!instrument) return json(env, { error: `Инструмент ${ticker} не найден или недоступен для торговли через API.` }, 404);
 
-  // 4. Потолок суммы, если задан. По умолчанию не задан — трейдер выбрал только белый
+  // 5. Потолок суммы, если задан. По умолчанию не задан — трейдер выбрал только белый
   // список; одна переменная MAX_ORDER_RUB включает и эту защиту, если понадобится.
   const maxRub = Number(env.MAX_ORDER_RUB) || null;
   let estimate = null;
@@ -215,18 +258,20 @@ export async function handleOrder(request, env) {
     orderType,
     price: orderType === 'limit' ? price : null,
     estimateRub: estimate != null ? Math.round(estimate) : null,
+    accountId: account.id,
+    accountName: account.name,
   };
 
-  // 5. Сухой прогон: всё проверено, но брокеру ничего не ушло. Так интерфейс показывает
+  // 6. Сухой прогон: всё проверено, но брокеру ничего не ушло. Так интерфейс показывает
   // трейдеру, что именно уйдёт, и так эта ветка проверяется без единой настоящей сделки.
   if (dryRun) return json(env, { ok: true, dryRun: true, preview });
 
-  // 6. Отправка. requestId — ключ идемпотентности: два нажатия подряд (или повтор из-за
+  // 7. Отправка. requestId — ключ идемпотентности: два нажатия подряд (или повтор из-за
   // сети) не превратятся в две заявки, брокер вернёт ту же самую.
   const orderId = String(body.requestId || '').slice(0, 36) || crypto.randomUUID();
   try {
     const res = await tinkoff(env, 'OrdersService/PostOrder', {
-      accountId: env.TINKOFF_ACCOUNT_ID,
+      accountId: account.id,
       instrumentId: instrument.uid || instrument.figi,
       quantity: String(lots),
       direction: direction === 'sell' ? 'ORDER_DIRECTION_SELL' : 'ORDER_DIRECTION_BUY',
@@ -265,10 +310,27 @@ export async function handleOrderConfig(request, env) {
 
   const whitelist = parseList(env.TICKER_WHITELIST);
   const disabled = String(env.TRADING_DISABLED || '').toLowerCase() === 'true';
+
+  // Список счетов запрашивается здесь же, чтобы окно подтверждения заявки не делало
+  // отдельный поход на сервер только ради выпадающего списка. Ошибка получения счетов —
+  // не повод ломать весь ответ: кнопка просто останется недоступной с понятной причиной.
+  let accounts = [];
+  let accountsError = null;
+  if (env.TINKOFF_TRADE_TOKEN && !disabled) {
+    try {
+      accounts = await listAccounts(env);
+      if (!accounts.length) accountsError = 'у токена нет открытых счетов';
+    } catch (e) {
+      accountsError = e.message;
+    }
+  }
+
   return json(env, {
-    enabled: !disabled && !!env.TINKOFF_TRADE_TOKEN && !!env.TINKOFF_ACCOUNT_ID && whitelist.length > 0,
+    enabled: !disabled && !!env.TINKOFF_TRADE_TOKEN && whitelist.length > 0 && accounts.length > 0,
     killSwitch: disabled,
     whitelist,
     maxOrderRub: Number(env.MAX_ORDER_RUB) || null,
+    accounts,
+    accountsError,
   });
 }

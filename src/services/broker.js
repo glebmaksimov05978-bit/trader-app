@@ -52,12 +52,13 @@ export async function fetchOrderConfig(userProfile) {
  * @param {number} a.lots
  * @param {string} a.orderType        - 'limit' | 'market'
  * @param {number} [a.price]          - обязательна для лимитной
+ * @param {string} [a.accountId]      - на какой счёт; если счёт один — сервер подставит сам
  * @param {string} a.requestId        - ключ идемпотентности: два нажатия = одна заявка
  * @param {boolean} [a.dryRun]        - проверить всё, но брокеру ничего не отправлять
- * @returns {Promise<{ok:boolean, preview?:object, order?:object, error?:string}>}
+ * @returns {Promise<{ok:boolean, preview?:object, order?:object, error?:string, accounts?:object[]}>}
  */
 export async function placeOrder({
-  userProfile, ticker, instrumentType, direction, lots, orderType, price, requestId, dryRun,
+  userProfile, ticker, instrumentType, direction, lots, orderType, price, accountId, requestId, dryRun,
 }) {
   const base = workerUrlOf(userProfile);
   if (!base) return { ok: false, error: 'Адрес сервера заявок не настроен' };
@@ -66,7 +67,7 @@ export async function placeOrder({
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
       body: JSON.stringify({
-        ticker, instrumentType, direction, lots, orderType, price, requestId, dryRun: !!dryRun,
+        ticker, instrumentType, direction, lots, orderType, price, accountId, requestId, dryRun: !!dryRun,
       }),
     });
     const data = await res.json().catch(() => null);

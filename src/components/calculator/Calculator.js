@@ -1397,6 +1397,7 @@ export default function Calculator() {
         open={showOrderModal}
         onClose={() => setShowOrderModal(false)}
         userProfile={userProfile}
+        accounts={orderCfg?.accounts}
         intent={form.ticker ? {
           ticker: form.ticker.toUpperCase(),
           instrumentType,

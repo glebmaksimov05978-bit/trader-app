@@ -11,7 +11,6 @@ const ok = (c, m) => { if (!c) { console.log('  ПРОВАЛ:', m); fails++; } }
 
 const ENV = {
   TINKOFF_TRADE_TOKEN: 'фиктивный-токен-для-теста',
-  TINKOFF_ACCOUNT_ID: '0000',
   TICKER_WHITELIST: 'SBER, GAZP LKOH',
 };
 const GOOD = { ticker: 'SBER', direction: 'buy', lots: 3, orderType: 'limit', price: 285.5 };
@@ -39,7 +38,10 @@ ok(!r({ TICKER_WHITELIST: '   ' }, GOOD).ok, 'список из пробелов
 
 // настройки сервера
 ok(!r({ TINKOFF_TRADE_TOKEN: '' }, GOOD).ok, 'без торгового токена — отказ');
-ok(!r({ TINKOFF_ACCOUNT_ID: '' }, GOOD).ok, 'без номера счёта — отказ');
+// Номер счёта здесь больше не проверяется: один токен может открывать несколько счетов
+// (обычный/ИИС), счёт выбирается в самой заявке и сверяется со списком у брокера — это
+// требует сети, поэтому проверяется не в checkOrderGates, а отдельно в handleOrder.
+ok(r({}, GOOD).ok, 'проверка проходит без accountId — счёт резолвится позже, с сетью');
 
 // разбор параметров
 ok(!r({}, null).ok, 'пустое тело');

@@ -15,8 +15,15 @@ import { placeOrder } from '../../services/broker';
 
 const money = (v) => (v == null ? '—' : `${Math.round(v).toLocaleString('ru-RU')} ₽`);
 
-export default function OrderModal({ open, onClose, onPlaced, userProfile, intent }) {
+// Куда в последний раз отправляли заявку — не секрет и не финансовая тайна (это просто
+// id счёта, бесполезный без самого торгового токена), поэтому localStorage годится:
+// трейдеру с несколькими счетами не нужно выбирать один и тот же счёт заново на каждой
+// заявке.
+const LAST_ACCOUNT_KEY = 'traderpro_last_order_account';
+
+export default function OrderModal({ open, onClose, onPlaced, userProfile, intent, accounts }) {
   const [orderType, setOrderType] = useState('limit');
+  const [accountId, setAccountId] = useState(null);
   const [preview, setPreview] = useState(null);
   const [checking, setChecking] = useState(false);
   const [sending, setSending] = useState(false);
@@ -31,19 +38,32 @@ export default function OrderModal({ open, onClose, onPlaced, userProfile, inten
     requestId.current = (crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`).slice(0, 36);
     setResult(null);
     setError(null);
-  }, [open]);
+    // Счёт по умолчанию: тот, что выбирали в прошлый раз, если он всё ещё среди
+    // доступных, иначе — единственный счёт (если он один), иначе трейдер выбирает сам.
+    let saved = null;
+    try { saved = localStorage.getItem(LAST_ACCOUNT_KEY); } catch { /* приватный режим и т.п. */ }
+    const list = accounts || [];
+    const initial = list.find((a) => a.id === saved)?.id
+      || (list.length === 1 ? list[0].id : null);
+    setAccountId(initial);
+  }, [open, accounts]);
 
-  // Сухой прогон при каждом изменении типа заявки: то, что видит трейдер, всегда ответ
-  // сервера на ровно те параметры, которые сейчас выставлены.
+  // У этого токена больше одного счёта, и пока трейдер не выбрал — отправлять некуда.
+  // Сухой прогон в этом случае не запускаем: спрашивать сервер, куда уйдёт заявка, когда
+  // счёт ещё не выбран, бессмысленно.
+  const needsAccountChoice = (accounts?.length || 0) > 1 && !accountId;
+
+  // Сухой прогон при каждом изменении типа заявки или счёта: то, что видит трейдер,
+  // всегда ответ сервера на ровно те параметры, которые сейчас выставлены.
   useEffect(() => {
-    if (!open || !intent) return;
+    if (!open || !intent || needsAccountChoice) { setPreview(null); return; }
     let cancelled = false;
     (async () => {
       setChecking(true);
       setError(null);
       setPreview(null);
       const res = await placeOrder({
-        userProfile, ...intent, orderType,
+        userProfile, ...intent, orderType, accountId,
         price: orderType === 'limit' ? intent.price : null,
         requestId: requestId.current, dryRun: true,
       });
@@ -52,7 +72,7 @@ export default function OrderModal({ open, onClose, onPlaced, userProfile, inten
       setChecking(false);
     })();
     return () => { cancelled = true; };
-  }, [open, intent, orderType, userProfile]);
+  }, [open, intent, orderType, accountId, needsAccountChoice, userProfile]);
 
   if (!open) return null;
 
@@ -60,13 +80,14 @@ export default function OrderModal({ open, onClose, onPlaced, userProfile, inten
     setSending(true);
     setError(null);
     const res = await placeOrder({
-      userProfile, ...intent, orderType,
+      userProfile, ...intent, orderType, accountId,
       price: orderType === 'limit' ? intent.price : null,
       requestId: requestId.current,
     });
     setSending(false);
     if (res.ok) {
       setResult(res.order);
+      try { localStorage.setItem(LAST_ACCOUNT_KEY, accountId); } catch { /* не критично */ }
       onPlaced?.(res);
     } else {
       setError(res.error);
@@ -104,6 +125,26 @@ export default function OrderModal({ open, onClose, onPlaced, userProfile, inten
             </>
           ) : (
             <>
+              {/* Выбор счёта — только если их правда несколько. Один торговый токен может
+                  открывать сразу несколько счетов (обычный/ИИС), и без явного выбора
+                  заявка однажды уйдёт не туда. Если счёт один — выбирать нечего, поле
+                  вообще не показывается. */}
+              {(accounts?.length || 0) > 1 && (
+                <div className="input-group">
+                  <label className="input-label">Счёт</label>
+                  <select
+                    className="input"
+                    value={accountId || ''}
+                    onChange={(e) => setAccountId(e.target.value || null)}
+                  >
+                    <option value="" disabled>Выберите счёт…</option>
+                    {accounts.map((a) => (
+                      <option key={a.id} value={a.id}>{a.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {/* Тип заявки — тот самый выбор «лимитная или рыночная», который трейдер
                   просил оставить за собой. Лимитная стоит первой не случайно: она
                   исполнится по цене, которую он видел, или не исполнится вовсе. */}
@@ -134,6 +175,12 @@ export default function OrderModal({ open, onClose, onPlaced, userProfile, inten
 
               {preview && (
                 <div style={{ padding: '12px 14px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-surface-2)' }}>
+                  {preview.accountName && (
+                    <div className="stat-row">
+                      <span className="stat-row-label">Счёт</span>
+                      <span className="stat-row-value">{preview.accountName}</span>
+                    </div>
+                  )}
                   <div className="stat-row">
                     <span className="stat-row-label">Инструмент</span>
                     <span className="stat-row-value">{preview.ticker} · {preview.name}</span>
@@ -187,9 +234,9 @@ export default function OrderModal({ open, onClose, onPlaced, userProfile, inten
               <button
                 className="btn btn-primary"
                 onClick={send}
-                disabled={!preview || checking || sending}
+                disabled={!preview || checking || sending || needsAccountChoice}
               >
-                {sending ? 'Отправляю…' : `${dirWord} ${preview ? `${preview.lots} лот(а)` : ''}`}
+                {needsAccountChoice ? 'Выберите счёт' : sending ? 'Отправляю…' : `${dirWord} ${preview ? `${preview.lots} лот(а)` : ''}`}
               </button>
             </>
           )}
