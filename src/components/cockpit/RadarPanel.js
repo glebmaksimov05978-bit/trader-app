@@ -15,7 +15,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useRadarLive } from '../../context/RadarLiveContext';
 import { getRadarItems, addRadarItem, deleteRadarItem } from '../../services/radar';
 import { getUserTrades } from '../../services/trades';
-import { getActiveStrategy } from '../../services/analytics/strategy';
+import { getActiveStrategy, getStrategies } from '../../services/analytics/strategy';
 import { catalogEntry } from '../../services/marketData/instrumentCatalog';
 import CollapsibleSection from './CollapsibleSection';
 import InstrumentPicker from './InstrumentPicker';
@@ -28,7 +28,11 @@ export default function RadarPanel() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [ownTickers, setOwnTickers] = useState([]);
+  const strategies = getStrategies(userProfile);
   const strategy = getActiveStrategy(userProfile);
+  // Каждый тикер может смотреться по своей стратегии — резолвится так же, как в
+  // RadarLiveContext: своя стратегия, если задана и ещё существует, иначе активная.
+  const strategyOf = (item) => (item.strategyId && strategies.find((s) => s.id === item.strategyId)) || strategy;
 
   const load = () => { if (user) getRadarItems(user.uid).then(setItems).catch(() => setItems([])); };
   useEffect(load, [user]);
@@ -52,7 +56,7 @@ export default function RadarPanel() {
     }
   };
 
-  const handleAdd = async (picked, { timeframe }) => {
+  const handleAdd = async (picked, { timeframe, strategyId }) => {
     setSaving(true);
     try {
       // Последовательно, а не Promise.all: если на середине списка что-то упадёт,
@@ -60,7 +64,7 @@ export default function RadarPanel() {
       let ok = 0;
       for (const p of picked) {
         try {
-          await addRadarItem(user.uid, { ticker: p.ticker, instrumentType: p.type || 'stock', timeframe });
+          await addRadarItem(user.uid, { ticker: p.ticker, instrumentType: p.type || 'stock', timeframe, strategyId });
           ok += 1;
         } catch { /* считаем ниже */ }
       }
@@ -93,10 +97,10 @@ export default function RadarPanel() {
         </button>
       )}
     >
-      {/* Все инструменты радара проверяются по ОДНОЙ активной стратегии — своей для
-          каждого тикера пока нет, поэтому явно называем её и даём ссылку сменить. */}
+      {/* По умолчанию новый тикер смотрится по активной стратегии профиля — но при
+          добавлении можно выбрать другую именно для него (см. InstrumentPicker). */}
       <div className="ck-radar-strategy">
-        Стратегия: <b>{strategy?.name || 'не выбрана'}</b>
+        По умолчанию: <b>{strategy?.name || 'не выбрана'}</b>
         {' · '}<Link to="/settings">сменить</Link>
       </div>
       {radarUpdatedAt && (
@@ -111,9 +115,13 @@ export default function RadarPanel() {
         )}
         {items.map((it) => {
           const res = radarResults?.[it.id];
+          const itemStrategy = strategyOf(it);
           const pct = res?.result?.total ? Math.round((res.result.passed / res.result.total) * 100) : null;
-          const hot = pct != null && pct >= (strategy?.readinessThreshold ?? 100);
+          const hot = pct != null && pct >= (itemStrategy?.readinessThreshold ?? 100);
           const known = catalogEntry(it.ticker);
+          // Показываем имя стратегии только когда оно ОТЛИЧАЕТСЯ от активной по умолчанию
+          // — иначе на каждой строке дублировалась бы одна и та же подпись.
+          const showStrategyName = it.strategyId && itemStrategy?.id !== strategy?.id;
           return (
             <div key={it.id} className="ck-radar-item">
               <button
@@ -131,6 +139,7 @@ export default function RadarPanel() {
                     {res?.error ? res.error
                       : pct != null ? `${res.result.passed} из ${res.result.total} условий`
                         : 'ждёт проверки'}
+                    {showStrategyName && <span style={{ opacity: 0.7 }}> · {itemStrategy?.name || 'без названия'}</span>}
                   </div>
                 </div>
               </button>
@@ -148,6 +157,8 @@ export default function RadarPanel() {
         onAdd={handleAdd}
         existing={items.map((i) => i.ticker)}
         ownTickers={ownTickers}
+        strategies={strategies}
+        defaultStrategyId={strategy?.id || null}
         tinkoffToken={userProfile?.tinkoffToken}
         saving={saving}
       />

@@ -15,7 +15,7 @@ import { fetchDailyCandles } from '../services/marketData/candles';
 import { computeIndicatorsAtEntry } from '../services/analytics/indicators';
 import { computePatternsAtEntry } from '../services/analytics/patterns';
 import { computeMarketContextAtEntry } from '../services/analytics/marketContext';
-import { evaluateStrategy, getActiveStrategy } from '../services/analytics/strategy';
+import { evaluateStrategy, getActiveStrategy, getStrategies } from '../services/analytics/strategy';
 
 const RadarLiveContext = createContext(null);
 
@@ -33,16 +33,31 @@ export function RadarLiveProvider({ children }) {
   // `getActiveStrategy` returns a fresh object every call (see strategy.js), so the
   // effect depends on the stable underlying profile fields, not on its return value.
   useEffect(() => {
-    if (!user || !getActiveStrategy(userProfile)?.conditions?.length) setRadarLive(false);
+    // Не только активная — тикер в радаре может смотреться по СВОЕЙ стратегии, поэтому
+    // выключаем Live только если ни у одной сохранённой стратегии вообще нет условий.
+    const anyUsable = getStrategies(userProfile).some((s) => s.conditions?.length);
+    if (!user || !anyUsable) setRadarLive(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, userProfile?.strategy, userProfile?.strategies, userProfile?.activeStrategyId]);
 
   useEffect(() => {
     const activeStrategy = getActiveStrategy(userProfile);
-    if (!radarLive || !user || !activeStrategy?.conditions?.length) return;
+    const anyUsable = getStrategies(userProfile).some((s) => s.conditions?.length);
+    if (!radarLive || !user || !anyUsable) return;
     let cancelled = false;
 
-    const checkOne = async (item) => {
+    // Каждый тикер проверяется по СВОЕЙ стратегии, если она задана при добавлении в
+    // радар, — иначе по активной стратегии профиля, как было раньше. Так один и тот же
+    // список может одновременно следить за тикером по пробойной и за другим по откатной.
+    const strategyFor = (item) => {
+      if (item.strategyId) {
+        const own = getStrategies(userProfile).find((s) => s.id === item.strategyId);
+        if (own) return own;
+      }
+      return activeStrategy;
+    };
+
+    const checkOne = async (item, strategy) => {
       try {
         const now = new Date();
         const candles = await fetchDailyCandles({
@@ -56,7 +71,7 @@ export function RadarLiveProvider({ children }) {
         const patterns = computePatternsAtEntry(candles, now);
         const marketContext = computeMarketContextAtEntry(candles, now);
         if (!indicators) throw new Error('Нет исторических свечей по этому тикеру');
-        const result = evaluateStrategy(activeStrategy, { indicators, patterns, marketContext, plan: {} });
+        const result = evaluateStrategy(strategy, { indicators, patterns, marketContext, plan: {} });
         return { result, error: null };
       } catch (e) {
         return { result: null, error: e.message || 'Не удалось загрузить данные' };
@@ -67,11 +82,16 @@ export function RadarLiveProvider({ children }) {
       const items = await getRadarItems(user.uid);
       for (const item of items) {
         if (cancelled) return;
-        const { result, error } = await checkOne(item);
+        const itemStrategy = strategyFor(item);
+        if (!itemStrategy?.conditions?.length) {
+          setRadarResults((s) => ({ ...s, [item.id]: { result: null, error: 'у стратегии этого тикера нет условий' } }));
+          continue;
+        }
+        const { result, error } = await checkOne(item, itemStrategy);
         setRadarResults((s) => ({ ...s, [item.id]: { result, error } }));
         if (!result?.total) continue;
         const pct = Math.round((result.passed / result.total) * 100);
-        const threshold = activeStrategy?.readinessThreshold ?? 100;
+        const threshold = itemStrategy?.readinessThreshold ?? 100;
         const prev = prevPctRef.current[item.id];
         // Notify only on the crossing itself, not every poll a ticker stays ready —
         // and the first poll of a session just records the baseline silently, so

@@ -9,7 +9,7 @@ import { db } from './firebase';
 
 const COLL = 'radarItems';
 
-export async function addRadarItem(uid, { ticker, instrumentType, note, timeframe }) {
+export async function addRadarItem(uid, { ticker, instrumentType, note, timeframe, strategyId }) {
   return addDoc(collection(db, COLL), {
     uid,
     ticker: ticker.toUpperCase(),
@@ -22,6 +22,11 @@ export async function addRadarItem(uid, { ticker, instrumentType, note, timefram
     // (real user report: "0 из 1", turned out to be a timeframe mismatch, not a bug in
     // the condition itself). null = D1 default, same as before this field existed.
     timeframe: timeframe || null,
+    // Раньше ВЕСЬ радар проверялся по одной активной стратегии профиля — трейдер не мог
+    // следить за одним тикером по пробойной, а за другим по откатной одновременно
+    // (реальная жалоба: «непонятно, как за какой стратегией смотрятся тикеры»).
+    // null = как раньше, берётся активная стратегия профиля на момент проверки.
+    strategyId: strategyId || null,
     createdAt: serverTimestamp(),
   });
 }

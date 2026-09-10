@@ -21,10 +21,12 @@ const TYPES = [
 export default function InstrumentPicker({
   open,
   onClose,
-  onAdd,          // async (items: [{ticker, type}], { timeframe }) => void
+  onAdd,          // async (items: [{ticker, type}], { timeframe, strategyId }) => void
   existing = [],  // тикеры, которые уже в радаре
   tinkoffToken,
   ownTickers = [], // чем трейдер уже торговал — показываем первым делом
+  strategies = [], // сохранённые стратегии — выбор, по какой смотреть именно этот тикер
+  defaultStrategyId = null,
   saving = false,
 }) {
   const [query, setQuery] = useState('');
@@ -33,6 +35,10 @@ export default function InstrumentPicker({
   const [rows, setRows] = useState(() => searchCatalog('', {}));
   const [picked, setPicked] = useState([]);
   const [timeframe, setTimeframe] = useState('D1');
+  // Раньше весь радар смотрелся по одной активной стратегии профиля — нельзя было
+  // следить за одним тикером по пробойной, а за другим по откатной одновременно
+  // (реальная жалоба: «непонятно, как за какой стратегией смотрятся тикеры»).
+  const [strategyId, setStrategyId] = useState(defaultStrategyId);
   const [searching, setSearching] = useState(false);
   const reqId = useRef(0);
 
@@ -58,7 +64,8 @@ export default function InstrumentPicker({
   }, [query, sector, type, tinkoffToken, open]);
 
   useEffect(() => {
-    if (open) { setQuery(''); setSector(null); setType(null); setPicked([]); }
+    if (open) { setQuery(''); setSector(null); setType(null); setPicked([]); setStrategyId(defaultStrategyId); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   if (!open) return null;
@@ -164,20 +171,32 @@ export default function InstrumentPicker({
         </div>
 
         <div className="modal-footer ip-footer">
-          <div className="ip-tf">
-            <span>Таймфрейм проверки</span>
-            <select className="input" value={timeframe} onChange={(e) => setTimeframe(e.target.value)}>
-              {availableTimeframes(!!tinkoffToken).map((tf) => (
-                <option key={tf.key} value={tf.key}>{tf.label}</option>
-              ))}
-            </select>
+          <div className="ip-tf-row">
+            {strategies.length > 1 && (
+              <div className="ip-tf">
+                <span>Смотреть по стратегии</span>
+                <select className="input" value={strategyId || ''} onChange={(e) => setStrategyId(e.target.value || null)}>
+                  {strategies.map((s) => (
+                    <option key={s.id} value={s.id}>{s.name || 'без названия'}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="ip-tf">
+              <span>Таймфрейм проверки</span>
+              <select className="input" value={timeframe} onChange={(e) => setTimeframe(e.target.value)}>
+                {availableTimeframes(!!tinkoffToken).map((tf) => (
+                  <option key={tf.key} value={tf.key}>{tf.label}</option>
+                ))}
+              </select>
+            </div>
           </div>
           <div className="ip-actions">
             <button className="btn btn-ghost" onClick={onClose}>Отмена</button>
             <button
               className="btn btn-primary"
               disabled={!picked.length || saving}
-              onClick={() => onAdd(picked, { timeframe })}
+              onClick={() => onAdd(picked, { timeframe, strategyId })}
             >
               {saving ? 'Добавляю…' : picked.length ? `Добавить (${picked.length})` : 'Добавить'}
             </button>
