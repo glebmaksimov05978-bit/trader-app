@@ -11,7 +11,8 @@ import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { computeMarketContextAtEntry } from '../../services/analytics/marketContext';
 import { fetchActiveFutureCard, fetchMoexSecurityInfo } from '../../services/marketData/futuresSpecs';
-import { evaluateStrategy, getActiveStrategy } from '../../services/analytics/strategy';
+import { evaluateStrategy, getActiveStrategy, getStrategies } from '../../services/analytics/strategy';
+import { computeBaskets, capitalForStrategy, getPortfolio } from '../../services/analytics/portfolio';
 import { computeStopPrice, computeTakePrice, exitTypeLabel } from '../../services/analytics/exitRules';
 import TechnicalAnalysisBlock, { PATTERN_LABELS, InfoTip } from '../shared/TechnicalAnalysisBlock';
 import CandleChart from '../shared/CandleChart';
@@ -63,6 +64,14 @@ function loadCalcDraft() {
 export default function Calculator() {
   const { user, userProfile } = useAuth();
   const activeStrategy = getActiveStrategy(userProfile);
+  // Корзина активной стратегии, если портфельный режим включён и она в него входит.
+  // Нужна только для подписи поля «Депозит» — сам расчёт делает эффект ниже.
+  const basketCapital = useMemo(() => {
+    const p = getPortfolio(userProfile);
+    if (!p.enabled) return null;
+    const b = p.baskets.find((x) => x.strategyId === activeStrategy?.id);
+    return b ? { sharePct: b.sharePct } : null;
+  }, [userProfile, activeStrategy?.id]);
   const draft = useRef(loadCalcDraft()).current;
   const [instrumentType, setInstrumentType] = useState(draft?.instrumentType || 'future');
   // Real user question 2026-08-17: "зачем MOEX если есть токен" — defaulting to
@@ -176,9 +185,23 @@ export default function Calculator() {
   useEffect(() => {
     if (userProfile) {
       const liveBalance = computeLiveBalance(liveTrades, userProfile.depositSize ?? 0, userProfile.depositSetAt);
+      // В портфельном режиме стратегия торгует своей корзиной, а не всем счётом: риск
+      // «1% от депозита» иначе означал бы разный риск — пока одна стратегия в просадке,
+      // вторая продолжала бы считать процент от денег, которые первая уже проиграла.
+      // Это единственное место, где режим влияет на РАСЧЁТ, а не на отображение.
+      const computed = computeBaskets({
+        userProfile,
+        strategies: getStrategies(userProfile),
+        trades: liveTrades,
+      });
+      const capital = capitalForStrategy({
+        strategyId: getActiveStrategy(userProfile)?.id,
+        computed,
+        fallbackBalance: liveBalance,
+      });
       setForm(f => ({
         ...f,
-        depositSize: String(Math.round(liveBalance)),
+        depositSize: String(Math.round(capital)),
         riskPercent: userProfile.maxRiskPerTrade || f.riskPercent,
       }));
     }
@@ -1014,8 +1037,19 @@ export default function Calculator() {
             <div className="calc-section-title">Управление риском</div>
             <div className="calc-grid-2" style={{marginBottom:16}}>
               <div className="input-group">
-                <label className="input-label">Депозит (₽)</label>
+                <label className="input-label">
+                  {basketCapital ? 'Капитал корзины (₽)' : 'Депозит (₽)'}
+                </label>
                 <input className="input" type="number" value={form.depositSize} onChange={e => set('depositSize', e.target.value)} />
+                {/* Без этой подписи трейдер увидел бы в поле сумму меньше своего депозита
+                    и решил, что приложение потеряло деньги — ровно та же путаница, из-за
+                    которой поле вообще стали заполнять живым балансом. */}
+                {basketCapital && (
+                  <div className="input-hint">
+                    Портфельный режим: доля стратегии «{activeStrategy?.name || 'активная'}»
+                    ({basketCapital.sharePct}% счёта). Риск считается от неё, а не от всего депозита.
+                  </div>
+                )}
               </div>
               <div className="input-group">
                 <label className="input-label">Риск на сделку (%)</label>

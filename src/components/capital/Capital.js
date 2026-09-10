@@ -5,6 +5,7 @@ import { getUserTrades, calcStats, computeLiveBalance } from '../../services/tra
 import { formatCurrency, formatNumber } from '../../utils/calculator';
 import { CONDITION_CATALOG, defaultStrategy, getStrategies, STRATEGY_TEMPLATES, CUSTOM_CONDITION_PRESETS } from '../../services/analytics/strategy';
 import { classifyStrategy, kindBadge, strategyPerformance } from '../../services/analytics/strategyKind';
+import PortfolioCard from './PortfolioCard';
 import { PATTERN_LABELS, PATTERN_DIRECTIONS } from '../shared/TechnicalAnalysisBlock';
 import ExitRulesEditor from '../shared/ExitRulesEditor';
 import toast from 'react-hot-toast';
@@ -672,6 +673,20 @@ export default function Capital() {
       </div>
 
       <StrategyPerformanceCard trades={trades} strategies={strategies} />
+
+      <PortfolioCard
+        userProfile={userProfile}
+        strategies={strategies}
+        trades={trades}
+        onSave={async (portfolio) => {
+          try {
+            await updateUserProfile({ portfolio });
+            toast.success('Портфель сохранён');
+          } catch (e) {
+            toast.error('Ошибка сохранения: ' + (e.message || 'неизвестная ошибка'));
+          }
+        }}
+      />
 
       {confirmTemplate && (
         <div className="modal-overlay" onClick={() => setConfirmTemplate(null)}>
