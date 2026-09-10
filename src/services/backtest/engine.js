@@ -147,17 +147,27 @@ export function buildProfitScoreCtx(position, bar, candles, i, closeReturnPct, f
   } };
 }
 
+// Пороги по барам берутся из позиции (см. createPosition — по умолчанию исходные
+// дневные 15/10/2/2), а не хардкодятся здесь — иначе калибровку под H1 негде было бы
+// подключить, не трогая сами формулы score.
+function profitScoreCfg(position) {
+  return { armBars: position.profitArmBars, tooEarlyArmBars: position.profitTooEarlyArmBars };
+}
+function lossScoreCfg(position) {
+  return { heldBars: position.lossHeldBars, tooEarlyHeldBars: position.lossTooEarlyHeldBars };
+}
+
 export function computeProfitCaptureScore(position, bar, candles, i, closeReturnPct, favorableOverride = null) {
   const built = buildProfitScoreCtx(position, bar, candles, i, closeReturnPct, favorableOverride);
   if (!built) return null;
-  return profitCaptureScore(built.dirSign, built.ctx);
+  return profitCaptureScore(built.dirSign, built.ctx, profitScoreCfg(position));
 }
 
 // Разбор по признакам для панели «Сопровождения» — тот же контекст, что у самого score.
 export function computeProfitBreakdown(position, bar, candles, i, closeReturnPct, favorableOverride = null) {
   const built = buildProfitScoreCtx(position, bar, candles, i, closeReturnPct, favorableOverride);
   if (!built) return null;
-  return profitCaptureBreakdown(built.dirSign, built.ctx);
+  return profitCaptureBreakdown(built.dirSign, built.ctx, profitScoreCfg(position));
 }
 
 // Which "favorable %" the score should read. 'close' is the shipped behaviour; 'peak'
@@ -708,13 +718,13 @@ export function buildLossScoreCtx(position, bar, candles, i, closeReturnPct) {
 export function computeLossScore(position, bar, candles, i, closeReturnPct) {
   const built = buildLossScoreCtx(position, bar, candles, i, closeReturnPct);
   if (!built) return null;
-  return lossNearBottomScore(built.dirSign, built.ctx);
+  return lossNearBottomScore(built.dirSign, built.ctx, lossScoreCfg(position));
 }
 
 export function computeLossBreakdown(position, bar, candles, i, closeReturnPct) {
   const built = buildLossScoreCtx(position, bar, candles, i, closeReturnPct);
   if (!built) return null;
-  return lossNearBottomBreakdown(built.dirSign, built.ctx);
+  return lossNearBottomBreakdown(built.dirSign, built.ctx, lossScoreCfg(position));
 }
 
 // PARTIAL EXITS (2026-08-24, trader's idea). Every one of the 89 exit variants tested so
@@ -832,6 +842,13 @@ export function createPosition({
       trailAdverseThresholdPct: resolveTrailAdverseThresholdPct(rules, entryPrice, atr),
       profitCaptureEnabled: !!rules.profitCaptureEnabled,
       profitCaptureThreshold: rules.profitCaptureThreshold ?? 2,
+      // Пороги по барам внутри профит-/лосс-score — по умолчанию исходные дневные
+      // значения (15/2 и 10/2). Калибровка под H1 (2026-09-10) передаёт свои через
+      // rules, не трогая формулы в exitRules.js и не меняя поведение старых стратегий.
+      profitArmBars: rules.profitArmBars ?? 15,
+      profitTooEarlyArmBars: rules.profitTooEarlyArmBars ?? 2,
+      lossHeldBars: rules.lossHeldBars ?? 10,
+      lossTooEarlyHeldBars: rules.lossTooEarlyHeldBars ?? 2,
       secondFireBonus: rules.secondFireBonus ?? null,
       // Loss-side handling — see updateTrailAndCheckExit's underwater branch. Defaults to
       // 'breakeven' so existing saved strategies keep behaving exactly as before until a

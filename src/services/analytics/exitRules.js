@@ -233,8 +233,8 @@ export const DEFAULT_PROFIT_CAPTURE_SCORE_THRESHOLD = 4;
  * @param {number|null} ctx.adx14 - 0-100, low = weak/no trend (choppy/ranging), validated to
  *   amplify the RSI-extreme signal specifically (see full-search combos in HANDOFF)
  */
-export function profitCaptureScore(direction, ctx) {
-  return profitCaptureBreakdown(direction, ctx)
+export function profitCaptureScore(direction, ctx, cfg) {
+  return profitCaptureBreakdown(direction, ctx, cfg)
     .reduce((sum, c) => sum + (c.on ? c.weight : 0), 0);
 }
 
@@ -243,8 +243,18 @@ export function profitCaptureScore(direction, ctx) {
  * показать трейдеру, из чего сложился балл и чего не хватает до порога. Балл считается
  * СУММОЙ этого списка (см. profitCaptureScore выше), поэтому панель на экране физически
  * не может разойтись с тем, что использует движок.
+ *
+ * @param {object} [cfg] — необязательные пороги по барам. Все правила выхода изначально
+ *   подбирались на дневном графике, где 1 бар = 1 день; «15 баров с вооружения» на нём
+ *   значит «около 3 недель». На часовом графике тот же счёт баров — это ~2 дня, другой
+ *   календарный смысл (см. калибровку 2026-09-10). По умолчанию — исходные дневные
+ *   значения, так что существующие стратегии ведут себя ровно как раньше.
+ * @param {number} [cfg.armBars=15]
+ * @param {number} [cfg.tooEarlyArmBars=2]
  */
-export function profitCaptureBreakdown(direction, ctx) {
+export function profitCaptureBreakdown(direction, ctx, cfg = {}) {
+  const armBars = cfg.armBars ?? 15;
+  const tooEarlyArmBars = cfg.tooEarlyArmBars ?? 2;
   const rsiExtreme = direction === 1 ? ctx.currentRsi14 > 70 : ctx.currentRsi14 < 30;
   const fmt = (v, suffix = '', digits = 1) => (v == null ? '—' : `${v.toFixed(digits)}${suffix}`);
   return [
@@ -260,8 +270,8 @@ export function profitCaptureBreakdown(direction, ctx) {
     { key: 'boll', weight: 1, on: ctx.bollinger10PercentB != null && ctx.bollinger10PercentB > 0.85,
       label: 'Цена у края Боллинджера(10)',
       detail: ctx.bollinger10PercentB == null ? '—' : ctx.bollinger10PercentB.toFixed(2) },
-    { key: 'bars', weight: 1, on: ctx.barsSinceArm >= 15,
-      label: 'Прошло 15 баров и больше',
+    { key: 'bars', weight: 1, on: ctx.barsSinceArm >= armBars,
+      label: `Прошло ${armBars} баров и больше`,
       detail: ctx.barsSinceArm == null ? '—' : String(ctx.barsSinceArm) },
     { key: 'adx', weight: 1, on: ctx.adx14 != null && ctx.adx14 < 15,
       label: 'ADX(14) ниже 15 — тренд ослаб',
@@ -269,8 +279,8 @@ export function profitCaptureBreakdown(direction, ctx) {
     { key: 'volume', weight: 1, on: ctx.volumeRatio != null && ctx.volumeRatio > 1.8,
       label: 'Объём выше среднего в 1.8 раза',
       detail: ctx.volumeRatio == null ? '—' : `${ctx.volumeRatio.toFixed(1)}×` },
-    { key: 'tooEarly', weight: -1, penalty: true, on: ctx.barsSinceArm <= 2,
-      label: 'Штраф: слишком рано (2 бара и меньше)',
+    { key: 'tooEarly', weight: -1, penalty: true, on: ctx.barsSinceArm <= tooEarlyArmBars,
+      label: `Штраф: слишком рано (${tooEarlyArmBars} бара и меньше)`,
       detail: ctx.barsSinceArm == null ? '—' : String(ctx.barsSinceArm) },
   ];
 }
@@ -485,13 +495,20 @@ export function computeTakePrice(direction, entryPrice, exitRules, ctx) {
 //
 // Returns a "near-bottom" score. Higher = bottom looks close (hold). Lower = still
 // getting worse (cut).
-export function lossNearBottomScore(direction, ctx) {
-  return lossNearBottomBreakdown(direction, ctx)
+export function lossNearBottomScore(direction, ctx, cfg) {
+  return lossNearBottomBreakdown(direction, ctx, cfg)
     .reduce((sum, c) => sum + (c.on ? c.weight : 0), 0);
 }
 
-/** Расшифровка near-bottom score по признакам — см. profitCaptureBreakdown. */
-export function lossNearBottomBreakdown(direction, ctx) {
+/**
+ * Расшифровка near-bottom score по признакам — см. profitCaptureBreakdown.
+ * @param {object} [cfg] — те же соображения про баров-как-календарь, что у профит-системы.
+ * @param {number} [cfg.heldBars=10]
+ * @param {number} [cfg.tooEarlyHeldBars=2]
+ */
+export function lossNearBottomBreakdown(direction, ctx, cfg = {}) {
+  const heldBars = cfg.heldBars ?? 10;
+  const tooEarlyHeldBars = cfg.tooEarlyHeldBars ?? 2;
   const rsiExtremeAgainst = direction === 1 ? ctx.currentRsi14 < 30 : ctx.currentRsi14 > 70;
   const fmt = (v, suffix = '', digits = 1) => (v == null ? '—' : `${v.toFixed(digits)}${suffix}`);
   return [
@@ -511,16 +528,16 @@ export function lossNearBottomBreakdown(direction, ctx) {
     { key: 'deepLoss', weight: 1, on: ctx.currentLossPct != null && ctx.currentLossPct > 5,
       label: 'Убыток больше 5%',
       detail: fmt(ctx.currentLossPct, '%') },
-    { key: 'held', weight: 1, on: ctx.barsHeld >= 10,
-      label: 'В сделке 10 баров и больше',
+    { key: 'held', weight: 1, on: ctx.barsHeld >= heldBars,
+      label: `В сделке ${heldBars} баров и больше`,
       detail: ctx.barsHeld == null ? '—' : String(ctx.barsHeld) },
     // Признаки того, что дна ещё НЕ было — предсказывали дальнейшее ухудшение.
     { key: 'rsiStable', weight: -1, penalty: true,
       on: ctx.rsiChangeAgainst != null && ctx.rsiChangeAgainst > -3,
       label: 'Штраф: RSI стабилен — разворота не видно',
       detail: fmt(ctx.rsiChangeAgainst, ' п.') },
-    { key: 'tooEarly', weight: -1, penalty: true, on: ctx.barsHeld <= 2,
-      label: 'Штраф: слишком рано (2 бара и меньше)',
+    { key: 'tooEarly', weight: -1, penalty: true, on: ctx.barsHeld <= tooEarlyHeldBars,
+      label: `Штраф: слишком рано (${tooEarlyHeldBars} бара и меньше)`,
       detail: ctx.barsHeld == null ? '—' : String(ctx.barsHeld) },
     { key: 'slowed', weight: -1, penalty: true, on: !!ctx.candlesSlowed,
       label: 'Штраф: свечи замедлились',
