@@ -21,9 +21,13 @@ account_id = "7572bca2bf8f1423bb850a0d1296fb1c"
 # Пустой список = запрещено всё: молчание не должно открывать доступ.
 [vars]
 FIREBASE_PROJECT_ID = "trader-app-6517b"
-OWNER_UID = ""            # впишите свой uid — см. инструкцию, как его найти
+OWNER_UID = "1stzQToO77e61ubwLuo3g5KK1DI3"
 ALLOWED_ORIGIN = "*"      # замените на адрес приложения, когда он появится (https://ваш-домен)
-TICKER_WHITELIST = "SBER, GAZP, LKOH"   # впишите СВОИ разрешённые тикеры через запятую
+# "Все голубые фишки" — основные ликвидные акции MOEX. Реальным фильтром того, ЧТО
+# покупать, остаётся сигнал стратегии; список здесь — только страховка, чтобы кнопка
+# физически не могла отправить заявку по неразрешённой бумаге. Дополнить/сократить можно
+# в любой момент — просто список через запятую, без повторного деплоя логики.
+TICKER_WHITELIST = "SBER, GAZP, LKOH, GMKN, NVTK, ROSN, TATN, MTSS, MGNT, YDEX, T, PLZL, CHMF, ALRS, NLMK, MOEX, VTBR, RUAL, PHOR, AFLT, POSI, OZON, SNGS, IRAO, HYDR, PIKK, FEES, RTKM"
 # MAX_ORDER_RUB = "100000"   # потолок суммы одной заявки; не задан — не проверяется
 
 kv_namespaces = [

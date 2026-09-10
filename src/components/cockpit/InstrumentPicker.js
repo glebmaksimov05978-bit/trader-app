@@ -12,6 +12,11 @@ import { SECTORS, searchCatalog, searchInstruments, catalogEntry } from '../../s
 import { availableTimeframes } from '../../services/marketData/candles';
 
 const TYPE_LABEL = { stock: 'акция', future: 'фьючерс', currency: 'валюта' };
+const TYPES = [
+  { value: 'stock', label: 'Акции' },
+  { value: 'future', label: 'Фьючерсы' },
+  { value: 'currency', label: 'Валюта' },
+];
 
 export default function InstrumentPicker({
   open,
@@ -24,6 +29,7 @@ export default function InstrumentPicker({
 }) {
   const [query, setQuery] = useState('');
   const [sector, setSector] = useState(null);
+  const [type, setType] = useState(null);
   const [rows, setRows] = useState(() => searchCatalog('', {}));
   const [picked, setPicked] = useState([]);
   const [timeframe, setTimeframe] = useState('D1');
@@ -37,22 +43,22 @@ export default function InstrumentPicker({
   // уходил бы запрос к Tinkoff, а список дёргался бы под пальцами.
   useEffect(() => {
     if (!open) return undefined;
-    setRows(searchCatalog(query, { sector }));
+    setRows(searchCatalog(query, { sector, type }));
     const q = query.trim();
     if (!tinkoffToken || q.length < 2 || sector) { setSearching(false); return undefined; }
     setSearching(true);
     const id = ++reqId.current;
     const timer = setTimeout(async () => {
-      const found = await searchInstruments({ query: q, tinkoffToken, sector });
+      const found = await searchInstruments({ query: q, tinkoffToken, sector, type });
       if (id === reqId.current) { setRows(found); setSearching(false); }
     }, 350);
     // Гасить «ищу…» в уборке не нужно: следующий прогон эффекта выставит его заново,
     // а при закрытии окна состояние всё равно сбрасывается.
     return () => clearTimeout(timer);
-  }, [query, sector, tinkoffToken, open]);
+  }, [query, sector, type, tinkoffToken, open]);
 
   useEffect(() => {
-    if (open) { setQuery(''); setSector(null); setPicked([]); }
+    if (open) { setQuery(''); setSector(null); setType(null); setPicked([]); }
   }, [open]);
 
   if (!open) return null;
@@ -73,7 +79,7 @@ export default function InstrumentPicker({
     && !existingSet.has(raw)
     && /^[A-Z0-9]+$/.test(raw);
 
-  const suggested = (!query.trim() && !sector)
+  const suggested = (!query.trim() && !sector && !type)
     ? ownTickers
       .filter((t) => !existingSet.has(t))
       .slice(0, 8)
@@ -103,8 +109,19 @@ export default function InstrumentPicker({
           </div>
         </div>
 
+        {/* Тип — отдельная строка от секторов: это разные признаки (у фьючерсов и валюты
+            сектора вообще нет), совмещать их в один ряд чипов было бы путаницей. */}
+        <div className="ip-sectors ip-types">
+          <button className={`ip-chip ${!type ? 'on' : ''}`} onClick={() => setType(null)}>Все типы</button>
+          {TYPES.map((t) => (
+            <button key={t.value} className={`ip-chip ${type === t.value ? 'on' : ''}`} onClick={() => setType(type === t.value ? null : t.value)}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
         <div className="ip-sectors">
-          <button className={`ip-chip ${!sector ? 'on' : ''}`} onClick={() => setSector(null)}>Все</button>
+          <button className={`ip-chip ${!sector ? 'on' : ''}`} onClick={() => setSector(null)}>Все секторы</button>
           {SECTORS.map((s) => (
             <button key={s} className={`ip-chip ${sector === s ? 'on' : ''}`} onClick={() => setSector(sector === s ? null : s)}>
               {s}

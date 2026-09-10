@@ -172,9 +172,10 @@ export function catalogEntry(ticker) {
  * тикера, потом начало тикера, потом вхождение в название. Трейдер, который начал
  * печатать SBER, должен увидеть Сбербанк первой строкой, а не «Сбербанк (прив.)».
  */
-export function searchCatalog(query, { limit = 40, sector = null } = {}) {
+export function searchCatalog(query, { limit = 40, sector = null, type = null } = {}) {
   const q = norm(query);
-  const pool = sector ? CATALOG.filter((i) => i.sector === sector) : CATALOG;
+  let pool = sector ? CATALOG.filter((i) => i.sector === sector) : CATALOG;
+  if (type) pool = pool.filter((i) => i.type === type);
   if (!q) return pool.slice(0, limit);
 
   const scored = [];
@@ -218,11 +219,12 @@ function fromTinkoff(instrument) {
  * Сеть здесь необязательна: упал запрос — вернём то, что нашли локально. Каталог не
  * должен переставать работать из-за того, что биржа недоступна.
  */
-export async function searchInstruments({ query, tinkoffToken, sector = null, limit = 40 }) {
-  const local = searchCatalog(query, { limit, sector });
+export async function searchInstruments({ query, tinkoffToken, sector = null, type = null, limit = 40 }) {
+  const local = searchCatalog(query, { limit, sector, type });
   const q = norm(query);
   // Биржевой поиск имеет смысл только под осмысленный запрос и когда фильтр по сектору
   // не выбран — у результатов Tinkoff сектора нет, они бы просто не попали в фильтр.
+  // Фильтр по типу, наоборот, у Tinkoff есть — его применяем и к биржевым результатам.
   if (!tinkoffToken || q.length < 2 || sector) return local;
 
   try {
@@ -234,6 +236,7 @@ export async function searchInstruments({ query, tinkoffToken, sector = null, li
     for (const raw of found) {
       const item = fromTinkoff(raw);
       if (!item.ticker || seen.has(item.ticker)) continue;
+      if (type && item.type !== type) continue;
       seen.add(item.ticker);
       extra.push(item);
     }

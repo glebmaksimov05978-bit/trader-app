@@ -5,6 +5,8 @@ import { getUserTrades, calcStats, computeLiveBalance } from '../../services/tra
 import { formatCurrency, formatNumber } from '../../utils/calculator';
 import { CONDITION_CATALOG, defaultStrategy, getStrategies, STRATEGY_TEMPLATES, CUSTOM_CONDITION_PRESETS } from '../../services/analytics/strategy';
 import { classifyStrategy, kindBadge, strategyPerformance } from '../../services/analytics/strategyKind';
+import { PRIVATE_STRATEGY_PRESETS } from '../../services/analytics/privateStrategyPresets';
+import { TRUSTED_UIDS } from '../../constants/trustedUids';
 import PortfolioCard from './PortfolioCard';
 import { PATTERN_LABELS, PATTERN_DIRECTIONS } from '../shared/TechnicalAnalysisBlock';
 import ExitRulesEditor from '../shared/ExitRulesEditor';
@@ -194,6 +196,23 @@ export default function Capital() {
   const loadTemplate = (tpl) => {
     if (strategy.conditions.length > 0) { setConfirmTemplate(tpl); return; }
     applyTemplate(tpl);
+  };
+
+  // Приватные пресеты (см. privateStrategyPresets.js) несут ещё и exitRules — обычный
+  // applyTemplate этого не делает, шаблоны для всех аккаунтов правил выхода не задают.
+  // Кнопка показывается только доверенному аккаунту; сама загрузка лишь заполняет форму
+  // редактора — в профиль ничего не попадёт, пока трейдер не нажмёт «Сохранить стратегии».
+  const isTrusted = TRUSTED_UIDS.includes(user?.uid);
+  const loadPrivatePreset = (preset) => {
+    setStrategy((s) => ({
+      ...s,
+      name: preset.name,
+      conditions: preset.conditions.map((c) => ({ ...c })),
+      customConditions: preset.customConditions || [],
+      readinessThreshold: preset.readinessThreshold,
+      exitRules: { ...preset.exitRules },
+    }));
+    toast.success(`Загружено: «${preset.name}». Не забудьте сохранить.`);
   };
 
   const saveStrategy = async () => {
@@ -478,6 +497,30 @@ export default function Capital() {
               </button>
             ))}
           </div>
+
+          {/* Только на этом аккаунте: точные условия входа + профит-/лосс-система из
+              эталонного дневного прогона (тот же, что даёт «что было дальше в похожих
+              ситуациях» в Сопровождении). Не публичные шаблоны — своя наработка, в
+              открытый доступ приложения не идёт (см. project-private-strategy-boundary). */}
+          {isTrusted && (
+            <div style={{marginTop:12}}>
+              <div className="text-xs text-muted" style={{marginBottom:8}}>
+                Ваши приватные — точные условия и правила выхода из эталонного прогона (public/data/backtestSample.json).
+                Загружает всё сразу, включая профит-/лосс-систему, которую конструктор чекбоксами не собрать.
+              </div>
+              <div className="flex gap-2" style={{flexWrap:'wrap'}}>
+                {PRIVATE_STRATEGY_PRESETS.map((preset) => (
+                  <button
+                    key={preset.id} className="btn btn-sm"
+                    style={{background:'rgba(79,70,229,0.12)', border:'1px solid rgba(79,70,229,0.3)', color:'var(--accent-primary)'}}
+                    onClick={() => loadPrivatePreset(preset)}
+                  >
+                    🔒 {preset.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="calc-grid-2" style={{marginBottom:16, maxWidth:520}}>
