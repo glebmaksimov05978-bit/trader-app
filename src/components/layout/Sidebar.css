@@ -281,6 +281,7 @@
   inset: 0;
   background: rgba(0,0,0,0.5);
   z-index: 200;
+  animation: mobileDrawerFade 0.2s ease;
 }
 
 .mobile-drawer {
@@ -296,7 +297,14 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+  /* Открытие свайпом или тапом по гамбургеру должно ощущаться как выезжающая шторка,
+     а не мгновенная подмена — особенно важно для жеста: палец довёл до порога, а
+     дальше меню «доезжает» само. */
+  animation: mobileDrawerSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+@keyframes mobileDrawerFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mobileDrawerSlideIn { from { transform: translateX(-100%); } to { transform: translateX(0); } }
 
 .mobile-drawer-header {
   display: flex;

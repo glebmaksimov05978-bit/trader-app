@@ -1,5 +1,5 @@
 // src/components/layout/MobileNav.js
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { TRUSTED_UIDS } from '../../constants/trustedUids';
@@ -23,6 +23,57 @@ export default function MobileNav() {
     ...(isTrusted ? TRUSTED_ITEMS : []),
     ...(isAdmin ? ADMIN_ITEMS : []),
   ];
+
+  // Свайп открывает и закрывает меню как обычная шторка: от левого края экрана вправо —
+  // открыть, по открытому меню влево — закрыть. Слушаем на document, а не только на
+  // шапке, — жест должен работать с любой страницы, а не только когда палец стартует
+  // ровно на 36-пиксельной кнопке-гамбургере.
+  //
+  // reactive-state вместо ref для drawerOpen — иначе обработчики, повешенные один раз,
+  // видели бы устаревшее значение из замыкания. Слушатели вешаются заново при каждом
+  // открытии/закрытии — цена этого меньше, чем цена сверять открыт ли drawer через ref.
+  const touchRef = useRef({ x: 0, y: 0, tracking: false });
+  useEffect(() => {
+    const EDGE_PX = 24;      // с какого расстояния от левого края экрана жест ещё считается «открыть»
+    const THRESHOLD_PX = 60; // на сколько нужно провести пальцем, чтобы жест засчитался
+    const MAX_DRIFT_PX = 60; // вертикальное отклонение больше этого — трейдер скроллит страницу, не свайпает меню
+
+    const onStart = (e) => {
+      const t = e.touches[0];
+      if (!t) return;
+      const canOpen = !drawerOpen && t.clientX <= EDGE_PX;
+      const canClose = drawerOpen;
+      touchRef.current = { x: t.clientX, y: t.clientY, tracking: canOpen || canClose };
+    };
+    const onMove = (e) => {
+      const st = touchRef.current;
+      if (!st.tracking) return;
+      const t = e.touches[0];
+      if (!t) return;
+      const dx = t.clientX - st.x;
+      const dy = Math.abs(t.clientY - st.y);
+      if (dy > MAX_DRIFT_PX) { st.tracking = false; return; }
+      if (!drawerOpen && dx > THRESHOLD_PX) {
+        setDrawerOpen(true);
+        st.tracking = false;
+      } else if (drawerOpen && dx < -THRESHOLD_PX) {
+        setDrawerOpen(false);
+        st.tracking = false;
+      }
+    };
+    const onEnd = () => { touchRef.current.tracking = false; };
+
+    // passive: true — жест только НАБЛЮДАЕТ за пальцем, ничего не блокирует. Обычный
+    // вертикальный скролл страницы поверх этого продолжает работать как ни в чём не бывало.
+    document.addEventListener('touchstart', onStart, { passive: true });
+    document.addEventListener('touchmove', onMove, { passive: true });
+    document.addEventListener('touchend', onEnd, { passive: true });
+    return () => {
+      document.removeEventListener('touchstart', onStart);
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onEnd);
+    };
+  }, [drawerOpen]);
 
   return (
     <>
