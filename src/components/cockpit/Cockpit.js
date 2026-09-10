@@ -22,6 +22,7 @@ import { evaluateAlerts, DEFAULT_ALERT_PREFS } from '../../services/alerts';
 import { loadBacktestSample, findSimilar, probabilityOfGoal } from '../../services/backtest/similarTrades';
 import CandleChart from '../shared/CandleChart';
 import RadarPanel from './RadarPanel';
+import CollapsibleSection from './CollapsibleSection';
 import './Cockpit.css';
 
 const fmtPct = (v, d = 2) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(d)}%`);
@@ -288,31 +289,72 @@ export default function Cockpit() {
       </div>
 
       <div className="ck-layout">
-        {/* ---------- список позиций ---------- */}
-        <aside className="ck-panel ck-list">
-          <div className="ck-list-head">Открытые позиции</div>
-          {trades.map((t) => {
-            const on = t.id === activeId;
-            const rem = parseFloat(t.remainingVolume ?? t.volume) || 0;
-            const vol = parseFloat(t.volume) || 0;
-            return (
-              <div key={t.id} className={`ck-pos ${on ? 'on' : ''}`}>
-                <button className="ck-pos-main" onClick={() => setActiveId(t.id)}>
-                  <div className="ck-pos-row">
-                    <span className="ck-ticker">{t.ticker}</span>
-                    <span className={`ck-dir ${t.direction}`}>{t.direction === 'long' ? 'ЛОНГ' : 'ШОРТ'}</span>
+        {/* ---------- сайдбар: позиции, лесенка, радар — одна колонка, каждая секция
+            сворачивается сама по себе, без пустых мест на месте свёрнутого блока ---------- */}
+        <aside className="ck-side">
+          <CollapsibleSection title="Открытые позиции" badge={trades.length}>
+            <div className="ck-pos-list">
+              {trades.map((t) => {
+                const on = t.id === activeId;
+                const rem = parseFloat(t.remainingVolume ?? t.volume) || 0;
+                const vol = parseFloat(t.volume) || 0;
+                return (
+                  <div key={t.id} className={`ck-pos ${on ? 'on' : ''}`}>
+                    <button className="ck-pos-main" onClick={() => setActiveId(t.id)}>
+                      <div className="ck-pos-row">
+                        <span className="ck-ticker">{t.ticker}</span>
+                        <span className={`ck-dir ${t.direction}`}>{t.direction === 'long' ? 'ЛОНГ' : 'ШОРТ'}</span>
+                      </div>
+                      <div className="ck-pos-sub">
+                        {t.status === 'partial' ? `в рынке ${fmtNum(rem, 0)} из ${fmtNum(vol, 0)}` : `${fmtNum(vol, 0)} конт.`}
+                      </div>
+                      <div className="ck-pos-sub">вход {fmtNum(t.entryPrice)}</div>
+                    </button>
+                    <button className="ck-pos-close" onClick={() => goToClose(t)} title="Закрыть или зафиксировать часть">
+                      Закрыть
+                    </button>
                   </div>
-                  <div className="ck-pos-sub">
-                    {t.status === 'partial' ? `в рынке ${fmtNum(rem, 0)} из ${fmtNum(vol, 0)}` : `${fmtNum(vol, 0)} конт.`}
+                );
+              })}
+            </div>
+          </CollapsibleSection>
+
+          {trade && (
+            <CollapsibleSection title="Лесенка фиксаций" badge={(state?.actualFills || []).length}>
+              <div className="ck-ladder-body">
+                {(state?.actualFills || []).length === 0 && (
+                  <div className="ck-rung muted">
+                    <div className="ck-rung-1">Пока ни одной</div>
+                    <div className="ck-rung-2">позиция целиком в рынке</div>
                   </div>
-                  <div className="ck-pos-sub">вход {fmtNum(t.entryPrice)}</div>
-                </button>
-                <button className="ck-pos-close" onClick={() => goToClose(t)} title="Закрыть или зафиксировать часть">
-                  Закрыть
-                </button>
+                )}
+                {(state?.actualFills || []).map((f, idx) => (
+                  <div className="ck-rung" key={idx}>
+                    <div className="ck-rung-1">{Math.round(f.fraction * 100)}% · {fmtNum(f.price)}</div>
+                    <div className="ck-rung-2">
+                      {f.timestampUtc ? new Date(f.timestampUtc).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}
+                    </div>
+                  </div>
+                ))}
+                {/* Что предлагал движок, а ты этого не делал */}
+                {(s?.fired || []).filter((f) => !(state?.actualFills || [])
+                  .some((x) => Math.abs(x.index - f.index) <= 1)).map((f, idx) => (
+                    <div className="ck-rung sys" key={`s${idx}`}>
+                      <div className="ck-rung-1">{Math.round((f.fraction || 0) * 100)}% · {fmtNum(f.price)}</div>
+                      <div className="ck-rung-2">система фиксировала здесь</div>
+                    </div>
+                ))}
+                {money && (
+                  <div className="ck-rung now">
+                    <div className="ck-rung-1">{fmtNum(money.remainingVol, 0)} конт. · {fmtNum(money.price)}</div>
+                    <div className="ck-rung-2">сейчас в рынке · {fmtPct(a?.currentPct, 1)}</div>
+                  </div>
+                )}
               </div>
-            );
-          })}
+            </CollapsibleSection>
+          )}
+
+          <RadarPanel />
         </aside>
 
         {/* ---------- кабина ---------- */}
@@ -421,62 +463,28 @@ export default function Cockpit() {
             </section>
           )}
 
-          {/* ---------- график + лесенка ---------- */}
-          <section className="ck-chart-row">
-            <div className="ck-panel ck-chart">
-              {candles?.length ? (
-                <CandleChart
-                  candles={candles}
-                  patterns={patterns}
-                  ticker={trade?.ticker}
-                  timeframe={timeframe}
-                  timeframeOptions={tfOptions}
-                  onTimeframeChange={setTfOverride}
-                  legs={trade?.legs}
-                  direction={trade?.direction}
-                  entryPrice={trade?.entryPrice ? parseFloat(trade.entryPrice) : null}
-                  planLines={{
-                    entry: trade?.entryPrice ? parseFloat(trade.entryPrice) : null,
-                    stop: trade?.stopLoss ? parseFloat(trade.stopLoss) : null,
-                    take: trade?.takeProfit ? parseFloat(trade.takeProfit) : null,
-                  }}
-                />
-              ) : (
-                <div className="ck-loading">{computing ? 'Загружаю график…' : 'Нет данных'}</div>
-              )}
-            </div>
-
-            <div className="ck-panel ck-ladder">
-              <div className="ck-list-head">Лесенка фиксаций</div>
-              {(state?.actualFills || []).length === 0 && (
-                <div className="ck-rung muted">
-                  <div className="ck-rung-1">Пока ни одной</div>
-                  <div className="ck-rung-2">позиция целиком в рынке</div>
-                </div>
-              )}
-              {(state?.actualFills || []).map((f, idx) => (
-                <div className="ck-rung" key={idx}>
-                  <div className="ck-rung-1">{Math.round(f.fraction * 100)}% · {fmtNum(f.price)}</div>
-                  <div className="ck-rung-2">
-                    {f.timestampUtc ? new Date(f.timestampUtc).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}
-                  </div>
-                </div>
-              ))}
-              {/* Что предлагал движок, а ты этого не делал */}
-              {(s?.fired || []).filter((f) => !(state?.actualFills || [])
-                .some((x) => Math.abs(x.index - f.index) <= 1)).map((f, idx) => (
-                  <div className="ck-rung sys" key={`s${idx}`}>
-                    <div className="ck-rung-1">{Math.round((f.fraction || 0) * 100)}% · {fmtNum(f.price)}</div>
-                    <div className="ck-rung-2">система фиксировала здесь</div>
-                  </div>
-              ))}
-              {money && (
-                <div className="ck-rung now">
-                  <div className="ck-rung-1">{fmtNum(money.remainingVol, 0)} конт. · {fmtNum(money.price)}</div>
-                  <div className="ck-rung-2">сейчас в рынке · {fmtPct(a?.currentPct, 1)}</div>
-                </div>
-              )}
-            </div>
+          {/* ---------- график ---------- */}
+          <section className="ck-panel ck-chart">
+            {candles?.length ? (
+              <CandleChart
+                candles={candles}
+                patterns={patterns}
+                ticker={trade?.ticker}
+                timeframe={timeframe}
+                timeframeOptions={tfOptions}
+                onTimeframeChange={setTfOverride}
+                legs={trade?.legs}
+                direction={trade?.direction}
+                entryPrice={trade?.entryPrice ? parseFloat(trade.entryPrice) : null}
+                planLines={{
+                  entry: trade?.entryPrice ? parseFloat(trade.entryPrice) : null,
+                  stop: trade?.stopLoss ? parseFloat(trade.stopLoss) : null,
+                  take: trade?.takeProfit ? parseFloat(trade.takeProfit) : null,
+                }}
+              />
+            ) : (
+              <div className="ck-loading">{computing ? 'Загружаю график…' : 'Нет данных'}</div>
+            )}
           </section>
 
           {/* ---------- если закрыть сейчас ---------- */}
