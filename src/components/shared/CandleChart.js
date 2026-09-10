@@ -10,6 +10,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createChart, CrosshairMode, CandlestickSeries, LineSeries, AreaSeries, HistogramSeries, BaselineSeries, createSeriesMarkers } from 'lightweight-charts';
 import { ema, bollingerSeries, rsi, macd } from '../../services/analytics/indicators';
 import { TIMEFRAMES } from '../../services/marketData/candles';
+import './CandleChart.css';
 
 // `tradeOnly` chips only make sense on a real trade (Journal) — hidden in Calculator/
 // Radar, where there's no entry/exit to draw. `colorable` chips get a color swatch.
@@ -271,6 +272,10 @@ export default function CandleChart({
   );
   const [colors, setColors] = useState(() => ({ ...DEFAULT_COLOR_FALLBACKS, ...loadSavedColors() }));
   const [fullscreen, setFullscreen] = useState(false);
+  // На телефоне ряд бейджей индикаторов сворачивается в кнопку (см. CandleChart.css) —
+  // это её состояние. На широком экране CSS-медиазапрос саму кнопку прячет, а ряд
+  // всегда открыт, так что состояние там ни на что не влияет.
+  const [indicatorsOpen, setIndicatorsOpen] = useState(false);
 
   const toggleLayer = (key) => setLayers((s) => ({ ...s, [key]: !s[key] }));
   const setColor = (key, value) => setColors((s) => {
@@ -631,17 +636,26 @@ export default function CandleChart({
           >{fullscreen ? '✕' : '⛶'}</button>
         </div>
       </div>
-      <div style={{display:'flex', flexWrap:'wrap', gap:6, marginBottom:8, alignItems:'center', flexShrink:0}}>
-        {visibleLayers.map((l) => (
-          <span key={l.key} style={{display:'inline-flex', alignItems:'center', gap:4}}>
-            <button
-              className={`badge ${layers[l.key] ? 'badge-blue' : ''}`}
-              style={{cursor:'pointer', border:'none', fontSize:11}}
-              onClick={() => toggleLayer(l.key)}
-            >{layers[l.key] ? '✓ ' : ''}{l.label}</button>
-            {l.colorable && <ColorPicker color={colors[l.key]} onChange={(v) => setColor(l.key, v)} />}
-          </span>
-        ))}
+      <div className="cc-layers-wrap">
+        <button
+          type="button"
+          className="cc-layers-toggle"
+          onClick={() => setIndicatorsOpen((v) => !v)}
+        >
+          ⚙ Индикаторы {indicatorsOpen ? '▲' : '▼'}
+        </button>
+        <div className={`cc-layers-row ${indicatorsOpen ? 'open' : ''}`}>
+          {visibleLayers.map((l) => (
+            <span key={l.key} style={{display:'inline-flex', alignItems:'center', gap:4}}>
+              <button
+                className={`badge ${layers[l.key] ? 'badge-blue' : ''}`}
+                style={{cursor:'pointer', border:'none', fontSize:11}}
+                onClick={() => toggleLayer(l.key)}
+              >{layers[l.key] ? '✓ ' : ''}{l.label}</button>
+              {l.colorable && <ColorPicker color={colors[l.key]} onChange={(v) => setColor(l.key, v)} />}
+            </span>
+          ))}
+        </div>
       </div>
       <div style={fullscreen ? {position:'relative', flex:1, minHeight:0} : {position:'relative'}}>
         <div ref={containerRef} style={{width:'100%', height:chartHeight}} />

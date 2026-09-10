@@ -1,0 +1,26 @@
+/* src/components/shared/CandleChart.css
+   Плашка индикаторов над графиком — на телефоне рядов бейджей (S/R, EMA9/13/21/100/200,
+   Боллинджер, Фибоначчи, RSI, MACD, Объём, Вход/выход, Цифры справа) набирается 4-5
+   строк, и сам график съезжает вниз почти за пределы экрана (реальная жалоба со
+   скриншотом). На узких экранах ряд сворачивается в одну кнопку, из которой список
+   выезжает как выпадающая панель, а не занимает место постоянно. */
+.cc-layers-wrap { position: relative; }
+.cc-layers-toggle { display: none; }
+.cc-layers-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; align-items: center; flex-shrink: 0; }
+
+@media (max-width: 640px) {
+  .cc-layers-toggle {
+    display: inline-flex; align-items: center; gap: 6px; margin-bottom: 8px;
+    padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border-subtle);
+    background: var(--bg-surface-2); color: var(--text-secondary); font-size: 12px; font-weight: 600;
+    flex-shrink: 0; font-family: inherit; cursor: pointer;
+  }
+  .cc-layers-row {
+    display: none;
+    position: absolute; top: 100%; left: 0; right: 0; z-index: 50;
+    background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 10px;
+    padding: 10px; margin: 0; box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+    max-height: 55vh; overflow-y: auto;
+  }
+  .cc-layers-row.open { display: flex; }
+}

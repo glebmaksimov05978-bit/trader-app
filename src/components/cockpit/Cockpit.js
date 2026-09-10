@@ -307,9 +307,15 @@ export default function Cockpit() {
 
   // Настоящей заявкой можно закрывать только то, что вообще можно купить/продать через
   // воркер: тикер в белом списке сервера, счета резолвятся. Иначе кнопки просто нет —
-  // остаётся обычный путь через Журнал.
+  // остаётся обычный путь через Журнал. Но молчать о ПРИЧИНЕ нельзя: реальная жалоба —
+  // «снова не вижу кнопки фиксации» — оказалась именно этим: тикер (фьючерс IMOEXF) не
+  // входит в белый список сервера, где сейчас только акции.
   const canOrderClose = !!(orderCfg?.enabled && trade?.ticker
     && orderCfg.whitelist?.includes(trade.ticker.toUpperCase()));
+  const orderUnavailableReason = !trade || canOrderClose ? null
+    : !orderCfg ? null // конфиг ещё грузится — рано делать вывод
+      : !orderCfg.enabled ? 'Отправка заявок не настроена (см. Настройки → Отправка заявок брокеру).'
+        : `${trade.ticker} нет в белом списке разрешённых инструментов на сервере — заявку по нему отправить нельзя, только записать вручную.`;
 
   const openCloseOrder = (lots) => {
     const l = Math.max(1, Math.round(lots));
@@ -608,9 +614,12 @@ export default function Cockpit() {
                     </button>
                   </div>
                 ) : (
-                  <button className="ck-btn ck-btn-primary" onClick={() => goToClose(trade, suggestedQty)}>
-                    Зафиксировать в Журнале
-                  </button>
+                  <div className="ck-verdict-actions" style={{ flexDirection: 'column', alignItems: 'flex-end' }}>
+                    <button className="ck-btn ck-btn-primary" onClick={() => goToClose(trade, suggestedQty)}>
+                      Зафиксировать в Журнале
+                    </button>
+                    {orderUnavailableReason && <div className="ck-order-hint">{orderUnavailableReason}</div>}
+                  </div>
                 );
               })()}
             </section>
@@ -667,6 +676,7 @@ export default function Cockpit() {
                 <div className="ck-note">
                   Цифры считаются теми же полями сделки, что и в Журнале — шаг цены, стоимость шага, комиссия.
                   {canOrderClose && ' Оценка выше — по последней цене графика; в заявке сервер покажет реальную.'}
+                  {orderUnavailableReason && <> {orderUnavailableReason}</>}
                 </div>
                 {canOrderClose ? (
                   <div className="ck-verdict-actions">
