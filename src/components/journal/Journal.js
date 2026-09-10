@@ -9,7 +9,8 @@ import { fetchDailyCandles, availableTimeframes, recommendTimeframe, TIMEFRAMES,
 import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { computeMarketContextAtEntry } from '../../services/analytics/marketContext';
-import { getActiveStrategy } from '../../services/analytics/strategy';
+import { getActiveStrategy, getStrategies } from '../../services/analytics/strategy';
+import { computeTradePostmortem } from '../../services/tradePostmortem';
 import { isFuturesCode, isCurrencyCode } from '../../services/import/instrumentResolver';
 import { addRadarItem, getRadarItems, deleteRadarItem } from '../../services/radar';
 import { useRadarLive } from '../../context/RadarLiveContext';
@@ -314,6 +315,24 @@ export default function Journal() {
       toast.success(partial
         ? `Зафиксировано ${qty} из ${remaining}: ${money}. В рынке осталось ${remaining - qty}.`
         : `Сделка закрыта. P&L: ${patch.pnl >= 0 ? '+' : ''}${formatCurrency(patch.pnl)}`);
+
+      // Разбор закрытой сделки (пик, отдача от пика, когорта, теневая линия) считается
+      // здесь один раз и складывается в саму сделку — чтобы детекторы на дашборде
+      // оставались мгновенными и не проигрывали свечи при каждом открытии. Отдельным
+      // обновлением ПОСЛЕ основного: если разбор не получится (нет связи с биржей,
+      // мало истории), сделка всё равно уже закрыта корректно.
+      if (!partial) {
+        const strategyForTrade = getStrategies(userProfile)
+          .find((s) => s.id === closeModal.entryStrategyId) || getActiveStrategy(userProfile);
+        const postmortem = await computeTradePostmortem({
+          trade: { ...closeModal, ...patch },
+          openedAt: resolveOpenedAt(closeModal),
+          closedAt: closedAtDate,
+          exitRules: strategyForTrade?.exitRules,
+          tinkoffToken: userProfile?.tinkoffToken,
+        });
+        if (postmortem) await updateTrade(closeModal.id, postmortem);
+      }
       setCloseModal(null);
       setClosePrice('');
       setCloseQty('');
