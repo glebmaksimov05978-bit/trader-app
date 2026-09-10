@@ -3,6 +3,10 @@ import React, { useState, useEffect, useRef } from 'react';
 import { formatCurrency } from '../../utils/calculator';
 import './Journal.css';
 
+// Запасное значение для статического EMPTY ниже — до того, как компонент получит
+// настоящую ставку через проп defaultCommissionRate (см. TradeModal ниже).
+const FALLBACK_COMMISSION_RATE = '0.0006';
+
 // ─── Кастомный date-пикер ────────────────────────────────────────────────────
 const MONTHS_RU = ['Январь','Февраль','Март','Апрель','Май','Июнь',
                    'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'];
@@ -214,11 +218,15 @@ const EMPTY = {
   minStep: '',
   minStepAmount: '',
   lot: '1',
-  commissionRate: '0.0006',
+  commissionRate: FALLBACK_COMMISSION_RATE,
   depositSize: '100000',
 };
 
-export default function TradeModal({ trade, onSave, onClose, defaultDeposit }) {
+// `defaultCommissionRate` — ставка по тарифу из Настроек для типа инструмента этой
+// сделки (Journal.js считает её через commissionRateFor + угадывание типа по тикеру,
+// у самой формы поля «тип инструмента» нет). Раньше здесь везде было зашито 0.0006
+// (0.06%) — число, не совпадающее ни с одним реальным тарифом Т-Банка.
+export default function TradeModal({ trade, onSave, onClose, defaultDeposit, defaultCommissionRate }) {
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
   const [autoPnl, setAutoPnl] = useState(null);
@@ -241,13 +249,20 @@ export default function TradeModal({ trade, onSave, onClose, defaultDeposit }) {
         minStep: trade.minStep ? String(trade.minStep) : '',
         minStepAmount: trade.minStepAmount ? String(trade.minStepAmount) : '',
         lot: trade.lot ? String(trade.lot) : '1',
-        commissionRate: trade.commissionRate ? String(trade.commissionRate) : '0.0006',
+        // Сделка, у которой комиссия уже была посчитана (открыта раньше), сохраняет
+        // свою ставку — иначе смена тарифа в Настройках задним числом переписала бы
+        // историю. Новая ставка приходит только для сделок без своей.
+        commissionRate: trade.commissionRate ? String(trade.commissionRate) : String(defaultCommissionRate ?? FALLBACK_COMMISSION_RATE),
         depositSize: trade.depositSize ? String(trade.depositSize) : String(defaultDeposit || 100000),
       });
     } else {
-      setForm(f => ({ ...f, depositSize: String(defaultDeposit || 100000) }));
+      setForm(f => ({
+        ...f,
+        depositSize: String(defaultDeposit || 100000),
+        commissionRate: String(defaultCommissionRate ?? FALLBACK_COMMISSION_RATE),
+      }));
     }
-  }, [trade, defaultDeposit]);
+  }, [trade, defaultDeposit, defaultCommissionRate]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 

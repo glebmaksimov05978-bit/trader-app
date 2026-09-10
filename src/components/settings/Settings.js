@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { availableTimeframes } from '../../services/marketData/candles';
+import { TARIFF_OPTIONS, TARIFFS, DEFAULT_TARIFF, commissionRateFor } from '../../services/analytics/commission';
 import toast from 'react-hot-toast';
 
 export default function Settings() {
@@ -14,6 +15,7 @@ export default function Settings() {
     dailyLossLimit: '',
     askJournalExtra: true,
     preferredTimeframe: '', // '' = авто по длительности сделки
+    brokerTariff: DEFAULT_TARIFF,
   });
   const [saving, setSaving] = useState(false);
   const [showToken, setShowToken] = useState(false);
@@ -29,6 +31,7 @@ export default function Settings() {
         maxRiskPerTrade: String(userProfile.maxRiskPerTrade || 1),
         dailyLossLimit: String(userProfile.dailyLossLimit || 3),
         preferredTimeframe: userProfile.preferredTimeframe || '',
+        brokerTariff: userProfile.brokerTariff || DEFAULT_TARIFF,
       }));
       // askExtra инициализируем только один раз
       if (askExtra === null) {
@@ -50,6 +53,7 @@ export default function Settings() {
         dailyLossLimit: parseFloat(form.dailyLossLimit),
         askJournalExtra: askExtra === true,
         preferredTimeframe: form.preferredTimeframe || null,
+        brokerTariff: form.brokerTariff,
       });
       toast.success('Настройки сохранены');
     } catch (e) {
@@ -161,6 +165,8 @@ export default function Settings() {
             <div className="input-hint">Токен хранится в вашем профиле Firestore, не передаётся третьим лицам</div>
           </div>
         </div>
+
+        <TariffCard tariffId={form.brokerTariff} onChange={(id) => set('brokerTariff', id)} onSave={save} saving={saving} />
 
         <OrderWorkerCard userProfile={userProfile} updateUserProfile={updateUserProfile} />
 
@@ -330,6 +336,82 @@ function OrderWorkerCard({ userProfile, updateUserProfile }) {
               : `Сервер отвечает, но отправка ещё не настроена: ${cfg.reason || 'не заданы торговый токен, номер счёта или белый список тикеров'}.`}
         </div>
       )}
+    </div>
+  );
+}
+
+// Тариф Т-Банка — единственный источник ставки комиссии для всего приложения (Калькулятор,
+// Журнал, Сопровождение). Раньше в каждом из них была своя копия числа 0.0006 (0.06%),
+// которое не совпадало ни с одним реальным тарифом брокера — трейдер получал в приложении
+// одну прибыль, а в реальном отчёте брокера другую, и расхождение накапливалось молча.
+function TariffCard({ tariffId, onChange, onSave, saving }) {
+  const tariff = TARIFFS[tariffId] || TARIFFS[DEFAULT_TARIFF];
+  const rows = [
+    ['stock', 'Акции / облигации / ETF'],
+    ['future', 'Фьючерсы'],
+    ['currency', 'Валюта'],
+  ];
+  return (
+    <div className="card" style={{marginBottom:20}}>
+      <div className="section-title">
+        <div className="section-title-icon">💳</div>
+        Тариф Т-Банка
+      </div>
+      <p className="text-sm text-secondary" style={{marginBottom:12}}>
+        От тарифа зависит ставка комиссии, которую приложение подставляет по умолчанию в
+        Калькуляторе, Журнале и Сопровождении. Число всегда можно поправить руками в
+        конкретной сделке — здесь только то, что подставляется по умолчанию.
+      </p>
+      <div className="input-group">
+        <label className="input-label">Мой тариф</label>
+        <select className="input" value={tariffId} onChange={(e) => onChange(e.target.value)}>
+          {TARIFF_OPTIONS.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+        </select>
+        {tariff.monthlyFee > 0 && (
+          <div className="input-hint">
+            {tariff.monthlyFee} ₽/мес, бесплатно при остатке от {tariff.freeAboveBalance.toLocaleString('ru-RU')} ₽
+          </div>
+        )}
+      </div>
+      <div className="table-wrapper" style={{marginTop:8}}>
+        <table className="table table-compact">
+          <thead><tr><th>Инструмент</th><th style={{textAlign:'right'}}>Комиссия за сторону</th></tr></thead>
+          <tbody>
+            {rows.map(([type, label]) => {
+              const { rate, approx, note } = commissionRateFor(tariffId, type);
+              return (
+                <tr key={type}>
+                  <td>{label}</td>
+                  <td style={{textAlign:'right'}}>
+                    {(rate * 100).toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}%
+                    {approx && <span className="text-xs text-muted" title={note}> ~</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      {rows.some(([type]) => commissionRateFor(tariffId, type).approx) && (
+        <div className="text-xs text-muted" style={{marginTop:8, lineHeight:1.6}}>
+          ~ — ставка для этого тарифа поддержкой не подтверждена, взята ставка «Инвестора» как
+          единственная известная. Если знаете точное число — впишите его вручную в конкретной
+          сделке, приложение не будет его менять.
+        </div>
+      )}
+      {tariffId === 'trader' && (
+        <div className="text-xs text-muted" style={{marginTop:8, lineHeight:1.6}}>
+          Комиссия за фьючерсы на «Трейдере» на самом деле считается по обороту ВСЕГО счёта
+          за календарный день (до 5 млн ₽/день — 0,040%, до 10 млн ₽/день — 0,03%, дальше
+          ниже) — приложение считает комиссию каждой сделки отдельно и не видит суммарный
+          дневной оборот по всем инструментам, поэтому всегда берёт первую ступень. При
+          обороте до 5 млн ₽/день это точное число; при бОльшем — реальная комиссия ниже
+          показанной, то есть приложение немного завышает расход, а не занижает.
+        </div>
+      )}
+      <button className="btn btn-secondary btn-sm" style={{marginTop:12}} onClick={onSave} disabled={saving}>
+        {saving ? 'Сохранение...' : '💾 Сохранить тариф'}
+      </button>
     </div>
   );
 }

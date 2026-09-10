@@ -1,6 +1,7 @@
 // src/components/calculator/Calculator.js
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { TinkoffAPI, parseFutureInfo, parseShareInfo } from '../../services/tinkoff';
 import { calcTrade, formatCurrency, formatNumber } from '../../utils/calculator';
@@ -13,6 +14,7 @@ import { computeMarketContextAtEntry } from '../../services/analytics/marketCont
 import { fetchActiveFutureCard, fetchMoexSecurityInfo } from '../../services/marketData/futuresSpecs';
 import { evaluateStrategy, getActiveStrategy, getStrategies } from '../../services/analytics/strategy';
 import { computeBaskets, capitalForStrategy, getPortfolio } from '../../services/analytics/portfolio';
+import { commissionRateFor, DEFAULT_TARIFF, TARIFFS } from '../../services/analytics/commission';
 import { fetchOrderConfig } from '../../services/broker';
 import OrderModal from './OrderModal';
 import { computeStopPrice, computeTakePrice, exitTypeLabel } from '../../services/analytics/exitRules';
@@ -111,7 +113,11 @@ export default function Calculator() {
     minStep: '1',
     minStepAmount: '',
     initialMargin: '',
-    commissionRate: '0.0006',
+    // Ставка по умолчанию берётся из тарифа Т-Банка в Настройках, а не из выдуманного
+    // 0.06% — раньше это число не совпадало ни с одним реальным тарифом брокера.
+    commissionRate: String(
+      commissionRateFor(userProfile?.brokerTariff || DEFAULT_TARIFF, draft?.instrumentType || 'future').rate,
+    ),
     ...(draft?.form || {}),
   });
 
@@ -193,6 +199,25 @@ export default function Calculator() {
     if (!user) { setOrderCfg(null); return; }
     fetchOrderConfig(userProfile).then(setOrderCfg);
   }, [user, userProfile]);
+
+  // Ставка комиссии по умолчанию — из тарифа в Настройках. При первой загрузке страницы
+  // userProfile обычно ещё не готов (профиль тянется асинхронно), поэтому начальное
+  // значение в useState выше почти всегда откатывается на DEFAULT_TARIFF. Этот эффект
+  // досчитывает ставку, как только тариф действительно известен, — но только пока
+  // трейдер сам не поменял поле руками (сравниваем с тем, что подставили автоматически
+  // в прошлый раз, а не с прошлым значением тарифа).
+  const lastAutoCommission = useRef(null);
+  useEffect(() => {
+    if (!userProfile) return;
+    const { rate } = commissionRateFor(userProfile.brokerTariff || DEFAULT_TARIFF, instrumentType);
+    const str = String(rate);
+    setForm((f) => {
+      if (lastAutoCommission.current != null && f.commissionRate !== lastAutoCommission.current) return f;
+      return { ...f, commissionRate: str };
+    });
+    lastAutoCommission.current = str;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userProfile?.brokerTariff, instrumentType]);
 
   useEffect(() => {
     if (userProfile) {
@@ -1101,8 +1126,15 @@ export default function Calculator() {
               </div>
             )}
             <div className="input-group">
-              <label className="input-label">Комиссия (0.0006 = 0.06%)</label>
-              <input className="input" type="number" value={form.commissionRate} onChange={e => set('commissionRate', e.target.value)} placeholder="0.0006" />
+              <label className="input-label">
+                Комиссия за сторону сделки
+                <span className="text-xs text-muted" style={{fontWeight:400}}> (0.0005 = 0.05%)</span>
+              </label>
+              <input className="input" type="number" step="0.0001" value={form.commissionRate} onChange={e => set('commissionRate', e.target.value)} />
+              <div className="input-hint">
+                Подставлено по тарифу «{TARIFFS[userProfile?.brokerTariff || DEFAULT_TARIFF]?.label}» из{' '}
+                <Link to="/settings">Настроек</Link> — можно поправить для конкретной сделки.
+              </div>
             </div>
           </div>
         </div>

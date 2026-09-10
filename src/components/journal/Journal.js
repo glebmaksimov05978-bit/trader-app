@@ -10,6 +10,7 @@ import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { computeMarketContextAtEntry } from '../../services/analytics/marketContext';
 import { getActiveStrategy, getStrategies } from '../../services/analytics/strategy';
+import { commissionRateFor, DEFAULT_TARIFF } from '../../services/analytics/commission';
 import { computeTradePostmortem } from '../../services/tradePostmortem';
 import { isFuturesCode, isCurrencyCode } from '../../services/import/instrumentResolver';
 import { addRadarItem, getRadarItems, deleteRadarItem } from '../../services/radar';
@@ -205,7 +206,10 @@ export default function Journal() {
     const lot = parseFloat(closeModal?.lot) || 1;
     const step = parseFloat(closeModal?.minStep) || 1;
     const stepAmt = parseFloat(closeModal?.minStepAmount) || 0;
-    const commRate = parseFloat(closeModal?.commissionRate) || 0.0006;
+    // У сделки обычно уже есть своя ставка (сохранённая при открытии) — используем её.
+    // Запасной вариант нужен только старым записям без этого поля вовсе.
+    const commRate = parseFloat(closeModal?.commissionRate)
+      || commissionRateFor(userProfile?.brokerTariff || DEFAULT_TARIFF, closeModal?.instrumentType || guessInstrumentType(closeModal?.ticker || '')).rate;
     const dir = closeModal?.direction;
 
     if (!exit || !entry) return null;
@@ -1307,6 +1311,14 @@ export default function Journal() {
           onSave={handleSave}
           onClose={() => { setModalOpen(false); setEditTrade(null); }}
           defaultDeposit={userProfile?.depositSize}
+          // У формы нет своего поля «тип инструмента» — угадываем по тикеру
+          // редактируемой сделки (для новой, пока тикер не введён, берём акцию как
+          // самый частый случай). Ставка при этом из тарифа в Настройках, а не
+          // из 0.0006, которое не совпадает ни с одним реальным тарифом Т-Банка.
+          defaultCommissionRate={commissionRateFor(
+            userProfile?.brokerTariff || DEFAULT_TARIFF,
+            guessInstrumentType(editTrade?.ticker || ''),
+          ).rate}
         />
       )}
 

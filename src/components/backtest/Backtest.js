@@ -22,6 +22,7 @@ import { diagnoseTrades } from '../../services/backtest/tradeDiagnostics';
 import { formatNumber } from '../../utils/calculator';
 import CandleChart from '../shared/CandleChart';
 import ExitRulesEditor from '../shared/ExitRulesEditor';
+import { commissionRateFor, DEFAULT_TARIFF } from '../../services/analytics/commission';
 import NumberInput from '../shared/NumberInput';
 import EquityCurve from './EquityCurve';
 import TechnicalAnalysisBlock from '../shared/TechnicalAnalysisBlock';
@@ -113,7 +114,10 @@ export default function Backtest() {
     depositSize: userProfile?.depositSize || 100000,
     riskPercent: strategyRiskPercent || userProfile?.maxRiskPerTrade || 1,
     maxMarginPercent: strategyMarginPercent || 30,
-    lot: 1, minStep: 1, minStepAmount: 0, initialMargin: 0, commissionRate: 0.0006,
+    lot: 1, minStep: 1, minStepAmount: 0, initialMargin: 0,
+    // Реальный тариф из Настроек вместо выдуманного 0.0006 — исследование должно
+    // оценивать издержки, максимально близкие к тому, что реально спишет брокер.
+    commissionRate: commissionRateFor(userProfile?.brokerTariff || DEFAULT_TARIFF, cache.instrumentType ?? 'future').rate,
   });
   // Re-derive risk%/margin% from the newly selected strategy — same "reset on strategy
   // switch, but not on cache restore" guard as exitRules above.
@@ -487,15 +491,9 @@ export default function Backtest() {
           <label className="flex gap-2" style={{alignItems:'center', fontSize:13, cursor:'pointer', fontWeight:600}}>
             <input type="checkbox" checked={marketRegimeFilterEnabled}
               onChange={(e) => setMarketRegimeFilterEnabled(e.target.checked)} />
-            📉 Фильтр рынка: не входить в лонг, когда индекс (IMOEXF) сам ниже своей SMA50
+            📉 Фильтр рынка (не лонговать, когда индекс ниже своей SMA50)
           </label>
-          <div className="input-hint" style={{marginTop:6}}>
-            Загружает дневной график IMOEXF отдельно и проверяет на дату каждого потенциального
-            входа: если индекс сам ниже своей 50-дневной скользящей (рынок в целом падает) —
-            лонг не открывается. Шорты не трогает. На истории — самое сильное и универсальное
-            улучшение сессии: подтвердилось на трёх разных стратегиях входа, включая две без
-            единого упоминания фигур.
-          </div>
+          <div className="input-hint" style={{marginTop:4}}>Самое сильное улучшение сессии, шортов не касается.</div>
         </div>
 
         <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:8}}>

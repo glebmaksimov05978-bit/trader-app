@@ -17,6 +17,7 @@ import { fetchDailyCandles, availableTimeframes } from '../../services/marketDat
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { getActiveStrategy, getStrategies } from '../../services/analytics/strategy';
 import { classifyStrategy, kindBadge } from '../../services/analytics/strategyKind';
+import { commissionRateFor, DEFAULT_TARIFF } from '../../services/analytics/commission';
 import { computeBothLines } from '../../services/backtest/livePosition';
 import { computeProfitBreakdown, computeLossBreakdown } from '../../services/backtest/engine';
 import { evaluateAlerts, DEFAULT_ALERT_PREFS } from '../../services/alerts';
@@ -245,7 +246,11 @@ export default function Cockpit() {
     const lot = parseFloat(trade.lot) || 1;
     const step = parseFloat(trade.minStep) || 0;
     const stepAmount = parseFloat(trade.minStepAmount) || 0;
-    const commRate = parseFloat(trade.commissionRate) || 0.0006;
+    // У сделки обычно уже есть своя ставка (сохранена при открытии) — используем её,
+    // как и Журнал при закрытии. Запасной вариант — тариф из Настроек, а не выдуманное
+    // 0.0006, которое не совпадает ни с одним реальным тарифом Т-Банка.
+    const commRate = parseFloat(trade.commissionRate)
+      || commissionRateFor(userProfile?.brokerTariff || DEFAULT_TARIFF, trade.instrumentType || 'stock').rate;
     const entry = parseFloat(trade.entryPrice);
     const dir = trade.direction === 'short' ? -1 : 1;
 
@@ -263,7 +268,7 @@ export default function Cockpit() {
       realized: trade.pnl ?? 0,
       closedShare: volume > 0 ? ((volume - remainingVol) / volume) * 100 : 0,
     };
-  }, [state, trade, candles, closeShare]);
+  }, [state, trade, candles, closeShare, userProfile?.brokerTariff]);
 
   // Похожие исторические ситуации — та же когорта (число фиксаций профит-системы) и
   // направление, что у сделки сейчас. Датасет собран на дневном графике; если сама сделка
