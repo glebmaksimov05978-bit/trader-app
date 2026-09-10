@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, calcStats, computeLiveBalance } from '../../services/trades';
 import { formatCurrency, formatNumber } from '../../utils/calculator';
 import { CONDITION_CATALOG, defaultStrategy, getStrategies, STRATEGY_TEMPLATES, CUSTOM_CONDITION_PRESETS } from '../../services/analytics/strategy';
+import { classifyStrategy, kindBadge, strategyPerformance } from '../../services/analytics/strategyKind';
 import { PATTERN_LABELS, PATTERN_DIRECTIONS } from '../shared/TechnicalAnalysisBlock';
 import ExitRulesEditor from '../shared/ExitRulesEditor';
 import toast from 'react-hot-toast';
@@ -446,7 +447,7 @@ export default function Capital() {
               <button
                 className={`btn btn-sm ${editingId === s.id ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => setEditingId(s.id)}
-                title={s.id === activeStrategyId ? 'Активна сейчас' : 'Кликните, чтобы редактировать'}
+                title={`${kindBadge(classifyStrategy(s))}${s.id === activeStrategyId ? ' · активна сейчас' : ''}`}
               >
                 {s.id === activeStrategyId && '★ '}{s.name || 'Без названия'}
               </button>
@@ -491,6 +492,11 @@ export default function Capital() {
               onChange={e => setReadinessThreshold(e.target.value === '' ? null : parseFloat(e.target.value))} />
           </div>
         </div>
+
+        {/* Тип стратегии считается из включённых условий, а не спрашивается: трейдер уже
+            описал стратегию галочками, переспрашивать значит просить сделать работу дважды
+            и получить расхождение между тем, что выбрано, и тем, как стратегия торгует. */}
+        <StrategyKindCard strategy={strategy} />
 
         <div className="text-xs text-muted" style={{marginBottom:10}}>
           У каждого рыночного условия можно выбрать «Только лонг» или «Только шорт» справа — тогда для
@@ -665,6 +671,8 @@ export default function Capital() {
         </button>
       </div>
 
+      <StrategyPerformanceCard trades={trades} strategies={strategies} />
+
       {confirmTemplate && (
         <div className="modal-overlay" onClick={() => setConfirmTemplate(null)}>
           {/* Wider, and shows what the template actually contains — the old text was
@@ -721,6 +729,94 @@ export default function Capital() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Тип стратегии + чем он характерен. Специально разделены две вещи: «характер подхода» —
+// это про такие стратегии вообще, а не измеренная статистика ЭТОГО трейдера; его цифры
+// живут ниже, в разборе по закрытым сделкам, и приходят из журнала, а не из описания.
+function StrategyKindCard({ strategy }) {
+  const cls = classifyStrategy(strategy);
+  const color = cls.kind === 'breakout' ? 'var(--gold)'
+    : cls.kind === 'pullback' ? 'var(--accent-primary)'
+      : cls.kind === 'trend' ? 'var(--green)' : 'var(--text-muted)';
+  return (
+    <div style={{
+      marginBottom: 16, padding: '12px 16px', borderRadius: 'var(--radius-sm)',
+      background: 'var(--bg-surface-2)', borderLeft: `3px solid ${color}`,
+    }}>
+      <div style={{display:'flex', alignItems:'baseline', gap:8, flexWrap:'wrap'}}>
+        <span style={{fontWeight:700, color}}>{kindBadge(cls)}</span>
+        <span className="text-xs text-muted">{cls.short}</span>
+      </div>
+      {cls.why.length > 0 && (
+        <div className="text-xs text-muted" style={{marginTop:6}}>
+          Определено по условиям: {cls.why.join(', ')}.
+        </div>
+      )}
+      <div className="text-xs text-secondary" style={{marginTop:8, lineHeight:1.6}}>{cls.character}</div>
+    </div>
+  );
+}
+
+// Как стратегии торговали на самом деле. Сделка помнит стратегию, по которой открыта, —
+// поэтому это не «как задумано», а факт из журнала. Сделки без записанной стратегии
+// (старые или заведённые руками) идут отдельной группой: приписать их активной сегодня
+// было бы удобно и неверно.
+function StrategyPerformanceCard({ trades, strategies }) {
+  const rows = strategyPerformance(trades, strategies);
+  if (rows.length < 1) return null;
+  const informative = rows.filter((r) => r.count >= 5);
+
+  return (
+    <div className="card" style={{marginTop:24}}>
+      <div className="section-title">
+        <div className="section-title-icon">⚖️</div>
+        Как торгуют ваши стратегии
+      </div>
+      <p className="text-sm text-secondary" style={{marginBottom:16}}>
+        По закрытым сделкам из журнала — какая стратегия сколько принесла на деле. Сравнивать
+        честно можно только строки с достаточным числом сделок: на пяти сделках разница между
+        стратегиями — это удача, а не качество.
+      </p>
+      <div className="table-wrapper">
+        <table className="table table-compact">
+          <thead>
+            <tr>
+              <th>Стратегия</th><th>Тип</th><th>Сделок</th><th>Прибыльных</th>
+              <th style={{textAlign:'right'}}>Итог</th><th style={{textAlign:'right'}}>В среднем</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.key} style={{opacity: r.count >= 5 ? 1 : 0.6}}>
+                <td style={{fontWeight:600}}>
+                  {r.name}
+                  {!r.exists && r.key !== '__none__' && (
+                    <span className="text-xs text-muted" style={{fontWeight:400}}> · удалена</span>
+                  )}
+                </td>
+                <td className="text-xs text-muted">{r.classification ? kindBadge(r.classification) : '—'}</td>
+                <td>{r.count}{r.count < 5 && <span className="text-xs text-muted"> мало</span>}</td>
+                <td>{Math.round(r.winrate)}%</td>
+                <td style={{textAlign:'right', fontWeight:600, color: r.pnl >= 0 ? 'var(--green)' : 'var(--red)'}}>
+                  {formatCurrency(Math.round(r.pnl))}
+                </td>
+                <td style={{textAlign:'right', color: r.avgPnl >= 0 ? 'var(--green)' : 'var(--red)'}}>
+                  {formatCurrency(Math.round(r.avgPnl))}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {informative.length < 2 && (
+        <div className="text-xs text-muted" style={{marginTop:12, lineHeight:1.6}}>
+          Сравнивать пока не с чем: нужно минимум две стратегии, у каждой хотя бы по 5 закрытых
+          сделок. Стратегия записывается в сделку, когда вы заводите её из Калькулятора.
         </div>
       )}
     </div>

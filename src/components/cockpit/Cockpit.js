@@ -16,6 +16,7 @@ import { getUserTrades, resolveOpenedAt } from '../../services/trades';
 import { fetchDailyCandles, TIMEFRAMES } from '../../services/marketData/candles';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { getActiveStrategy, getStrategies } from '../../services/analytics/strategy';
+import { classifyStrategy, kindBadge } from '../../services/analytics/strategyKind';
 import { computeBothLines } from '../../services/backtest/livePosition';
 import { computeProfitBreakdown, computeLossBreakdown } from '../../services/backtest/engine';
 import { evaluateAlerts, DEFAULT_ALERT_PREFS } from '../../services/alerts';
@@ -293,7 +294,13 @@ export default function Cockpit() {
         </div>
         <div className="ck-top-right">
           <label className="ck-strategy-pick">
-            <span className="ck-k">Работаем по стратегии</span>
+            {/* Тип рядом с названием: «Стратегия 2» ничего не говорит о том, чего от неё
+                ждать, а «Пробойная» говорит — и сразу видно, что переключение меняет не
+                только имя в селекторе. */}
+            <span className="ck-k">
+              Работаем по стратегии
+              {strategy && <span className="ck-strategy-kind"> · {kindBadge(classifyStrategy(strategy)).toLowerCase()}</span>}
+            </span>
             <select
               value={strategy?.id || ''}
               onChange={(e) => setStrategyId(e.target.value)}

@@ -340,3 +340,5 @@
 }
 .ck-radar-item:hover .ck-radar-del { opacity: 1; }
 .ck-radar-del:hover { color: var(--red); border-color: rgba(239, 68, 68, 0.3); }
+
+.ck-strategy-kind { color: var(--text-muted); font-weight: 500; }
