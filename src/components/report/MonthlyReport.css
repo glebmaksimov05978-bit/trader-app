@@ -1,0 +1,72 @@
+/* src/components/report/MonthlyReport.css
+   Отчёт читается сверху вниз и должен нормально ложиться на бумагу — отсюда крупный
+   вывод словами в начале, спокойные блоки и правила @media print в конце файла. */
+
+.mr-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.mr-header-actions { display: flex; gap: 10px; align-items: center; }
+.mr-month { width: auto; min-width: 160px; padding: 9px 12px; }
+
+.mr-verdict {
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--text-primary);
+  margin-bottom: 20px;
+  border-left: 3px solid var(--accent-primary);
+}
+
+.mr-kpis { margin-bottom: 20px; }
+.mr-block { margin-bottom: 20px; }
+.mr-note { font-size: 12.5px; color: var(--text-muted); line-height: 1.6; margin: 8px 0 0; }
+
+.mr-two { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+@media (max-width: 900px) { .mr-two { grid-template-columns: 1fr; } }
+
+/* форма месяца */
+.mr-curve { position: relative; margin-top: 14px; }
+.mr-bars { display: flex; align-items: flex-end; gap: 2px; height: 96px; }
+.mr-bar-slot { flex: 1; height: 100%; display: flex; align-items: flex-end; min-width: 3px; }
+.mr-bars i { display: block; width: 100%; border-radius: 2px; }
+.mr-bars i.up { background: rgba(16, 185, 129, 0.55); }
+.mr-bars i.down { background: rgba(239, 68, 68, 0.55); }
+.mr-line { position: absolute; inset: 0; width: 100%; height: 96px; pointer-events: none; }
+.mr-axis {
+  display: flex; justify-content: space-between; align-items: baseline;
+  margin-top: 8px; font-size: 11px; color: var(--text-muted);
+}
+
+/* дисциплина */
+.mr-reasons { display: flex; flex-direction: column; gap: 5px; margin-top: 12px; }
+.mr-reason {
+  display: flex; justify-content: space-between; font-size: 12px; padding: 6px 10px;
+  border-radius: 8px; background: var(--bg-surface-2); color: var(--text-secondary);
+}
+.mr-vs {
+  margin-top: 14px; padding: 11px 14px; border-radius: var(--radius-sm);
+  background: var(--bg-surface-2); font-size: 12.5px; line-height: 1.6; color: var(--text-secondary);
+}
+
+/* привычки месяца */
+.mr-habit { padding: 12px 0; border-bottom: 1px solid var(--border-subtle); }
+.mr-habit:last-of-type { border-bottom: none; }
+.mr-habit-detail { font-size: 13px; color: var(--text-muted); margin-top: 4px; line-height: 1.6; }
+.mr-habit-flag { font-size: 11px; color: var(--gold); margin-top: 5px; }
+.mr-fixed {
+  margin-top: 14px; padding: 11px 14px; border-radius: var(--radius-sm);
+  background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.22);
+  font-size: 12.5px; line-height: 1.6; color: var(--text-secondary);
+}
+
+/* лучшая / худшая */
+.mr-trade { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 12px; }
+.mr-trade-ticker { font-size: 17px; font-weight: 700; }
+.mr-trade-pnl { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* печать: отчёт — единственная страница приложения, которую осмысленно распечатать,
+   поэтому убираем навигацию и переводим цвета в бумажные. */
+@media print {
+  .sidebar, .mobile-topbar, .mobile-drawer-overlay, .mr-header-actions { display: none !important; }
+  .page, .mr-page { padding: 0; max-width: none; }
+  .card, .kpi-card { break-inside: avoid; box-shadow: none; border: 1px solid #ddd; }
+  .kpi-card::before { display: none; }
+  .mr-two { grid-template-columns: 1fr 1fr; }
+}

@@ -10,6 +10,7 @@ import EmailNotVerifiedPage from './components/auth/EmailNotVerifiedPage';
 import Dashboard from './components/dashboard/Dashboard';
 import Calculator from './components/calculator/Calculator';
 import Journal from './components/journal/Journal';
+import MonthlyReport from './components/report/MonthlyReport';
 import Capital from './components/capital/Capital';
 import Advisor from './components/advisor/Advisor';
 import Settings from './components/settings/Settings';
@@ -65,6 +66,7 @@ function AppRoutes() {
         <Route index element={<Dashboard />} />
         <Route path="calculator" element={<Calculator />} />
         <Route path="journal" element={<Journal />} />
+        <Route path="report" element={<MonthlyReport />} />
         <Route path="capital" element={<Capital />} />
         <Route path="advisor" element={<Advisor />} />
         <Route path="settings" element={<Settings />} />

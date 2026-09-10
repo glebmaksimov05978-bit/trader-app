@@ -9,6 +9,7 @@ export const NAV_ITEMS = [
   { path: '/', icon: '📊', label: 'Дашборд' },
   { path: '/calculator', icon: '🧮', label: 'Калькулятор', mobileLabel: 'Расчёт' },
   { path: '/journal', icon: '📓', label: 'Журнал' },
+  { path: '/report', icon: '🗓', label: 'Отчёт за месяц', mobileLabel: 'Отчёт' },
   { path: '/capital', icon: '💰', label: 'Капитал' },
   { path: '/advisor', icon: '🤖', label: 'AI Советник', mobileLabel: 'AI' },
   { path: '/settings', icon: '⚙️', label: 'Настройки' },

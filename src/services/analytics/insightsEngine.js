@@ -718,6 +718,18 @@ export function detectSizeVsOutcome(trades) {
 export const WEEKLY_HABITS_LIMIT = 3;
 export const HABITS_WINDOW_DAYS = 30;
 
+// Тот же набор детекторов, но по произвольной выборке — нужен месячному отчёту, где
+// окно задаёт календарь, а не «последние 30 дней». Специально одна функция на оба
+// случая: вывод «что стоило вам денег в августе» обязан считаться ровно тем же кодом,
+// что и вывод на дашборде, иначе два места в приложении начнут спорить друг с другом.
+export function computeHabitsFor(trades, profile = {}) {
+  const all = runAllDetectors(trades, profile);
+  return {
+    all,
+    triggered: all.filter((d) => d.triggered).sort((a, b) => b.costRub - a.costRub),
+  };
+}
+
 function runAllDetectors(trades, profile) {
   return [
     detectHoldingAsymmetry(trades),
