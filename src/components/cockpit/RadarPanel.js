@@ -5,44 +5,81 @@
 // рядом с открытой позицией, чтобы не переключаться между вкладками. Ничего не
 // дублирует: список инструментов и опрос стратегии — общие на всё приложение.
 //
-// Раньше добавить тикер можно было только из Журнала — здесь прямо внутри секции
-// стоит короткая форма, чтобы не переключаться между вкладками ради одного действия.
+// Раньше добавить тикер можно было только из Журнала, и только вписав его руками —
+// теперь здесь же открывается каталог: инструмент можно найти по названию, отметить
+// сразу несколько и сразу выбрать таймфрейм проверки.
 import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { useRadarLive } from '../../context/RadarLiveContext';
-import { getRadarItems, addRadarItem } from '../../services/radar';
+import { getRadarItems, addRadarItem, deleteRadarItem } from '../../services/radar';
+import { getUserTrades } from '../../services/trades';
 import { getActiveStrategy } from '../../services/analytics/strategy';
+import { catalogEntry } from '../../services/marketData/instrumentCatalog';
 import CollapsibleSection from './CollapsibleSection';
+import InstrumentPicker from './InstrumentPicker';
 
 export default function RadarPanel() {
   const { user, userProfile } = useAuth();
   const navigate = useNavigate();
   const { radarLive, setRadarLive, radarUpdatedAt, radarResults } = useRadarLive() || {};
   const [items, setItems] = useState([]);
-  const [addOpen, setAddOpen] = useState(false);
-  const [ticker, setTicker] = useState('');
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [ownTickers, setOwnTickers] = useState([]);
   const strategy = getActiveStrategy(userProfile);
 
   const load = () => { if (user) getRadarItems(user.uid).then(setItems).catch(() => setItems([])); };
   useEffect(load, [user]);
 
-  const handleAdd = async (e) => {
-    e.preventDefault();
-    if (!ticker.trim()) return;
+  // «Вы этим торговали» — самые частые тикеры из журнала. Читается один раз при первом
+  // открытии каталога: на старте вкладки это лишний запрос, а внутри окна — самая
+  // полезная подсказка, с чего начать список наблюдения.
+  const openPicker = async () => {
+    setPickerOpen(true);
+    if (ownTickers.length || !user) return;
+    try {
+      const trades = await getUserTrades(user.uid);
+      const counts = {};
+      for (const t of trades) {
+        const tk = (t.ticker || '').toUpperCase();
+        if (tk) counts[tk] = (counts[tk] || 0) + 1;
+      }
+      setOwnTickers(Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([tk]) => tk));
+    } catch {
+      setOwnTickers([]);
+    }
+  };
+
+  const handleAdd = async (picked, { timeframe }) => {
     setSaving(true);
     try {
-      await addRadarItem(user.uid, { ticker: ticker.trim(), instrumentType: 'stock' });
-      toast.success(`${ticker.trim().toUpperCase()} добавлен в радар`);
-      setTicker('');
-      setAddOpen(false);
+      // Последовательно, а не Promise.all: если на середине списка что-то упадёт,
+      // добавленное до этого останется добавленным, и трейдер увидит честное «N из M».
+      let ok = 0;
+      for (const p of picked) {
+        try {
+          await addRadarItem(user.uid, { ticker: p.ticker, instrumentType: p.type || 'stock', timeframe });
+          ok += 1;
+        } catch { /* считаем ниже */ }
+      }
+      if (ok === picked.length) toast.success(ok === 1 ? `${picked[0].ticker} в радаре` : `Добавлено: ${ok}`);
+      else toast.error(`Добавлено ${ok} из ${picked.length}`);
+      setPickerOpen(false);
       load();
-    } catch {
-      toast.error('Не удалось добавить');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDelete = async (item) => {
+    setItems((cur) => cur.filter((i) => i.id !== item.id)); // мгновенно, без ожидания сети
+    try {
+      await deleteRadarItem(item.id);
+    } catch {
+      toast.error('Не удалось убрать из радара');
+      load();
     }
   };
 
@@ -70,52 +107,50 @@ export default function RadarPanel() {
 
       <div className="ck-radar-list">
         {!items.length && (
-          <div className="ck-radar-empty">Список пуст — добавь тикер кнопкой ниже.</div>
+          <div className="ck-radar-empty">Список пуст — выберите инструменты в каталоге ниже.</div>
         )}
         {items.map((it) => {
           const res = radarResults?.[it.id];
           const pct = res?.result?.total ? Math.round((res.result.passed / res.result.total) * 100) : null;
           const hot = pct != null && pct >= (strategy?.readinessThreshold ?? 100);
+          const known = catalogEntry(it.ticker);
           return (
-            <button
-              key={it.id}
-              className={`ck-radar-row ${hot ? 'hot' : ''}`}
-              onClick={() => navigate('/journal')}
-              title="Открыть Радар в Журнале"
-            >
-              <RadarRing pct={pct} hot={hot} />
-              <div className="ck-radar-info">
-                <div className="ck-radar-ticker">{it.ticker}</div>
-                <div className="ck-radar-sub">
-                  {res?.error ? res.error
-                    : pct != null ? `${res.result.passed} из ${res.result.total} условий`
-                      : 'ждёт проверки'}
+            <div key={it.id} className="ck-radar-item">
+              <button
+                className={`ck-radar-row ${hot ? 'hot' : ''}`}
+                onClick={() => navigate('/journal')}
+                title="Открыть Радар в Журнале"
+              >
+                <RadarRing pct={pct} hot={hot} />
+                <div className="ck-radar-info">
+                  <div className="ck-radar-ticker">
+                    {it.ticker}
+                    {known && <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}> · {known.name}</span>}
+                  </div>
+                  <div className="ck-radar-sub">
+                    {res?.error ? res.error
+                      : pct != null ? `${res.result.passed} из ${res.result.total} условий`
+                        : 'ждёт проверки'}
+                  </div>
                 </div>
-              </div>
-            </button>
+              </button>
+              <button className="ck-radar-del" onClick={() => handleDelete(it)} title="Убрать из радара">✕</button>
+            </div>
           );
         })}
       </div>
 
-      {addOpen ? (
-        <form className="ck-radar-add-form" onSubmit={handleAdd}>
-          <input
-            autoFocus
-            className="ck-radar-add-input"
-            placeholder="Тикер, напр. SBER"
-            value={ticker}
-            onChange={(e) => setTicker(e.target.value.toUpperCase())}
-          />
-          <button className="ck-btn ck-btn-primary" type="submit" disabled={saving || !ticker.trim()}>
-            {saving ? '…' : 'Добавить'}
-          </button>
-          <button className="ck-btn" type="button" onClick={() => { setAddOpen(false); setTicker(''); }}>
-            Отмена
-          </button>
-        </form>
-      ) : (
-        <button className="ck-radar-add-btn" onClick={() => setAddOpen(true)}>+ Добавить тикер</button>
-      )}
+      <button className="ck-radar-add-btn" onClick={openPicker}>+ Выбрать инструменты</button>
+
+      <InstrumentPicker
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        onAdd={handleAdd}
+        existing={items.map((i) => i.ticker)}
+        ownTickers={ownTickers}
+        tinkoffToken={userProfile?.tinkoffToken}
+        saving={saving}
+      />
     </CollapsibleSection>
   );
 }

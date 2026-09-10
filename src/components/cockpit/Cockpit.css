@@ -281,3 +281,62 @@
 .ck-comp.on .ck-comp-label { color: var(--text-primary); font-weight: 600; }
 .ck-comp-detail { font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 .ck-comp.on .ck-comp-detail { color: var(--text-primary); font-weight: 600; }
+
+/* каталог инструментов (InstrumentPicker) — окно поверх «Сопровождения».
+   Базовые .modal/.modal-overlay берутся из Journal.css: окно добавления в радар должно
+   выглядеть так же, как остальные окна приложения, а не как отдельный виджет. */
+.ip-modal { max-width: 560px; }
+.ip-search { padding: 18px 28px 4px; }
+.ip-search-note { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+.ip-sectors { display: flex; flex-wrap: wrap; gap: 6px; padding: 12px 28px 10px; }
+.ip-chip {
+  padding: 5px 10px; border-radius: 100px; border: 1px solid var(--border-subtle);
+  background: transparent; color: var(--text-secondary); font-size: 11px; font-weight: 600;
+  cursor: pointer; font-family: inherit; transition: var(--transition); white-space: nowrap;
+}
+.ip-chip:hover { color: var(--text-primary); border-color: var(--border-medium); }
+.ip-chip.on { background: var(--accent-primary); border-color: transparent; color: #fff; }
+
+.ip-list {
+  flex: 1; overflow-y: auto; padding: 4px 20px 8px; display: flex; flex-direction: column; gap: 2px;
+  min-height: 220px; max-height: 46vh;
+}
+.ip-group {
+  font-size: 10px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-muted); padding: 12px 8px 4px;
+}
+.ip-row {
+  display: flex; align-items: center; gap: 11px; padding: 9px 8px; border-radius: var(--radius-xs);
+  border: 1px solid transparent; background: transparent; cursor: pointer; text-align: left;
+  width: 100%; font-family: inherit; color: inherit; transition: var(--transition);
+}
+.ip-row:hover { background: var(--bg-surface-2); }
+.ip-row.on { background: rgba(79, 70, 229, 0.1); border-color: rgba(79, 70, 229, 0.24); }
+.ip-row.off { opacity: 0.45; cursor: default; }
+.ip-row.off:hover { background: transparent; }
+.ip-check {
+  width: 22px; height: 22px; flex: none; border-radius: 6px; display: grid; place-items: center;
+  border: 1px solid var(--border-medium); color: var(--text-muted); font-size: 11px; font-weight: 800;
+}
+.ip-row.on .ip-check { background: var(--accent-primary); border-color: transparent; color: #fff; }
+.ip-info { flex: 1; min-width: 0; }
+.ip-ticker { font-weight: 700; font-size: 13px; }
+.ip-name { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ip-type { font-size: 10.5px; color: var(--text-muted); white-space: nowrap; flex: none; }
+.ip-row-raw { border: 1px dashed var(--border-medium); margin-top: 6px; }
+.ip-empty { padding: 26px 10px; font-size: 12px; color: var(--text-muted); text-align: center; line-height: 1.6; }
+
+.ip-footer { justify-content: space-between; align-items: center; padding: 18px 28px 22px; flex-wrap: wrap; gap: 12px; }
+.ip-tf { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--text-secondary); }
+.ip-tf select { width: auto; padding: 7px 10px; font-size: 12px; }
+.ip-actions { display: flex; gap: 10px; margin-left: auto; }
+
+/* удаление тикера из радара — появляется по наведению, чтобы не мозолило глаза */
+.ck-radar-item { display: flex; align-items: center; }
+.ck-radar-del {
+  width: 22px; height: 22px; flex: none; border-radius: 6px; border: 1px solid transparent;
+  background: transparent; color: var(--text-muted); font-size: 11px; cursor: pointer;
+  font-family: inherit; opacity: 0; transition: var(--transition);
+}
+.ck-radar-item:hover .ck-radar-del { opacity: 1; }
+.ck-radar-del:hover { color: var(--red); border-color: rgba(239, 68, 68, 0.3); }

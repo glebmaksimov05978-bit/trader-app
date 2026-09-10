@@ -100,6 +100,28 @@ export class TinkoffAPI {
     }
   }
 
+  // Свободный поиск инструментов для каталога: не «найди мне ровно этот тикер», а
+  // «покажи, что вообще есть по такому запросу». Ищет и по тикеру, и по названию —
+  // трейдер, который помнит «Северсталь», но не помнит CHMF, найдёт бумагу.
+  //
+  // apiTradeAvailableFlag НЕ ставим: следить можно и за тем, чем через API не торгуют
+  // (мини-контракты, часть бумаг), — радар только смотрит на график.
+  async findInstruments(query, limit = 30) {
+    try {
+      const data = await this.request('/tinkoff.public.invest.api.contract.v1.InstrumentsService/FindInstrument', {
+        query,
+      });
+      const list = data.instruments || [];
+      // Только MOEX: приложение считает свечи по московским площадкам, инструмент с
+      // другой биржи в радаре превратится в строку с ошибкой.
+      return list
+        .filter((i) => !i.exchange || /MOEX|SPB|FORTS/i.test(i.exchange))
+        .slice(0, limit);
+    } catch {
+      return [];
+    }
+  }
+
   // Универсальный поиск — пробует фьючерс, потом акцию
   async getInstrumentByTicker(ticker, type = 'future') {
     if (type === 'future') {
