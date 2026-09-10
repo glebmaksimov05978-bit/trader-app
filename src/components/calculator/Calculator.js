@@ -1272,7 +1272,7 @@ export default function Calculator() {
                     открывается окно подтверждения, где сервер сначала показывает, что
                     именно уйдёт. */}
                 {orderCfg?.enabled && form.ticker
-                  && orderCfg.whitelist?.includes(form.ticker.toUpperCase()) && (
+                  && (orderCfg.wildcard || orderCfg.whitelist?.includes(form.ticker.toUpperCase())) && (
                   <button
                     className="btn btn-secondary"
                     style={{flex:1}}

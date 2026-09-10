@@ -119,13 +119,19 @@ export function checkOrderGates(env, body) {
   }
 
   // Белый список. Пустой означает «не разрешено ничего», а не «разрешено всё»:
-  // молчание в настройках не должно открывать доступ к деньгам.
-  const whitelist = parseList(env.TICKER_WHITELIST);
-  if (!whitelist.length) {
-    return { ok: false, status: 403, error: 'Белый список инструментов пуст — отправка заявок запрещена.' };
-  }
-  if (!whitelist.includes(ticker)) {
-    return { ok: false, status: 403, error: `${ticker} нет в белом списке разрешённых инструментов.` };
+  // молчание в настройках не должно открывать доступ к деньгам. Разрешить ЛЮБОЙ
+  // тикер можно только явным "*" — сознательным включением, а не тем, что сработало
+  // по умолчанию, если список забыли заполнить.
+  const raw = String(env.TICKER_WHITELIST || '').trim();
+  const wildcard = raw === '*';
+  const whitelist = wildcard ? [] : parseList(raw);
+  if (!wildcard) {
+    if (!whitelist.length) {
+      return { ok: false, status: 403, error: 'Белый список инструментов пуст — отправка заявок запрещена.' };
+    }
+    if (!whitelist.includes(ticker)) {
+      return { ok: false, status: 403, error: `${ticker} нет в белом списке разрешённых инструментов.` };
+    }
   }
 
   return { ok: true, intent: { ticker, direction, lots, orderType, price, dryRun: !!body.dryRun } };
@@ -308,7 +314,9 @@ export async function handleOrderConfig(request, env) {
   const who = await verifyFirebaseToken(idToken, env.FIREBASE_PROJECT_ID, env.OWNER_UID);
   if (!who.ok) return json(env, { enabled: false, reason: who.error }, 403);
 
-  const whitelist = parseList(env.TICKER_WHITELIST);
+  const rawWhitelist = String(env.TICKER_WHITELIST || '').trim();
+  const wildcard = rawWhitelist === '*';
+  const whitelist = wildcard ? [] : parseList(rawWhitelist);
   const disabled = String(env.TRADING_DISABLED || '').toLowerCase() === 'true';
 
   // Список счетов запрашивается здесь же, чтобы окно подтверждения заявки не делало
@@ -326,9 +334,12 @@ export async function handleOrderConfig(request, env) {
   }
 
   return json(env, {
-    enabled: !disabled && !!env.TINKOFF_TRADE_TOKEN && whitelist.length > 0 && accounts.length > 0,
+    enabled: !disabled && !!env.TINKOFF_TRADE_TOKEN && (wildcard || whitelist.length > 0) && accounts.length > 0,
     killSwitch: disabled,
     whitelist,
+    // Явный флаг для интерфейса: "*" значит «любой тикер», а не «список из одного
+    // символа со звёздочкой». Фронтенд проверяет его вместо whitelist.includes(ticker).
+    wildcard,
     maxOrderRub: Number(env.MAX_ORDER_RUB) || null,
     accounts,
     accountsError,
