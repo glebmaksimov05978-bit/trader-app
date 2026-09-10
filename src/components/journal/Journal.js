@@ -9,9 +9,9 @@ import { fetchDailyCandles, availableTimeframes, recommendTimeframe, TIMEFRAMES,
 import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { computeMarketContextAtEntry } from '../../services/analytics/marketContext';
-import { getActiveStrategy, getStrategies } from '../../services/analytics/strategy';
+import { getActiveStrategy } from '../../services/analytics/strategy';
 import { commissionRateFor, DEFAULT_TARIFF } from '../../services/analytics/commission';
-import { computeTradePostmortem } from '../../services/tradePostmortem';
+import { applyTradeClose, computeClosePnl } from '../../services/tradeClose';
 import { isFuturesCode, isCurrencyCode } from '../../services/import/instrumentResolver';
 import { addRadarItem, getRadarItems, deleteRadarItem } from '../../services/radar';
 import { useRadarLive } from '../../context/RadarLiveContext';
@@ -198,33 +198,15 @@ export default function Journal() {
   };
   const isPartialClose = () => closingQty() < remainingOf(closeModal) - 1e-9;
 
-  // Автоматический расчёт P&L при закрытии
+  // Автоматический расчёт P&L при закрытии — предпросмотр в форме, той же формулой,
+  // что и настоящее закрытие (computeClosePnl из tradeClose.js), чтобы число на экране
+  // никогда не отличалось от того, что реально запишется.
   const calcQuickPnl = () => {
-    const exit = parseFloat(closePrice);
-    const entry = parseFloat(closeModal?.entryPrice);
-    const vol = closingQty() || 1;
-    const lot = parseFloat(closeModal?.lot) || 1;
-    const step = parseFloat(closeModal?.minStep) || 1;
-    const stepAmt = parseFloat(closeModal?.minStepAmount) || 0;
-    // У сделки обычно уже есть своя ставка (сохранённая при открытии) — используем её.
-    // Запасной вариант нужен только старым записям без этого поля вовсе.
     const commRate = parseFloat(closeModal?.commissionRate)
       || commissionRateFor(userProfile?.brokerTariff || DEFAULT_TARIFF, closeModal?.instrumentType || guessInstrumentType(closeModal?.ticker || '')).rate;
-    const dir = closeModal?.direction;
-
-    if (!exit || !entry) return null;
-
-    let pnl;
-    if (step && stepAmt) {
-      const ticks = (exit - entry) / step;
-      pnl = (dir === 'long' ? ticks : -ticks) * stepAmt * vol * lot;
-    } else {
-      pnl = (dir === 'long' ? (exit - entry) : (entry - exit)) * vol * lot;
-    }
-
-    const commission = entry * vol * lot * commRate * 2;
-    const net = pnl - commission;
-    return { pnl: Math.round(net * 100) / 100, commission: Math.round(commission * 100) / 100 };
+    return computeClosePnl({
+      trade: closeModal, exitPrice: parseFloat(closePrice), qty: closingQty() || 1, commRate,
+    });
   };
 
   // Подтянуть реальную историю операций по сделке из Т-Банка. Заполняет ступени и
@@ -263,86 +245,35 @@ export default function Journal() {
     }
   };
 
+  // Сама логика закрытия — в services/tradeClose.js, общая с Сопровождением (закрытие
+  // настоящей заявкой брокеру). Здесь только чтение полей формы и текст уведомления.
   const handleQuickClose = async () => {
     if (!closePrice || !closeModal) return;
     setClosing(true);
     try {
-      const result = calcQuickPnl();
-      const closedAtDate = closedAt ? new Date(closedAt) : new Date();
-      const remaining = remainingOf(closeModal);
+      const commRate = parseFloat(closeModal?.commissionRate)
+        || commissionRateFor(userProfile?.brokerTariff || DEFAULT_TARIFF, closeModal?.instrumentType || guessInstrumentType(closeModal?.ticker || '')).rate;
+      const remainingBefore = remainingOf(closeModal);
       const qty = closingQty();
-      const partial = isPartialClose();
-      const patch = {
-        ...closeModal,
+      const { partial, pnl } = await applyTradeClose({
+        trade: closeModal,
         exitPrice: parseFloat(closePrice),
-        // Частичная фиксация оставляет позицию открытой: статус 'partial', остаток
-        // уменьшается на закрытый объём. Полное закрытие ведёт себя как раньше.
-        status: partial ? 'partial' : 'closed',
-        remainingVolume: partial ? remaining - qty : 0,
-        // Add to whatever P&L/commission the position already accumulated from
-        // earlier partial closes, rather than overwriting it.
-        pnl: (closeModal.pnl ?? 0) + (result?.pnl ?? 0),
-        commission: (closeModal.commission ?? 0) + (result?.commission ?? 0),
-      };
-      if (partial) {
-        // Сделка ещё в рынке — дата закрытия не проставляется, иначе она уедет
-        // в «закрытые» и посчитается как завершённая.
-        delete patch.closeDate;
-        delete patch.closedAt;
-      } else {
-        patch.closeDate = closedAtDate.toISOString();
-        patch.closedAt = closedAtDate.toISOString();
-      }
-      // Каждая фиксация дописывается ступенью в историю сделки. Раньше история велась
-      // только для импортированных из отчёта брокера сделок; теперь она заводится и для
-      // ручных — иначе «лесенку фиксаций» нечем наполнить.
-      const legs = Array.isArray(closeModal.legs) ? [...closeModal.legs] : [{
-        type: 'open',
-        side: closeModal.direction === 'long' ? 'buy' : 'sell',
-        price: parseFloat(closeModal.entryPrice) || null,
-        quantity: parseFloat(closeModal.volume) || null,
-        commission: 0,
-        timestampUtc: (resolveOpenedAt(closeModal) || closedAtDate).toISOString(),
-        dealNumber: null,
-      }];
-      patch.legs = [...legs, {
-        type: 'close',
-        side: closeModal.direction === 'long' ? 'sell' : 'buy',
-        price: parseFloat(closePrice),
-        quantity: qty,
-        commission: result?.commission ?? 0,
-        timestampUtc: closedAtDate.toISOString(),
-        dealNumber: null,
-      }];
-      await updateTrade(closeModal.id, patch);
-      const money = `${result?.pnl >= 0 ? '+' : ''}${formatCurrency(result?.pnl ?? 0)}`;
+        qty,
+        closedAtDate: closedAt ? new Date(closedAt) : new Date(),
+        commRate,
+        userProfile,
+        source: 'manual',
+      });
+      const money = `${pnl >= 0 ? '+' : ''}${formatCurrency(pnl)}`;
       toast.success(partial
-        ? `Зафиксировано ${qty} из ${remaining}: ${money}. В рынке осталось ${remaining - qty}.`
-        : `Сделка закрыта. P&L: ${patch.pnl >= 0 ? '+' : ''}${formatCurrency(patch.pnl)}`);
-
-      // Разбор закрытой сделки (пик, отдача от пика, когорта, теневая линия) считается
-      // здесь один раз и складывается в саму сделку — чтобы детекторы на дашборде
-      // оставались мгновенными и не проигрывали свечи при каждом открытии. Отдельным
-      // обновлением ПОСЛЕ основного: если разбор не получится (нет связи с биржей,
-      // мало истории), сделка всё равно уже закрыта корректно.
-      if (!partial) {
-        const strategyForTrade = getStrategies(userProfile)
-          .find((s) => s.id === closeModal.entryStrategyId) || getActiveStrategy(userProfile);
-        const postmortem = await computeTradePostmortem({
-          trade: { ...closeModal, ...patch },
-          openedAt: resolveOpenedAt(closeModal),
-          closedAt: closedAtDate,
-          exitRules: strategyForTrade?.exitRules,
-          tinkoffToken: userProfile?.tinkoffToken,
-        });
-        if (postmortem) await updateTrade(closeModal.id, postmortem);
-      }
+        ? `Зафиксировано ${qty} из ${remainingBefore}: ${money}. В рынке осталось ${remainingBefore - qty}.`
+        : `Сделка закрыта. P&L: ${money}`);
       setCloseModal(null);
       setClosePrice('');
       setCloseQty('');
       await load();
     } catch (e) {
-      toast.error('Ошибка закрытия сделки');
+      toast.error(e.message || 'Ошибка закрытия сделки');
     } finally {
       setClosing(false);
     }

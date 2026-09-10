@@ -22,9 +22,12 @@ import { computeBothLines } from '../../services/backtest/livePosition';
 import { computeProfitBreakdown, computeLossBreakdown } from '../../services/backtest/engine';
 import { evaluateAlerts, DEFAULT_ALERT_PREFS } from '../../services/alerts';
 import { loadBacktestSample, findSimilar, probabilityOfGoal } from '../../services/backtest/similarTrades';
+import { applyTradeClose } from '../../services/tradeClose';
+import { fetchOrderConfig } from '../../services/broker';
 import CandleChart from '../shared/CandleChart';
 import RadarPanel from './RadarPanel';
 import CollapsibleSection from './CollapsibleSection';
+import OrderModal from '../calculator/OrderModal';
 import './Cockpit.css';
 
 const fmtPct = (v, d = 2) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(d)}%`);
@@ -110,8 +113,20 @@ export default function Cockpit() {
   const [tfOverride, setTfOverride] = useState(null);
   const [sample, setSample] = useState(null);
   const [goal, setGoal] = useState(5);
+  // Настоящая заявка на фиксацию — та же механика, что «Купить сразу» в Калькуляторе,
+  // только в обратную сторону (закрытие вместо открытия). Раньше «Зафиксировать в
+  // Журнале» просто переносило трейдера в Журнал с подставленным объёмом — цену он
+  // всё равно вводил на глаз, и было неочевидно, фиксируется сделка НА САМОМ ДЕЛЕ
+  // (через брокера) или это просто запись в журнале задним числом.
+  const [orderCfg, setOrderCfg] = useState(null);
+  const [closeOrder, setCloseOrder] = useState(null); // { lots, side } — что фиксируем сейчас
 
   useEffect(() => { loadBacktestSample().then(setSample); }, []);
+
+  useEffect(() => {
+    if (!user) { setOrderCfg(null); return; }
+    fetchOrderConfig(userProfile).then(setOrderCfg);
+  }, [user, userProfile]);
 
   // Вкладка может работать по любой из сохранённых стратегий — выбор здесь меняет
   // ПРАВИЛА, по которым вкладка ведёт позицию (профит-/лосс-система живут в exitRules
@@ -289,6 +304,45 @@ export default function Cockpit() {
     if (qty != null) params.set('qty', String(Math.max(1, Math.round(qty))));
     navigate(`/journal?${params.toString()}`);
   }, [navigate]);
+
+  // Настоящей заявкой можно закрывать только то, что вообще можно купить/продать через
+  // воркер: тикер в белом списке сервера, счета резолвятся. Иначе кнопки просто нет —
+  // остаётся обычный путь через Журнал.
+  const canOrderClose = !!(orderCfg?.enabled && trade?.ticker
+    && orderCfg.whitelist?.includes(trade.ticker.toUpperCase()));
+
+  const openCloseOrder = (lots) => {
+    const l = Math.max(1, Math.round(lots));
+    if (l < 1) return;
+    setCloseOrder({ lots: l });
+  };
+
+  // Заявка на закрытие исполнилась → пишем фиксацию тем же кодом, что и ручное закрытие
+  // в Журнале (services/tradeClose.js), только цена и объём — РЕАЛЬНЫЕ, из ответа
+  // брокера, а не введённые на глаз.
+  const handleCloseOrderPlaced = async (res) => {
+    const lotsExecuted = res?.order?.lotsExecuted;
+    const executedPrice = res?.order?.executedPrice;
+    if (!(lotsExecuted > 0) || executedPrice == null || !trade) return;
+    try {
+      const commRate = parseFloat(trade.commissionRate)
+        || commissionRateFor(userProfile?.brokerTariff || DEFAULT_TARIFF, trade.instrumentType || 'stock').rate;
+      const { partial, remaining, pnl } = await applyTradeClose({
+        trade, exitPrice: executedPrice, qty: lotsExecuted, closedAtDate: new Date(),
+        commRate, userProfile, source: 'order',
+      });
+      const money2 = `${pnl >= 0 ? '+' : ''}${pnl.toLocaleString('ru-RU')} ₽`;
+      toast.success(partial
+        ? `Зафиксировано ${lotsExecuted}: ${money2}. В рынке осталось ${remaining}.`
+        : `Сделка закрыта. P&L: ${money2}`);
+      const all = await getUserTrades(user.uid);
+      const open = all.filter((t) => t.status === 'open' || t.status === 'partial');
+      setTrades(open);
+      if (!open.some((t) => t.id === activeId)) setActiveId(open[0]?.id || null);
+    } catch (e) {
+      toast.error(e.message || 'Заявка исполнилась, но запись в Журнал не удалась — зафиксируйте вручную');
+    }
+  };
 
   // CandleChart ждёт ОБЪЕКТЫ {key, label, ...} — Журнал передаёт именно их через
   // availableTimeframes. Здесь раньше передавались строки ('M5', 'H1', …), поэтому
@@ -541,13 +595,24 @@ export default function Cockpit() {
                       + `, лосс-система ${a?.now?.lossScore ?? '—'} из ${exitRules.lossScoreThreshold ?? 2}.`}
                 </div>
               </div>
-              <button
-                className="ck-btn ck-btn-primary"
-                onClick={() => goToClose(trade, alerts[0]?.suggestedShare && money
-                  ? money.remainingVol * (alerts[0].suggestedShare / 100) : undefined)}
-              >
-                Зафиксировать в Журнале
-              </button>
+              {(() => {
+                const suggestedQty = alerts[0]?.suggestedShare && money
+                  ? money.remainingVol * (alerts[0].suggestedShare / 100) : money?.remainingVol;
+                return canOrderClose ? (
+                  <div className="ck-verdict-actions">
+                    <button className="ck-btn ck-btn-primary" onClick={() => openCloseOrder(suggestedQty)}>
+                      ⚡ Зафиксировать сейчас
+                    </button>
+                    <button className="ck-btn" onClick={() => goToClose(trade, suggestedQty)} title="Записать в Журнал вручную, без заявки брокеру">
+                      Записать вручную
+                    </button>
+                  </div>
+                ) : (
+                  <button className="ck-btn ck-btn-primary" onClick={() => goToClose(trade, suggestedQty)}>
+                    Зафиксировать в Журнале
+                  </button>
+                );
+              })()}
             </section>
           )}
 
@@ -601,13 +666,45 @@ export default function Cockpit() {
               <div className="ck-calc-foot">
                 <div className="ck-note">
                   Цифры считаются теми же полями сделки, что и в Журнале — шаг цены, стоимость шага, комиссия.
+                  {canOrderClose && ' Оценка выше — по последней цене графика; в заявке сервер покажет реальную.'}
                 </div>
-                <button className="ck-btn ck-btn-primary" onClick={() => goToClose(trade, money.closingVol)}>
-                  Зафиксировать {closeShare}% в Журнале
-                </button>
+                {canOrderClose ? (
+                  <div className="ck-verdict-actions">
+                    <button className="ck-btn ck-btn-primary" onClick={() => openCloseOrder(money.closingVol)}>
+                      ⚡ Зафиксировать {closeShare}% сейчас
+                    </button>
+                    <button className="ck-btn" onClick={() => goToClose(trade, money.closingVol)} title="Записать в Журнал вручную, без заявки брокеру">
+                      Записать вручную
+                    </button>
+                  </div>
+                ) : (
+                  <button className="ck-btn ck-btn-primary" onClick={() => goToClose(trade, money.closingVol)}>
+                    Зафиксировать {closeShare}% в Журнале
+                  </button>
+                )}
               </div>
             </section>
           )}
+
+          {/* Заявка на закрытие — тот же OrderModal, что и «Купить сразу», развёрнутый
+              в обратную сторону (продажа для лонга, покупка для шорта). closeOrder
+              задаётся кнопками выше; закрывается сбросом в null. */}
+          <OrderModal
+            open={!!closeOrder}
+            onClose={() => setCloseOrder(null)}
+            userProfile={userProfile}
+            accounts={orderCfg?.accounts}
+            title={trade?.direction === 'short' ? 'Купить (закрыть шорт) через Т-Банк' : 'Продать (зафиксировать) через Т-Банк'}
+            autoRecordsToJournal
+            intent={trade && closeOrder ? {
+              ticker: trade.ticker.toUpperCase(),
+              instrumentType: trade.instrumentType || 'stock',
+              direction: trade.direction === 'short' ? 'buy' : 'sell',
+              lots: closeOrder.lots,
+              price: money?.price ?? null,
+            } : null}
+            onPlaced={handleCloseOrderPlaced}
+          />
 
           {/* ---------- похожие исторические ситуации ----------
               Выборка получена прогоном стратегии с частичными фиксациями, и разрезана она

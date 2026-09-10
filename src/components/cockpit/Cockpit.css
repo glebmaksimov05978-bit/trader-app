@@ -191,6 +191,9 @@
 }
 .ck-calc-foot .ck-note { margin: 0; max-width: 420px; }
 
+/* пара кнопок «заявкой / вручную» — заявка первой и заметнее, ручной путь всегда рядом */
+.ck-verdict-actions { display: flex; gap: 8px; flex-wrap: wrap; flex-shrink: 0; }
+
 /* похожие исторические ситуации */
 .ck-hist-top { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
 .ck-hist-warn { font-size: 10.5px; color: var(--gold); font-weight: 600; }

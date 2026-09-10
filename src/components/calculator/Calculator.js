@@ -674,24 +674,34 @@ export default function Calculator() {
   }, [tapi, instrumentInfo, priceSource, orderType]);
 
   // Сохранение в журнал
-  const handleSaveToJournal = async () => {
+  // overrides — используются, когда сделка попадает в Журнал не по плану из формы, а по
+  // РЕАЛЬНО исполненной заявке брокера (кнопка «Купить сразу»): цена и объём приходят от
+  // брокера, а не из того, что трейдер напланировал в Калькуляторе. Без этого механизма
+  // «Купить сразу» отправляла заявку, а Журнал о ней ничего не знал — надо было заводить
+  // сделку заново руками, переписывая ту же цену, что приложение уже точно знает.
+  const handleSaveToJournal = async (overrides = {}) => {
     if (!user || !displayResult) return;
     setSavingTrade(true);
     try {
       const deposit = parseFloat(form.depositSize) || 0;
-      const openedAtDate = new Date(openedAt);
+      const openedAtDate = overrides.openedAtDate || new Date(openedAt);
+      const entryPriceFinal = overrides.entryPrice ?? parseFloat(form.entryPrice);
+      const volumeFinal = overrides.volume ?? effectiveContracts;
       await addTrade(user.uid, {
         ticker: form.ticker || instrumentInfo?.ticker || '',
         date: openedAtDate.toISOString().split('T')[0],
         openedAt: openedAtDate.toISOString(),
         status: 'open',
         direction: activeDirection || displayResult.direction,
-        entryPrice: parseFloat(form.entryPrice),
+        entryPrice: entryPriceFinal,
+        // Задуманная цена входа остаётся отдельно от того, по чему реально исполнилось —
+        // так «разбор сделки» сможет честно сравнить план с фактом, а не подменить один
+        // другим.
         intendedEntryPrice: parseFloat(form.entryPrice) || null,
         exitPrice: null,
         stopLoss: parseFloat(form.stopLoss) || null,
         takeProfit: parseFloat(form.takeProfit) || null,
-        volume: effectiveContracts,
+        volume: volumeFinal,
         lot: parseFloat(form.lot) || 1,
         // Without instrumentType/isFuture the Journal treats every Calculator trade as a
         // stock — futures then look up candles on the shares board and show "нет
@@ -701,7 +711,14 @@ export default function Calculator() {
         isFuture: instrumentType === 'future',
         minStep: parseFloat(form.minStep) || null,
         minStepAmount: parseFloat(form.minStepAmount) || null,
-        commission: displayResult.commission,
+        // Комиссия из плана верна только для ПЛАНОВОЙ цены/объёма — если заявка
+        // исполнилась по другой цене (проскальзывание) или по другому объёму (частичное
+        // исполнение), пересчитываем на реальных числах той же формулой.
+        commission: overrides.entryPrice != null || overrides.volume != null
+          ? Math.round(entryPriceFinal * volumeFinal * (parseFloat(form.lot) || 1) * (parseFloat(form.commissionRate) || 0.0005) * 2)
+          : displayResult.commission,
+        // Firestore не принимает undefined как значение поля — null, а не пропуск ключа.
+        commissionRate: parseFloat(form.commissionRate) || null,
         depositSize: deposit,
         depositPercent: deposit > 0 ? Math.round((displayResult.riskAmount / deposit) * 100 * 10) / 10 : 0,
         rr: displayResult.rr,
@@ -709,7 +726,10 @@ export default function Calculator() {
         setup: journalExtra.setup,
         emotion: journalExtra.emotion,
         notes: journalExtra.notes,
-        source: 'calculator',
+        source: overrides.source || 'calculator',
+        // Заявка, которой открыта сделка, — чтобы позже можно было найти её в истории
+        // операций брокера, а не только в журнале приложения.
+        ...(overrides.orderId ? { orderId: overrides.orderId, orderAccountId: overrides.orderAccountId || null } : {}),
         orderType,
         // The timeframe the trader was actually analysing on when they opened the trade —
         // the Journal's auto-timeframe uses this over its duration-based guess.
@@ -731,7 +751,9 @@ export default function Calculator() {
         entryStrategyId: activeStrategy?.id || null,
         entryStrategyName: activeStrategy?.name || null,
       });
-      toast.success('✅ Сделка открыта в журнале');
+      toast.success(overrides.source === 'order'
+        ? `✅ Заявка исполнена и записана в Журнал: ${volumeFinal} × ${entryPriceFinal}`
+        : '✅ Сделка открыта в журнале');
       setShowJournalModal(false);
       setJournalExtra({ setup: '', emotion: '', notes: '' });
       // The draft is meant to survive navigating away mid-plan (Журнал and back) — not
@@ -755,6 +777,28 @@ export default function Calculator() {
     } finally {
       setSavingTrade(false);
     }
+  };
+
+  // Заявка исполнилась «Купить сразу» → сразу пишем в Журнал по РЕАЛЬНОЙ цене и объёму
+  // из ответа брокера, а не по тому, что было напланировано в форме. Раньше это было
+  // отдельным ручным шагом («заведите сделку как обычно») — то самое «непонятно,
+  // фиксируем ли мы сделку в реальности или просто в журнале», о чём говорил трейдер.
+  const handleOrderPlaced = (res) => {
+    const lotsExecuted = res?.order?.lotsExecuted;
+    const executedPrice = res?.order?.executedPrice;
+    if (lotsExecuted > 0 && executedPrice != null) {
+      handleSaveToJournal({
+        entryPrice: executedPrice,
+        volume: lotsExecuted,
+        openedAtDate: new Date(),
+        source: 'order',
+        orderId: res?.order?.orderId || null,
+        orderAccountId: res?.preview?.accountId || null,
+      });
+    }
+    // Заявка не исполнилась мгновенно (висящая лимитная) — ничего не пишем в Журнал:
+    // писать «открыто по цене X» для позиции, которой ещё нет, было бы враньём. Само
+    // окно уже объяснило трейдеру, что в этом случае нужно сделать.
   };
 
   const handleJournalClick = () => {
@@ -1437,7 +1481,8 @@ export default function Calculator() {
           lots: effectiveContracts,
           price: parseFloat(form.entryPrice) || null,
         } : null}
-        onPlaced={() => toast.success('Заявка отправлена брокеру')}
+        autoRecordsToJournal
+        onPlaced={handleOrderPlaced}
       />
 
       {showTinkoffModal && displayResult && (

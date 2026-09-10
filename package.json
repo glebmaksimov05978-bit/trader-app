@@ -22,6 +22,7 @@
     "test:import": "node scripts/goldenImportTests.mjs",
     "test:orders": "node scripts/orderGatesTests.mjs",
     "test:live": "node scripts/livePositionTests.mjs",
+    "test:close": "node scripts/tradeCloseTests.mjs",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {

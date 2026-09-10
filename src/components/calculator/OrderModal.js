@@ -22,7 +22,14 @@ const money = (v) => (v == null ? '—' : `${Math.round(v).toLocaleString('ru-RU
 // заявке.
 const LAST_ACCOUNT_KEY = 'traderpro_last_order_account';
 
-export default function OrderModal({ open, onClose, onPlaced, userProfile, intent, accounts }) {
+export default function OrderModal({
+  open, onClose, onPlaced, userProfile, intent, accounts,
+  // Заголовок и пояснение подстраиваются под контекст: одно и то же окно используется
+  // и для открытия («Купить сразу» в Калькуляторе), и для закрытия («Зафиксировать» в
+  // Сопровождении) — трейдер явно просил, чтобы было видно разницу, а не одно и то же
+  // «Купить через Т-Банк» в обоих случаях.
+  title, autoRecordsToJournal,
+}) {
   const [orderType, setOrderType] = useState('limit');
   const [accountId, setAccountId] = useState(null);
   const [preview, setPreview] = useState(null);
@@ -96,6 +103,7 @@ export default function OrderModal({ open, onClose, onPlaced, userProfile, inten
   };
 
   const dirWord = intent?.direction === 'sell' ? 'Продать' : 'Купить';
+  const modalTitle = title || `${dirWord} через Т-Банк`;
 
   // Через портал в document.body — по той же причине, что и каталог инструментов: предок
   // с анимацией запирает position:fixed внутри своего слоя, и окно перестаёт быть поверх.
@@ -103,7 +111,7 @@ export default function OrderModal({ open, onClose, onPlaced, userProfile, inten
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3 className="modal-title">{dirWord} через Т-Банк</h3>
+          <h3 className="modal-title">{modalTitle}</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
@@ -121,9 +129,18 @@ export default function OrderModal({ open, onClose, onPlaced, userProfile, inten
                   {result.executedPrice ? <> Средняя цена: {result.executedPrice}.</> : null}
                 </div>
               </div>
+              {/* Автозапись в Журнал срабатывает только на РЕАЛЬНО исполненный объём —
+                  повисшая лимитная заявка (lotsExecuted пусто/0) в Журнал ничего не
+                  пишет, и об этом здесь честно сказано, а не молчится. */}
               <div className="text-xs text-muted" style={{ lineHeight: 1.6 }}>
-                Приложение не следит за судьбой заявки — если она лимитная и ещё не исполнилась,
-                смотрите её в Т-Банке. Сделку в журнал заведите как обычно, когда позиция откроется.
+                {autoRecordsToJournal
+                  ? (result.lotsExecuted > 0
+                    ? <>Записано в Журнал: {result.lotsExecuted} по {result.executedPrice ?? '—'}.</>
+                    : <>Заявка пока не исполнена — автозапись сработала бы только на реально исполненный
+                      объём этого нажатия, а его пока нет. Если заявка всё же исполнится позже
+                      (лимитная), приложение это не отследит — заведите сделку в Журнале сами.</>)
+                  : <>Приложение не следит за судьбой заявки — если она лимитная и ещё не исполнилась,
+                    смотрите её в Т-Банке. Сделку в журнал заведите как обычно, когда позиция откроется.</>}
               </div>
             </>
           ) : (
