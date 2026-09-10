@@ -9,7 +9,19 @@
 .ck-top { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
 .ck-title { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
 .ck-sub { color: var(--text-secondary); font-size: 13px; margin-top: 2px; }
-.ck-top-right { margin-left: auto; display: flex; gap: 8px; }
+.ck-top-right { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+.ck-strategy-pick { display: flex; flex-direction: column; gap: 3px; }
+.ck-strategy-pick select {
+  padding: 7px 10px; border-radius: var(--radius-xs); border: 1px solid var(--border-medium);
+  background: var(--bg-surface-2); color: var(--text-primary); font-family: inherit; font-size: 12.5px;
+  cursor: pointer; min-width: 170px;
+}
+.ck-strategy-pick select:disabled { cursor: default; opacity: 0.75; }
+.ck-strategy-warn {
+  margin-bottom: 14px; padding: 10px 14px; border-radius: var(--radius-sm);
+  background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3);
+  color: var(--gold); font-size: 12.5px; line-height: 1.5;
+}
 
 .ck-btn {
   padding: 8px 14px; border-radius: var(--radius-xs); border: 1px solid var(--border-medium);

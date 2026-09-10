@@ -15,7 +15,7 @@ import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, resolveOpenedAt } from '../../services/trades';
 import { fetchDailyCandles, TIMEFRAMES } from '../../services/marketData/candles';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
-import { getActiveStrategy } from '../../services/analytics/strategy';
+import { getActiveStrategy, getStrategies } from '../../services/analytics/strategy';
 import { computeBothLines } from '../../services/backtest/livePosition';
 import { computeProfitBreakdown, computeLossBreakdown } from '../../services/backtest/engine';
 import { evaluateAlerts, DEFAULT_ALERT_PREFS } from '../../services/alerts';
@@ -94,7 +94,17 @@ export default function Cockpit() {
 
   useEffect(() => { loadBacktestSample().then(setSample); }, []);
 
-  const strategy = useMemo(() => getActiveStrategy(userProfile), [userProfile]);
+  // Вкладка может работать по любой из сохранённых стратегий — выбор здесь меняет
+  // ПРАВИЛА, по которым вкладка ведёт позицию (профит-/лосс-система живут в exitRules
+  // стратегии). По умолчанию берём активную из настроек, дальше трейдер переключает
+  // сам. Сама сделка при этом помнит стратегию, по которой была открыта, — если она
+  // другая, вкладка честно об этом пишет, а не подменяет молча.
+  const strategies = useMemo(() => getStrategies(userProfile), [userProfile]);
+  const [strategyId, setStrategyId] = useState(null);
+  const strategy = useMemo(
+    () => strategies.find((s) => s.id === strategyId) || getActiveStrategy(userProfile),
+    [strategies, strategyId, userProfile],
+  );
   const exitRules = strategy?.exitRules || {};
 
   // --- открытые позиции ---
@@ -279,14 +289,35 @@ export default function Cockpit() {
       <div className="ck-top">
         <div>
           <h1 className="ck-title">Сопровождение</h1>
-          <div className="ck-sub">Открытая позиция изнутри · стратегия «{strategy?.name || 'без названия'}»</div>
+          <div className="ck-sub">Открытая позиция изнутри</div>
         </div>
         <div className="ck-top-right">
+          <label className="ck-strategy-pick">
+            <span className="ck-k">Работаем по стратегии</span>
+            <select
+              value={strategy?.id || ''}
+              onChange={(e) => setStrategyId(e.target.value)}
+              disabled={strategies.length < 2}
+            >
+              {strategies.map((s) => (
+                <option key={s.id} value={s.id}>{s.name || 'без названия'}</option>
+              ))}
+            </select>
+          </label>
           <button className="ck-btn" onClick={recompute} disabled={computing}>
             {computing ? 'Считаю…' : '⟳ Обновить'}
           </button>
         </div>
       </div>
+
+      {/* Сделка была открыта по одной стратегии, а вкладка сейчас ведёт её по другой —
+          это законный режим «примерить другие правила», но он должен быть виден. */}
+      {trade?.entryStrategyName && strategy?.name && trade.entryStrategyName !== strategy.name && (
+        <div className="ck-strategy-warn">
+          Сделка открыта по стратегии «{trade.entryStrategyName}», а вкладка сейчас считает
+          по «{strategy.name}» — правила выхода отличаются.
+        </div>
+      )}
 
       <div className="ck-layout">
         {/* ---------- сайдбар: позиции, лесенка, радар — одна колонка, каждая секция

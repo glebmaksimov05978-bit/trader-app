@@ -663,6 +663,13 @@ export default function Calculator() {
         strategyMatchAtEntry: strategyResult?.total
           ? { passed: strategyResult.passed, total: strategyResult.total, percent: Math.round((strategyResult.passed / strategyResult.total) * 100) }
           : null,
+        // Какой именно стратегией открыта сделка. Раньше сохранялось только совпадение
+        // (сколько условий из скольких), но не сама стратегия — и «Сопровождение», где
+        // можно переключать стратегию ведения, не могло сказать, совпадает ли она с той,
+        // по которой в сделку заходили. Старые сделки этих полей не имеют — интерфейс
+        // просто молчит, а не выдумывает.
+        entryStrategyId: activeStrategy?.id || null,
+        entryStrategyName: activeStrategy?.name || null,
       });
       toast.success('✅ Сделка открыта в журнале');
       setShowJournalModal(false);
