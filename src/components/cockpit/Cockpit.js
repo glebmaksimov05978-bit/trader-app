@@ -13,7 +13,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, resolveOpenedAt } from '../../services/trades';
-import { fetchDailyCandles, TIMEFRAMES } from '../../services/marketData/candles';
+import { fetchDailyCandles, availableTimeframes } from '../../services/marketData/candles';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { getActiveStrategy, getStrategies } from '../../services/analytics/strategy';
 import { classifyStrategy, kindBadge } from '../../services/analytics/strategyKind';
@@ -123,12 +123,20 @@ export default function Cockpit() {
     () => strategies.find((s) => s.id === strategyId) || getActiveStrategy(userProfile),
     [strategies, strategyId, userProfile],
   );
-  const exitRules = strategy?.exitRules || {};
+  // Через useMemo, а не инлайном: у стратегии без правил выражение `|| {}` создавало НОВЫЙ
+  // объект на каждый рендер, а от него зависит recompute → эффект перезапускался бесконечно
+  // и вкладка молотила запросы свечей по кругу.
+  const exitRules = useMemo(() => strategy?.exitRules || {}, [strategy]);
   // Какими системами выхода стратегия реально пользуется. От этого зависит, что вкладке
   // осмысленно показывать: у стратегии без частичных фиксаций «когорта фиксаций» и счёт
   // профит-системы — числа без применения.
   const usesProfitSystem = !!exitRules.profitCaptureEnabled;
   const usesLossSystem = exitRules.trailLossRule === 'score';
+  // Без включённого трейлинга движок в этой вкладке не делает ВООБЩЕ ничего: он не следит
+  // за пиком, не взводит счёт и не предлагает фиксаций — все панели показывают прочерки, и
+  // выглядит это как «переключил стратегию, а ничего не пересчиталось» (реальная жалоба).
+  // Молчать об этом нельзя: пустая панель и «правила выключены» — разные вещи.
+  const noExitRules = !exitRules.trailEnabled && !usesProfitSystem && !usesLossSystem;
 
   // --- открытые позиции ---
   useEffect(() => {
@@ -277,8 +285,12 @@ export default function Cockpit() {
     navigate(`/journal?${params.toString()}`);
   }, [navigate]);
 
+  // CandleChart ждёт ОБЪЕКТЫ {key, label, ...} — Журнал передаёт именно их через
+  // availableTimeframes. Здесь раньше передавались строки ('M5', 'H1', …), поэтому
+  // tf.key был undefined: над графиком рисовались пустые кнопки без подписи, и нажатие
+  // на них ничего не переключало (реальная жалоба: «пять непонятных пустых окошек»).
   const tfOptions = useMemo(
-    () => Object.keys(TIMEFRAMES).filter((k) => !TIMEFRAMES[k].requiresToken || userProfile?.tinkoffToken),
+    () => availableTimeframes(!!userProfile?.tinkoffToken),
     [userProfile?.tinkoffToken],
   );
 
@@ -338,6 +350,15 @@ export default function Cockpit() {
           </button>
         </div>
       </div>
+
+      {noExitRules && (
+        <div className="ck-strategy-warn">
+          У стратегии «{strategy?.name || 'без названия'}» не настроены правила ведения позиции —
+          вкладке нечем считать: ни пика, ни счёта систем, ни предложений по фиксации.
+          Откройте <Link to="/capital">Капитал → правила выхода</Link> и включите хотя бы трейлинг.
+          {strategies.length < 2 && ' Там же можно завести вторую стратегию, чтобы переключаться между ними здесь.'}
+        </div>
+      )}
 
       {/* Сделка была открыта по одной стратегии, а вкладка сейчас ведёт её по другой —
           это законный режим «примерить другие правила», но он должен быть виден. */}
@@ -447,8 +468,10 @@ export default function Cockpit() {
                   onClick={() => (showSys && !showMe ? null : setShowSys(!showSys))}
                 >
                   <span className="ck-k">Система</span>
-                  <span className={`ck-line-v ${(s?.currentPct ?? 0) >= 0 ? 'up' : 'down'}`}>
-                    {fmtPct(s?.currentPct)}
+                  {/* Итог линии, а не цена последнего бара: движок фиксировал по пути и,
+                      возможно, уже вышел — по текущей цене обе линии всегда совпадали. */}
+                  <span className={`ck-line-v ${(s?.resultPct ?? 0) >= 0 ? 'up' : 'down'}`}>
+                    {fmtPct(s?.resultPct)}
                   </span>
                   <span className="ck-line-sub">
                     {s?.exit ? `закрыла бы: ${s.exit.reason}` : `фиксаций: ${s?.profitCutsDone ?? 0}`}
@@ -688,8 +711,6 @@ export default function Cockpit() {
             )}
           </div>
         </main>
-
-        <RadarPanel />
       </div>
     </div>
   );

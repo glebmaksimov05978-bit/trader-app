@@ -58,20 +58,37 @@ export function computeLiveState({
   const trace = [];   // по бару: что видел движок
   const fired = [];   // срабатывания правил (в режиме shadow — реальные, в actual — предложения)
   let exit = null;    // если движок закрыл бы позицию целиком
+  let wouldExit = null; // в режиме actual: где движок вышел бы, хотя сделка ещё открыта
 
-  const pending = mode === 'actual' && Array.isArray(actualFills)
+  const isActual = mode === 'actual';
+  const pending = isActual && Array.isArray(actualFills)
     ? [...actualFills].sort((x, y) => x.index - y.index)
     : [];
   let applied = 0;
+  // Зафиксированные куски с ценами — нужны, чтобы посчитать ИТОГ линии, а не только
+  // текущее движение цены. Для «как есть» их наполняют реальные операции трейдера,
+  // для теневой — собственные фиксации движка (position.fills).
+  const realizedFills = [];
 
   for (let i = entryIndex + 1; i < candles.length; i++) {
     const bar = candles[i];
     position.barsHeld += 1;
 
+    // Сработавший стоп/тейк закрывает позицию только в теневой линии. В линии «как есть»
+    // сделка открыта до тех пор, пока трейдер сам её не закрыл в Журнале: приложение не
+    // вправе объявить её закрытой за него — оно только отмечает, где это произошло бы.
     const intrabar = checkIntrabarExit(position, bar);
-    if (intrabar) { exit = { index: i, ...intrabar }; break; }
+    if (intrabar) {
+      if (!isActual) { exit = { index: i, ...intrabar }; break; }
+      if (!wouldExit) wouldExit = { index: i, ...intrabar };
+    }
 
-    const before = { remaining: position.remaining, profitCutsDone: position.profitCutsDone };
+    const before = {
+      remaining: position.remaining,
+      profitCutsDone: position.profitCutsDone,
+      lossCutsDone: position.lossCutsDone,
+      fillsLen: position.fills.length,
+    };
     const closeReturnPct = returnPct(direction, entryPrice, bar.close);
     const res = position.trailEnabled
       ? updateTrailAndCheckExit(position, bar, candles, i)
@@ -82,7 +99,21 @@ export function computeLiveState({
         index: i, date: bar.date, price: bar.close,
         reason: res?.reason ?? 'profit_score_partial',
         fraction: Math.max(0, before.remaining - position.remaining),
+        // В линии «как есть» это ПРЕДЛОЖЕНИЕ движка, а не свершившийся факт.
+        suggested: isActual,
       });
+    }
+
+    // ГЛАВНОЕ отличие линии «как есть»: движок здесь только СМОТРИТ. Раньше он делал свои
+    // частичные фиксации прямо в этой позиции — и вкладка показывала трейдеру «когорта: 2
+    // фиксации», «в рынке 50%», хотя он не фиксировал ничего (реальная жалоба: «я нигде не
+    // фиксировал, а система пишет, что зафиксировал»). Состояние трейлинга (пик, момент
+    // взведения) при этом сохраняем — оно нужно, чтобы счёт на текущем баре был живым.
+    if (isActual) {
+      position.remaining = before.remaining;
+      position.profitCutsDone = before.profitCutsDone;
+      position.lossCutsDone = before.lossCutsDone;
+      position.fills.length = before.fillsLen;
     }
 
     trace.push({
@@ -93,19 +124,37 @@ export function computeLiveState({
       remaining: position.remaining,
     });
 
-    if (res) { exit = { index: i, ...res }; break; }
+    if (res) {
+      // Тот же принцип, что со стопом: теневая линия закрывается, реальная — идёт дальше
+      // до последнего бара, иначе панели показывали бы счёт на старом баре и выглядели
+      // бы «зависшими» (жалоба: «ничего не пересчитывается»).
+      if (!isActual) { exit = { index: i, ...res }; break; }
+      if (!wouldExit) wouldExit = { index: i, ...res };
+    }
 
-    // В режиме «как есть» реальность важнее прогноза: остаток и счётчик фиксаций
-    // приводятся к тому, что трейдер действительно сделал на этом баре.
+    // Реальные фиксации трейдера — единственное, что меняет остаток в линии «как есть».
     while (applied < pending.length && pending[applied].index <= i) {
       const f = pending[applied++];
+      const take = Math.min(f.fraction, position.remaining);
       position.remaining = Math.max(0, position.remaining - f.fraction);
       position.profitCutsDone += 1;
+      if (take > 0) realizedFills.push({ fraction: take, price: f.price ?? bar.close });
     }
   }
 
   const last = candles[candles.length - 1];
   const currentPct = returnPct(direction, entryPrice, last.close);
+
+  // ИТОГ линии, а не просто движение цены. Раньше обе линии показывали одно и то же
+  // число — цену последнего бара, — поэтому «Система» и «Факт · ты» всегда совпадали,
+  // даже когда движок вышел бы намного раньше и с другим результатом. Теперь каждая
+  // линия считается по своим фиксациям: закрытые куски по своим ценам плюс остаток по
+  // текущей (а для вышедшей теневой линии — по цене её выхода).
+  const closedParts = isActual ? realizedFills : (position.fills || []);
+  const restPrice = exit ? exit.price : last.close;
+  const resultPct = closedParts.reduce(
+    (sum, f) => sum + f.fraction * returnPct(direction, entryPrice, f.price), 0,
+  ) + position.remaining * returnPct(direction, entryPrice, restPrice);
 
   // Куда идёт цена прямо сейчас — по трём последним барам в сторону сделки. Нужно, чтобы
   // уведомление говорило человеческим языком «пока ещё растёт» или «уже разворачивается»,
@@ -127,12 +176,15 @@ export function computeLiveState({
     position,
     mode,
     exit,                                   // null — сделка по мнению движка ещё жива
+    wouldExit,                              // actual: где движок вышел бы, но сделка открыта
     fired,                                  // где сработали правила
     trace,                                  // побарная телеметрия для графика
     barsHeld: position.barsHeld,
     peakPct: position.peakFavorablePct ?? 0,
     givebackPct: (position.peakFavorablePct ?? 0) - currentPct,
-    currentPct,
+    currentPct,                             // движение цены от входа к последнему бару
+    resultPct,                              // итог линии с учётом её собственных фиксаций
+    realizedFills: closedParts,
     momentum,
     price: last.close,
     remaining: position.remaining,
@@ -150,5 +202,8 @@ export function computeLiveState({
 export function computeBothLines(args) {
   const actual = computeLiveState({ ...args, mode: 'actual' });
   const shadow = computeLiveState({ ...args, mode: 'shadow', actualFills: null });
-  return { actual, shadow, deltaPct: actual.currentPct - shadow.currentPct };
+  // Сравниваем ИТОГИ линий, а не текущую цену: цена последнего бара у обеих одна и та же,
+  // и на ней расхождение всегда выходило нулевым («решения совпали»), даже когда движок
+  // вышел бы раньше и с совсем другим результатом.
+  return { actual, shadow, deltaPct: actual.resultPct - shadow.resultPct };
 }

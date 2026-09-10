@@ -11,6 +11,7 @@
 // Отправка возможна только по явному нажатию. Ни авто-подтверждения, ни «отправить, если
 // сигнал сильный» здесь нет и не будет — решение всегда за человеком.
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { placeOrder } from '../../services/broker';
 
 const money = (v) => (v == null ? '—' : `${Math.round(v).toLocaleString('ru-RU')} ₽`);
@@ -96,7 +97,9 @@ export default function OrderModal({ open, onClose, onPlaced, userProfile, inten
 
   const dirWord = intent?.direction === 'sell' ? 'Продать' : 'Купить';
 
-  return (
+  // Через портал в document.body — по той же причине, что и каталог инструментов: предок
+  // с анимацией запирает position:fixed внутри своего слоя, и окно перестаёт быть поверх.
+  return createPortal(
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ maxWidth: 460 }} onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
@@ -242,6 +245,7 @@ export default function OrderModal({ open, onClose, onPlaced, userProfile, inten
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

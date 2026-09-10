@@ -8,6 +8,7 @@
 // за которыми я слежу»). Здесь список видно, отмечать можно сразу несколько, а тикер
 // руками остаётся запасным вариантом — для того, чего в каталоге нет.
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { SECTORS, searchCatalog, searchInstruments, catalogEntry } from '../../services/marketData/instrumentCatalog';
 import { availableTimeframes } from '../../services/marketData/candles';
 
@@ -93,7 +94,11 @@ export default function InstrumentPicker({
       .map((t) => catalogEntry(t) || { ticker: t, name: 'из вашего журнала', type: 'stock', sector: null })
     : [];
 
-  return (
+  // Через портал в document.body — иначе окно каталога оказывается внутри колонки
+  // «Сопровождения», и график цены из соседней колонки рисуется ПОВЕРХ него (реальная
+  // жалоба). Причина та же, что была у ImportModal: любой предок с animation/transform
+  // становится контейнером для position:fixed и запирает z-index внутри своего слоя.
+  return createPortal(
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal ip-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
@@ -203,7 +208,8 @@ export default function InstrumentPicker({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

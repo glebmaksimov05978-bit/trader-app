@@ -4,12 +4,19 @@
    приложение, но выглядит собраннее: меньше скруглений и свечений, больше воздуха
    между смысловыми блоками. */
 
-.ck-wrap { padding: 4px 0 48px; }
+/* Горизонтальных отступов тут не было вовсе — из-за этого левая колонка наезжала на
+   боковое меню приложения, а правые карточки упирались в край окна (реальная жалоба со
+   скриншотом). Остальные страницы дают их сами через .page (32px); здесь чуть меньше,
+   потому что колонок две и ширина дороже. */
+.ck-wrap { padding: 24px 28px 48px; max-width: 1700px; }
+@media (max-width: 768px) { .ck-wrap { padding: 16px 14px 40px; } }
 
 .ck-top { display: flex; align-items: flex-end; gap: 16px; margin-bottom: 18px; flex-wrap: wrap; }
 .ck-title { margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }
 .ck-sub { color: var(--text-secondary); font-size: 13px; margin-top: 2px; }
-.ck-top-right { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+/* flex-end, а не center: у селектора стратегии сверху есть подпись, и по центру кнопка
+   «Обновить» вставала выше самого поля — визуально «съезжала» относительно него. */
+.ck-top-right { margin-left: auto; display: flex; gap: 10px; align-items: flex-end; }
 .ck-strategy-pick { display: flex; flex-direction: column; gap: 3px; }
 .ck-strategy-pick select {
   padding: 7px 10px; border-radius: var(--radius-xs); border: 1px solid var(--border-medium);
@@ -36,7 +43,9 @@
 /* Одна колонка слева на всё: позиции, лесенка, радар — каждая секция сворачивается
    сама по себе (CollapsibleSection), поэтому ширина колонки никогда не гуляет и не
    остаётся пустой, когда что-то свёрнуто. Справа — кабина во всю оставшуюся ширину. */
-.ck-layout { display: grid; grid-template-columns: 264px minmax(0, 1fr); gap: 16px; align-items: start; }
+/* 248, а не 264: левые карточки просили сделать чуть уже — на графике справа эти 16px
+   заметнее, чем в списке позиций слева. */
+.ck-layout { display: grid; grid-template-columns: 248px minmax(0, 1fr); gap: 18px; align-items: start; }
 @media (max-width: 900px) { .ck-layout { grid-template-columns: 1fr; } }
 .ck-side { display: flex; flex-direction: column; gap: 12px; position: sticky; top: 4px; }
 
