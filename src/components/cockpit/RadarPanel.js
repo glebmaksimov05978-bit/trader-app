@@ -126,8 +126,8 @@ export default function RadarPanel() {
             <div key={it.id} className="ck-radar-item">
               <button
                 className={`ck-radar-row ${hot ? 'hot' : ''}`}
-                onClick={() => navigate('/journal')}
-                title="Открыть Радар в Журнале"
+                onClick={() => navigate(`/calculator?ticker=${encodeURIComponent(it.ticker)}&type=${encodeURIComponent(it.instrumentType || 'stock')}`)}
+                title="Открыть график инструмента"
               >
                 <RadarRing pct={pct} hot={hot} />
                 <div className="ck-radar-info">

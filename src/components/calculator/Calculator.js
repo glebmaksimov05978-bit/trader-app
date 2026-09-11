@@ -1,7 +1,7 @@
 // src/components/calculator/Calculator.js
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { TinkoffAPI, parseFutureInfo, parseShareInfo } from '../../services/tinkoff';
 import { calcTrade, formatCurrency, formatNumber } from '../../utils/calculator';
@@ -368,6 +368,27 @@ export default function Calculator() {
 
   // Reset "Свои условия" ticks on every new ticker — see manualChecks above.
   useEffect(() => { setManualChecks({}); }, [resolvedTicker]);
+
+  // Клик по инструменту в Радаре (Кабина «Сопровождение») ведёт сюда с ?ticker=XXX —
+  // трейдер хочет увидеть график и уровни, а не лезть в Журнал. Подставляем тикер и сразу
+  // жмём «Загрузить» сами, один раз за визит по этой ссылке (real user report: раньше
+  // клик по радару открывал Журнал вместо графика инструмента).
+  const [searchParams] = useSearchParams();
+  const autoLoadTickerRef = useRef(searchParams.get('ticker')?.toUpperCase() || null);
+  useEffect(() => {
+    const t = autoLoadTickerRef.current;
+    if (!t) return;
+    autoLoadTickerRef.current = null;
+    const type = searchParams.get('type');
+    if (type === 'stock' || type === 'future' || type === 'currency') setInstrumentType(type);
+    handleTickerChange(t);
+    // form ещё не перерисовался с новым тикером — loadInstrument читает form.ticker,
+    // поэтому даём React один тик на применение setForm выше. loadInstrument объявлен
+    // ниже по коду той же функции, но вызывается только здесь, в эффекте, уже после
+    // рендера — к этому моменту переменная точно инициализирована.
+    setTimeout(() => loadInstrument(), 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const loadInstrument = useCallback(async () => {
     if (!form.ticker) { toast.error('Введите тикер'); return; }
