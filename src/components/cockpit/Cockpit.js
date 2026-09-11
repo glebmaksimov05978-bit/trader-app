@@ -119,13 +119,19 @@ export default function Cockpit() {
   // всё равно вводил на глаз, и было неочевидно, фиксируется сделка НА САМОМ ДЕЛЕ
   // (через брокера) или это просто запись в журнале задним числом.
   const [orderCfg, setOrderCfg] = useState(null);
+  // fetchOrderConfig отдаёт null и когда конфиг ещё грузится, и когда сервер недоступен/не
+  // настроен — раньше эти два случая было не различить, и при реальном сбое (сервер не
+  // ответил) кнопка молнии молча исчезала НАВСЕГДА без единого слова объяснения (реальная
+  // жалоба: «кнопки нет и пояснения тоже нет»). Явный флаг "запрос завершён" разводит их.
+  const [orderCfgLoaded, setOrderCfgLoaded] = useState(false);
   const [closeOrder, setCloseOrder] = useState(null); // { lots, side } — что фиксируем сейчас
 
   useEffect(() => { loadBacktestSample().then(setSample); }, []);
 
   useEffect(() => {
-    if (!user) { setOrderCfg(null); return; }
-    fetchOrderConfig(userProfile).then(setOrderCfg);
+    if (!user) { setOrderCfg(null); setOrderCfgLoaded(false); return; }
+    setOrderCfgLoaded(false);
+    fetchOrderConfig(userProfile).then((cfg) => { setOrderCfg(cfg); setOrderCfgLoaded(true); });
   }, [user, userProfile]);
 
   // Вкладка может работать по любой из сохранённых стратегий — выбор здесь меняет
@@ -313,9 +319,10 @@ export default function Cockpit() {
   const canOrderClose = !!(orderCfg?.enabled && trade?.ticker
     && (orderCfg.wildcard || orderCfg.whitelist?.includes(trade.ticker.toUpperCase())));
   const orderUnavailableReason = !trade || canOrderClose ? null
-    : !orderCfg ? null // конфиг ещё грузится — рано делать вывод
-      : !orderCfg.enabled ? 'Отправка заявок не настроена (см. Настройки → Отправка заявок брокеру).'
-        : `${trade.ticker} нет в белом списке разрешённых инструментов на сервере — заявку по нему отправить нельзя, только записать вручную.`;
+    : !orderCfgLoaded ? null // конфиг ещё грузится — рано делать вывод
+      : !orderCfg ? 'Не удалось получить настройки отправки заявок с сервера — заявку по этой сделке можно только записать вручную.'
+        : !orderCfg.enabled ? 'Отправка заявок не настроена (см. Настройки → Отправка заявок брокеру).'
+          : `${trade.ticker} нет в белом списке разрешённых инструментов на сервере — заявку по нему отправить нельзя, только записать вручную.`;
 
   const openCloseOrder = (lots) => {
     const l = Math.max(1, Math.round(lots));
@@ -487,7 +494,7 @@ export default function Cockpit() {
                   .some((x) => Math.abs(x.index - f.index) <= 1)).map((f, idx) => (
                     <div className="ck-rung sys" key={`s${idx}`}>
                       <div className="ck-rung-1">{Math.round((f.fraction || 0) * 100)}% · {fmtNum(f.price)}</div>
-                      <div className="ck-rung-2">система фиксировала здесь</div>
+                      <div className="ck-rung-2">система зафиксировала бы здесь</div>
                     </div>
                 ))}
                 {money && (
@@ -539,7 +546,11 @@ export default function Cockpit() {
                     {fmtPct(s?.resultPct)}
                   </span>
                   <span className="ck-line-sub">
-                    {s?.exit ? `закрыла бы: ${s.exit.reason}` : `фиксаций: ${s?.profitCutsDone ?? 0}`}
+                    {/* "Система" — гипотетическая линия: что было бы, если бы КАЖДЫЙ её
+                        сигнал исполнялся. Раньше подпись "фиксаций: N" читалась как факт
+                        о трейдере, хотя это счёт самого движка (реальная жалоба: "пишет,
+                        что я зафиксировал, а я ничего не делал") — явно добавляем "бы". */}
+                    {s?.exit ? `закрыла бы: ${s.exit.reason}` : `зафиксировала бы: ${s?.profitCutsDone ?? 0}`}
                   </span>
                 </button>
                 {state && (
@@ -631,6 +642,7 @@ export default function Cockpit() {
               <CandleChart
                 candles={candles}
                 patterns={patterns}
+                height={390}
                 ticker={trade?.ticker}
                 timeframe={timeframe}
                 timeframeOptions={tfOptions}
@@ -676,8 +688,8 @@ export default function Cockpit() {
                 <div className="ck-note">
                   Цифры считаются теми же полями сделки, что и в Журнале — шаг цены, стоимость шага, комиссия.
                   {canOrderClose && ' Оценка выше — по последней цене графика; в заявке сервер покажет реальную.'}
-                  {orderUnavailableReason && <> {orderUnavailableReason}</>}
                 </div>
+                {orderUnavailableReason && <div className="ck-order-hint">{orderUnavailableReason}</div>}
                 {canOrderClose ? (
                   <div className="ck-verdict-actions">
                     <button className="ck-btn ck-btn-primary" onClick={() => openCloseOrder(money.closingVol)}>

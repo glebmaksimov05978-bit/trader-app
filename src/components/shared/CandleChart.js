@@ -259,6 +259,7 @@ export default function CandleChart({
   exitPrice,   // avg exit price — closes the P&L zone (null while the trade is open)
   planLines,   // { entry, stop, take } — Calculator plan
   trades,      // Бэктест: [{ direction, entryDate, exitDate, status, pnlPct }, ...] — ALL trades on one chart, overrides legs/entryMarker/exitMarker
+  height,      // px, необязательный — переопределяет высоту графика вне полноэкранного режима (по умолчанию 300 + панели RSI/MACD)
 }) {
   const containerRef = useRef(null);
   const tooltipRef = useRef(null);
@@ -612,7 +613,7 @@ export default function CandleChart({
   // the WHOLE overlay scroll instead of clipping, but nothing signaled that). Flexbox
   // instead of a magic number: header + toggle row keep their natural height (however
   // many lines they wrap to), the chart takes whatever's actually left — never a guess.
-  const chartHeight = fullscreen ? '100%' : `${300 + rsiMacdPanes}px`;
+  const chartHeight = fullscreen ? '100%' : `${(height ?? 300) + rsiMacdPanes}px`;
   const visibleLayers = LAYER_DEFS.filter((l) => (!l.tradeOnly || isTrade) && (!l.overviewOnly || trades?.length));
 
   return (
@@ -631,7 +632,20 @@ export default function CandleChart({
           <button
             className="btn btn-ghost btn-sm"
             style={{fontSize:13, padding:'3px 8px'}}
-            onClick={() => setFullscreen((f) => !f)}
+            onClick={() => {
+              setFullscreen((f) => !f);
+              // autoSize должен сам подхватить новую высоту контейнера, но переход в
+              // fixed-оверлей меняет размер синхронно с этим же рендером — ResizeObserver
+              // иногда не успевает сработать вовремя, и подписи EMA9/EMA13 сверху слева
+              // остаются посчитанными под старую (маленькую) ширину и съезжают за край
+              // (реальная жалоба). Один принудительный resize следующим кадром чинит это,
+              // ничего не меняя, когда всё и так посчиталось верно.
+              requestAnimationFrame(() => {
+                if (chartRef.current && containerRef.current) {
+                  chartRef.current.resize(containerRef.current.clientWidth, containerRef.current.clientHeight);
+                }
+              });
+            }}
             title={fullscreen ? 'Свернуть' : 'На весь экран'}
           >{fullscreen ? '✕' : '⛶'}</button>
         </div>
