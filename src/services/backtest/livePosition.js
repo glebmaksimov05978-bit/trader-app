@@ -191,8 +191,17 @@ export function computeLiveState({
     profitCutsDone: position.profitCutsDone,
     // Когорта из исследования: сколько раз сработала профит-система.
     cohort: position.profitCutsDone >= 2 ? '2+' : String(position.profitCutsDone),
-    // Что движок думает прямо сейчас, на последнем баре.
-    now: trace.length ? trace[trace.length - 1] : null,
+    // Что движок думает прямо сейчас, на последнем баре. Сразу после входа, пока не
+    // прошло ни одного нового бара (entryIndex — последняя свеча), trace пуст — но счёт
+    // всё равно есть, просто нулевой на старте. Раньше в этот момент показывался прочерк
+    // вместо «0 из 4» (реальная жалоба: «цифры нет, как будто тире»).
+    now: trace.length ? trace[trace.length - 1] : {
+      index: entryIndex, date: candles[entryIndex].date, close: entryPrice, returnPct: 0,
+      peakPct: 0,
+      profitScore: computeProfitCaptureScore(position, candles[entryIndex], candles, entryIndex, 0),
+      lossScore: null,
+      remaining: position.remaining,
+    },
   };
 }
 
