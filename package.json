@@ -25,6 +25,7 @@
     "test:close": "node scripts/tradeCloseTests.mjs",
     "test:exits": "node scripts/exitPricesTests.mjs",
     "test:commission": "node scripts/commissionTests.mjs",
+    "test:schedule": "node scripts/scheduleTests.mjs",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {

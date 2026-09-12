@@ -52,12 +52,14 @@ esmify(path.join(repoRoot, 'src/services/backtest/engine.js'), [
 const liveUrl = esmify(path.join(repoRoot, 'src/services/backtest/livePosition.js'), [["from './engine'", "from './engine.js'"]]);
 const alertsUrl = esmify(path.join(repoRoot, 'src/services/alerts.js'));
 const candlesUrl = esmify(path.join(repoRoot, 'src/services/marketData/candles.js'), [["from '../tinkoff.js'", "from './tinkoff.js'"]]);
+const scheduleUrl = esmify(path.join(repoRoot, 'src/services/marketData/tradingSchedule.js'));
 
 const { computeLiveState } = await import(liveUrl);
 const {
-  evaluateAlerts, filterNew, formatForTelegram, isTradingHours, DEFAULT_ALERT_PREFS, buildKeyboard,
+  evaluateAlerts, filterNew, formatForTelegram, DEFAULT_ALERT_PREFS, buildKeyboard,
 } = await import(alertsUrl);
 const { fetchDailyCandles } = await import(candlesUrl);
+const { shouldWatchNow, anyMarketOpen, marketPhase } = await import(scheduleUrl);
 
 // --- Firebase --------------------------------------------------------------------------
 function initFirebase() {
@@ -206,8 +208,12 @@ async function checkTrade(db, uid, trade, prefs, sentMap) {
 
 async function main() {
   const force = process.argv.includes('--force') || process.env.FORCE_CHECK === 'true';
-  if (!force && !isTradingHours()) {
-    console.log('Вне торговой сессии — проверять нечего.');
+  // Общий вход: если не торгуется НИ ОДИН тип инструментов — выходим сразу, не трогая
+  // базу. Расписание у акций и фьючерсов разное (например, в 18:45 МСК акции уже стоят,
+  // а фьючерсы ещё торгуются), поэтому решение «просыпаться ли вообще» принимается по
+  // всем типам разом, а по каждой сделке — отдельно, ниже.
+  if (!force && !anyMarketOpen()) {
+    console.log('Все рынки закрыты — проверять нечего.');
     return;
   }
   const db = initFirebase();
@@ -251,6 +257,14 @@ async function main() {
       const trade = { id: doc.id, ...doc.data() };
       if ((runState.snooze[trade.id] || 0) > Date.now()) {
         console.log(`[${uid}] ${trade.ticker}: тихий режим до ${new Date(runState.snooze[trade.id]).toLocaleTimeString('ru-RU')}`);
+        continue;
+      }
+      // Расписание считается по типу КОНКРЕТНОГО инструмента и по сессиям, выбранным
+      // трейдером в Настройках. В клиринг не дёргаемся осознанно: торгов нет, последняя
+      // цена висит старая, и любой расчёт по ней соврал бы.
+      const type = trade.instrumentType || 'stock';
+      if (!force && !shouldWatchNow(type, prefs)) {
+        console.log(`[${uid}] ${trade.ticker}: ${marketPhase(type).label} — пропускаем`);
         continue;
       }
       try {

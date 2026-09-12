@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { availableTimeframes } from '../../services/marketData/candles';
 import { TARIFF_OPTIONS, TARIFFS, DEFAULT_TARIFF, commissionRateFor } from '../../services/analytics/commission';
+import { describeSchedule } from '../../services/marketData/tradingSchedule';
 import toast from 'react-hot-toast';
 
 export default function Settings() {
@@ -16,6 +17,11 @@ export default function Settings() {
     askJournalExtra: true,
     preferredTimeframe: '', // '' = авто по длительности сделки
     brokerTariff: DEFAULT_TARIFF,
+    // Какие сессии смотрит фоновый робот. Лежат в alertPrefs вместе с остальными
+    // настройками уведомлений — именно оттуда их читает робот.
+    sessionMorning: true,
+    sessionMain: true,
+    sessionEvening: true,
   });
   const [saving, setSaving] = useState(false);
   const [showToken, setShowToken] = useState(false);
@@ -32,6 +38,9 @@ export default function Settings() {
         dailyLossLimit: String(userProfile.dailyLossLimit || 3),
         preferredTimeframe: userProfile.preferredTimeframe || '',
         brokerTariff: userProfile.brokerTariff || DEFAULT_TARIFF,
+        sessionMorning: userProfile.alertPrefs?.sessionMorning !== false,
+        sessionMain: userProfile.alertPrefs?.sessionMain !== false,
+        sessionEvening: userProfile.alertPrefs?.sessionEvening !== false,
       }));
       // askExtra инициализируем только один раз
       if (askExtra === null) {
@@ -54,6 +63,14 @@ export default function Settings() {
         askJournalExtra: askExtra === true,
         preferredTimeframe: form.preferredTimeframe || null,
         brokerTariff: form.brokerTariff,
+        // Мержим, а не перезаписываем: в alertPrefs лежат ещё и настройки самих
+        // уведомлений, у которых пока нет своего экрана, — перезапись стёрла бы их.
+        alertPrefs: {
+          ...(userProfile?.alertPrefs || {}),
+          sessionMorning: form.sessionMorning,
+          sessionMain: form.sessionMain,
+          sessionEvening: form.sessionEvening,
+        },
       });
       toast.success('Настройки сохранены');
     } catch (e) {
@@ -169,6 +186,53 @@ export default function Settings() {
         <TariffCard tariffId={form.brokerTariff} onChange={(id) => set('brokerTariff', id)} onSave={save} saving={saving} />
 
         <OrderWorkerCard userProfile={userProfile} updateUserProfile={updateUserProfile} />
+
+        {/* Часы работы фонового робота. Раньше он был жёстко прибит к 10:00-18:40 МСК и
+            всю вечернюю сессию не видел вообще — а по фьючерсам это живая половина дня.
+            Теперь сессии берутся из общего расписания, а трейдер решает, какие смотреть. */}
+        <div className="card" style={{marginBottom:20}}>
+          <div className="section-title">
+            <div className="section-title-icon">⏰</div>
+            Когда работает робот
+          </div>
+          <p className="text-sm text-secondary" style={{marginBottom:16}}>
+            Робот проверяет открытые позиции в фоне и шлёт уведомления в Telegram —
+            даже когда приложение закрыто. Здесь выбирается, какие сессии он смотрит.
+            Утро и вечер обычно тоньше по ликвидности, и их можно выключить, чтобы
+            не получать лишних сигналов.
+          </p>
+
+          <div className="flex flex-col gap-2" style={{marginBottom:16}}>
+            {[
+              ['sessionMorning', 'Утренняя сессия'],
+              ['sessionMain', 'Основная сессия'],
+              ['sessionEvening', 'Вечерняя сессия'],
+            ].map(([key, label]) => (
+              <label key={key} className="flex items-center gap-2" style={{cursor:'pointer'}}>
+                <input
+                  type="checkbox"
+                  checked={form[key] !== false}
+                  onChange={e => set(key, e.target.checked)}
+                />
+                <span style={{fontWeight:600}}>{label}</span>
+              </label>
+            ))}
+          </div>
+
+          <div className="text-xs text-muted" style={{lineHeight:1.7}}>
+            <div><b>Фьючерсы:</b> {describeSchedule('future')}</div>
+            <div><b>Акции:</b> {describeSchedule('stock')}</div>
+            <div style={{marginTop:8}}>
+              С 23 марта 2026 фьючерсы торгуются без остановок на клиринг в течение дня —
+              клиринг один, с 23:50 до 00:30. В эти минуты торгов нет, последняя цена
+              висит старая, поэтому робот в них ничего не считает и не шлёт.
+            </div>
+          </div>
+
+          <button className="btn btn-primary" style={{marginTop:16}} onClick={save} disabled={saving}>
+            {saving ? 'Сохранение…' : '💾 Сохранить'}
+          </button>
+        </div>
 
         <div className="card" style={{marginBottom:20}}>
           <div className="section-title">
