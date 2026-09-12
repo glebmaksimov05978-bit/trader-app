@@ -247,7 +247,12 @@ export default function Cockpit() {
         direction: trade.direction === 'short' ? 'short' : 'long',
         entryPrice: parseFloat(trade.entryPrice),
         rules: exitRules,
-        stopPrice: trade.stopLoss ? parseFloat(trade.stopLoss) : null,
+        // stopIsSizingOnly — число из Калькулятора для расчёта объёма (ATR-порог, у
+        // стратегии стоп сознательно выключен), не заявка на выход. Передать её сюда как
+        // stopPrice значило бы заставить движок закрывать сделку по касанию этой цены —
+        // ровно то сочетание («ATR-стоп поверх следящего выхода»), которое проверено и
+        // оказалось хуже, чем стопа не иметь вовсе.
+        stopPrice: (trade.stopLoss && !trade.stopIsSizingOnly) ? parseFloat(trade.stopLoss) : null,
         takePrice: trade.takeProfit ? parseFloat(trade.takeProfit) : null,
         actualFills,
       });
@@ -455,7 +460,12 @@ export default function Cockpit() {
         direction: trade.direction === 'short' ? 'short' : 'long',
         entryPrice: parseFloat(trade.entryPrice),
         rules: compareStrategy.exitRules || {},
-        stopPrice: trade.stopLoss ? parseFloat(trade.stopLoss) : null,
+        // stopIsSizingOnly — число из Калькулятора для расчёта объёма (ATR-порог, у
+        // стратегии стоп сознательно выключен), не заявка на выход. Передать её сюда как
+        // stopPrice значило бы заставить движок закрывать сделку по касанию этой цены —
+        // ровно то сочетание («ATR-стоп поверх следящего выхода»), которое проверено и
+        // оказалось хуже, чем стопа не иметь вовсе.
+        stopPrice: (trade.stopLoss && !trade.stopIsSizingOnly) ? parseFloat(trade.stopLoss) : null,
         takePrice: trade.takeProfit ? parseFloat(trade.takeProfit) : null,
         mode: 'shadow',
       });
@@ -821,8 +831,14 @@ export default function Cockpit() {
                 </div>
                 {trade.stopLoss && (
                   <div className="ck-stat">
-                    <span className="ck-k">Стоп из плана</span>
+                    {/* stopIsSizingOnly — эта цена не выход, а ATR-порог для расчёта
+                        объёма (у стратегии стоп сознательно выключен). Подпись честно
+                        об этом говорит, а не выглядит как реальный план выхода. */}
+                    <span className="ck-k">{trade.stopIsSizingOnly ? 'Аварийный порог (не выход)' : 'Стоп из плана'}</span>
                     <span className="ck-v down">{fmtNum(trade.stopLoss)}</span>
+                    {trade.stopIsSizingOnly && (
+                      <span className="ck-line-sub">выход — только следящий</span>
+                    )}
                   </div>
                 )}
                 {trade.takeProfit && (

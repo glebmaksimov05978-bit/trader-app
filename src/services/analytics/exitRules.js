@@ -507,6 +507,38 @@ export function computeTakePrice(direction, entryPrice, exitRules, ctx) {
   return null;
 }
 
+// Стоп для расчёта ОБЪЁМА по риску — не то же самое, что стоп для ВЫХОДА из сделки.
+//
+// У части стратегий стоп ОСОЗНАННО выключен (stopType:'none'): проверено, что «без стопа +
+// следящий выход» даёт заметно лучший результат, чем классика (см. HANDOFF, раздел
+// «Три доп. проверки следящего выхода», 2026-08-12 — без стопа +11.9%, с любым стопом от
+// −2.1% до −6.1%, включая ATR-стоп поверх трейлинга: −3.3%). Это значит РЕАЛЬНЫЙ стоп-
+// ордер этой стратегии противопоказан — computeStopPrice() и дальше обязан возвращать
+// null, ничего в этой функции это не меняет.
+//
+// Но «% риска от депозита» без КАКОГО-ТО расстояния до условной опасной цены посчитать
+// нечем — calcTrade() требует стоп, чтобы понять, сколько стоит один контракт в случае
+// беды. Трейдер решил (после обсуждения аварийного порога): использовать для этой
+// арифметики тот же откалиброванный ATR-порог, что следящий выход уже считает ДЛЯ СЕБЯ
+// (resolveTrailAdverseThresholdPct — тот самый ×2, подтверждённый 2026-08-16). Это не
+// новая, непроверенная цифра — стратегия и так постоянно её вычисляет, просто раньше
+// она никуда, кроме самого следящего выхода, не передавалась.
+//
+// ⚠️ Результат этой функции — ТОЛЬКО для арифметики объёма. Его нельзя подставлять туда,
+// где стоп участвует в проверке выхода (position.stopPrice, checkIntrabarExit) — это и
+// есть ровно та конфигурация («ATR-стоп поверх трейлинга»), которая по факту проверена и
+// признана ХУЖЕ, чем стопа не иметь вовсе.
+export function computeRiskStopPrice(direction, entryPrice, exitRules, ctx) {
+  const real = computeStopPrice(direction, entryPrice, exitRules, ctx);
+  if (real != null) return real;
+  if (!exitRules?.trailEnabled) return null; // трейлинга тоже нет — считать не от чего
+  const atr = ctx?.atr ?? null;
+  if (atr == null) return null;
+  const thresholdPct = resolveTrailAdverseThresholdPct(exitRules, entryPrice, atr);
+  if (!(thresholdPct > 0)) return null;
+  return entryPrice * (1 - (direction === 'long' ? 1 : -1) * thresholdPct / 100);
+}
+
 // --- Loss-side score ("дно близко или ещё падать?") ------------------------------------
 //
 // Mirror of profitCaptureScore, for the side of the trade that's currently underwater.

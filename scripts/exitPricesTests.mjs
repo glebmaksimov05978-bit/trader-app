@@ -22,7 +22,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'traderpro-exits-'));
 const src = path.join(repoRoot, 'src', 'services', 'analytics', 'exitRules.js');
 const copy = path.join(tmp, 'exitRules.mjs');
 fs.writeFileSync(copy, fs.readFileSync(src, 'utf8'), 'utf8');
-const { computeTakePrice, computeStopPrice } = await import(pathToFileURL(copy).href);
+const { computeTakePrice, computeStopPrice, computeRiskStopPrice } = await import(pathToFileURL(copy).href);
 
 let failed = 0;
 function check(name, actual, expect) {
@@ -84,6 +84,47 @@ check(
   'Лонг, стоп 2% — ниже входа',
   computeStopPrice('long', ENTRY, { stopType: 'pct', stopPct: 2 }, {}),
   (v) => Math.abs(v - 98) < 1e-9,
+);
+
+// --- computeRiskStopPrice: стоп для ОБЪЁМА, а не для ВЫХОДА ---
+// У стратегии сознательно нет стопа (проверено: без стопа + следящий выход лучше
+// классики), но объём по риску всё равно нужно чем-то посчитать. Функция должна дать
+// число ТОЛЬКО для этой арифметики — и ни в коем случае не вести себя как обычный стоп,
+// который побеждает реальный, если он есть.
+const trailCtx = { atr: 2 }; // ATR = 2 у входа 100 → минимальный шаг трейлинга посчитается от него
+
+check(
+  'Реальный стоп есть — риск-стоп берёт ЕГО, а не ATR-порог',
+  computeRiskStopPrice('long', ENTRY, { stopType: 'pct', stopPct: 3, trailEnabled: true }, trailCtx),
+  (v) => Math.abs(v - 97) < 1e-9, // 3%-й стоп, не ATR-порог
+);
+check(
+  'Стопа нет, трейлинга нет — риск-стоп тоже null (считать не от чего)',
+  computeRiskStopPrice('long', ENTRY, { stopType: 'none', trailEnabled: false }, trailCtx),
+  (v) => v === null,
+);
+check(
+  'Стопа нет, ATR не посчитан — риск-стоп null, а не выдумка',
+  computeRiskStopPrice('long', ENTRY, { stopType: 'none', trailEnabled: true }, { atr: null }),
+  (v) => v === null,
+);
+
+const riskLong = computeRiskStopPrice('long', ENTRY, { stopType: 'none', trailEnabled: true }, trailCtx);
+check(
+  'Стопа нет, но есть трейлинг+ATR — риск-стоп посчитан и он НИЖЕ входа (лонг)',
+  riskLong,
+  (v) => v !== null && v < ENTRY,
+);
+const riskShort = computeRiskStopPrice('short', ENTRY, { stopType: 'none', trailEnabled: true }, trailCtx);
+check(
+  'Тот же случай в шорт — риск-стоп ВЫШЕ входа',
+  riskShort,
+  (v) => v !== null && v > ENTRY,
+);
+check(
+  'Лонг и шорт дают симметричное расстояние от входа',
+  Math.abs((ENTRY - riskLong) - (riskShort - ENTRY)) < 1e-6,
+  (v) => v === true,
 );
 
 fs.rmSync(tmp, { recursive: true, force: true });

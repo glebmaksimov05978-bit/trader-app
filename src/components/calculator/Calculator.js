@@ -18,7 +18,7 @@ import { commissionRateFor, DEFAULT_TARIFF, TARIFFS } from '../../services/analy
 import { guessInstrumentType } from '../../services/import/instrumentResolver';
 import { fetchOrderConfig } from '../../services/broker';
 import OrderModal from './OrderModal';
-import { computeStopPrice, computeTakePrice, exitTypeLabel } from '../../services/analytics/exitRules';
+import { computeStopPrice, computeTakePrice, computeRiskStopPrice, exitTypeLabel } from '../../services/analytics/exitRules';
 import TechnicalAnalysisBlock, { PATTERN_LABELS, InfoTip } from '../shared/TechnicalAnalysisBlock';
 import CandleChart from '../shared/CandleChart';
 import StrategyChecklist from '../shared/StrategyChecklist';
@@ -105,6 +105,16 @@ export default function Calculator() {
   ); // 'tinkoff' | 'moex'
   const [orderType, setOrderType] = useState(draft?.orderType || 'market'); // 'market' | 'limit'
   const [manualContracts, setManualContracts] = useState(draft?.manualContracts || '');
+  // Стратегии с сознательно выключенным стопом (проверено: без стопа + следящий выход
+  // заметно лучше классики) всё равно требуют хоть какое-то расстояние для арифметики
+  // объёма — «Подставить по стратегии» ниже в этом случае берёт тот же ATR-порог, что
+  // считает следящий выход. true означает: число в поле «Стоп-лосс» — НЕ реальная цена
+  // выхода, только для расчёта риска. При сохранении сделки это идёт в trade.stopIsSizingOnly,
+  // чтобы Сопровождение не приняло его за настоящий стоп и не начало закрывать сделку по
+  // касанию — именно та комбинация (ATR-стоп поверх следящего выхода), которая проверена
+  // и оказалась хуже, чем стопа не иметь вовсе. Сбрасывается в false, как только трейдер
+  // трогает поле руками — тогда это уже его осознанное число, а не подсказка стратегии.
+  const [stopIsSizingOnly, setStopIsSizingOnly] = useState(draft?.stopIsSizingOnly || false);
   const [journalAnim, setJournalAnim] = useState(false);
   const [showJournalModal, setShowJournalModal] = useState(false);
   const [showTinkoffModal, setShowTinkoffModal] = useState(false);
@@ -154,7 +164,7 @@ export default function Calculator() {
   useEffect(() => {
     try {
       sessionStorage.setItem(CALC_DRAFT_KEY, JSON.stringify({
-        form, instrumentType, priceSource, orderType, manualContracts, forcedDir,
+        form, instrumentType, priceSource, orderType, manualContracts, forcedDir, stopIsSizingOnly,
         // Which ticker `form.entryPrice`/`stopLoss`/`takeProfit` actually belong to —
         // restored into loadedTickerRef below so a page reload doesn't forget it (see
         // that ref's own comment). Without this, reloading the page then loading a
@@ -166,7 +176,7 @@ export default function Calculator() {
       }));
     } catch { /* private mode/quota — черновик просто не сохранится */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form, instrumentType, priceSource, orderType, manualContracts, forcedDir, resolvedTicker]);
+  }, [form, instrumentType, priceSource, orderType, manualContracts, forcedDir, resolvedTicker, stopIsSizingOnly]);
   const [result, setResult] = useState(null);
   const [liveTrades, setLiveTrades] = useState([]); // for the "Депозит" default — see computeLiveBalance effect below
   const [instrumentInfo, setInstrumentInfo] = useState(null);
@@ -761,6 +771,10 @@ export default function Calculator() {
         intendedEntryPrice: parseFloat(form.entryPrice) || null,
         exitPrice: null,
         stopLoss: parseFloat(form.stopLoss) || null,
+        // true — число выше не заявка на выход, а ATR-порог только для расчёта объёма
+        // (у стратегии стоп сознательно выключен). Сопровождение должно вести сделку
+        // следящим выходом, а не закрывать её по касанию этой цены.
+        stopIsSizingOnly: stopIsSizingOnly || undefined,
         takeProfit: parseFloat(form.takeProfit) || null,
         volume: volumeFinal,
         lot: parseFloat(form.lot) || 1,
@@ -1116,8 +1130,17 @@ export default function Calculator() {
                   style={{borderColor: orderType === 'limit' ? 'rgba(79,70,229,0.5)' : undefined}} />
               </div>
               <div className="input-group">
-                <label className="input-label">Стоп-лосс</label>
-                <input className="input" type="number" value={form.stopLoss} onChange={e => set('stopLoss', e.target.value)} placeholder="0" />
+                <label className="input-label">
+                  Стоп-лосс
+                  {stopIsSizingOnly && form.stopLoss && (
+                    <span className="text-xs" style={{fontWeight:400, color:'var(--gold)'}} title="Это не заявка на выход — у стратегии стоп сознательно выключен, здесь только ATR-порог для расчёта объёма. Сделку закрывает следящий выход.">
+                      {' '}(только для объёма)
+                    </span>
+                  )}
+                </label>
+                <input className="input" type="number" value={form.stopLoss}
+                  onChange={e => { set('stopLoss', e.target.value); setStopIsSizingOnly(false); }}
+                  placeholder="0" />
               </div>
               <div className="input-group">
                 <label className="input-label">Тейк-профит</label>
@@ -1155,16 +1178,31 @@ export default function Calculator() {
                   const priceCtx = { atr: liveData?.indicators?.atr14 ?? null, patterns: liveData?.patterns ?? null };
                   const stopPrice = computeStopPrice(activeDirection, entry, rules, priceCtx);
                   const takePrice = computeTakePrice(activeDirection, entry, rules, priceCtx);
+                  // У стратегии стоп может быть сознательно выключен (проверено: без стопа
+                  // + следящий выход заметно лучше классики). Раньше в этом случае поле
+                  // просто оставалось пустым с формулировкой «не задан в стратегии» — и
+                  // объём по риску посчитать было нечем. Теперь если реального стопа нет,
+                  // но включён следящий выход, берём тот же ATR-порог, что он считает сам
+                  // себе (computeRiskStopPrice), и явно помечаем: это число ТОЛЬКО для
+                  // расчёта объёма, сделку закрывает следящий выход, а не эта цена —
+                  // stopIsSizingOnly не даёт Сопровождению принять её за настоящий стоп.
+                  const riskStopPrice = stopPrice ?? computeRiskStopPrice(activeDirection, entry, rules, priceCtx);
                   const notes = [];
                   // A plain `.`-decimal string, NOT formatNumber()'s ru-RU-locale output
                   // (comma decimal, non-breaking-space thousands) — an <input type="number">
                   // silently blanks itself on an invalid string like "2 646,00" (real bug
                   // caught live: toast said the number computed, the field stayed empty).
-                  if (stopPrice != null) { set('stopLoss', stopPrice.toFixed(2)); }
-                  else notes.push(`стоп: ${rules.stopType === 'none' ? 'не задан в стратегии' : `«${exitTypeLabel(rules.stopType, rules.stopLevelSource)}» — нет фиксированной цены`}`);
+                  if (riskStopPrice != null) {
+                    set('stopLoss', riskStopPrice.toFixed(2));
+                    setStopIsSizingOnly(stopPrice == null);
+                    if (stopPrice == null) notes.push('стоп: у стратегии выключен — подставлен ATR-порог только для расчёта объёма, закрывает сделку следящий выход');
+                  } else {
+                    setStopIsSizingOnly(false);
+                    notes.push(`стоп: ${rules.stopType === 'none' ? 'ни стопа, ни следящего выхода нет — риск посчитать нечем' : `«${exitTypeLabel(rules.stopType, rules.stopLevelSource)}» — нет фиксированной цены`}`);
+                  }
                   if (takePrice != null) { set('takeProfit', takePrice.toFixed(2)); }
                   else notes.push(`тейк: ${rules.takeType === 'none' ? 'не задан в стратегии' : `«${exitTypeLabel(rules.takeType, rules.takeLevelSource)}» — нет фиксированной цены`}`);
-                  if (stopPrice == null && takePrice == null) toast.error('Ни для стопа, ни для тейка нет числа: ' + notes.join('; '));
+                  if (riskStopPrice == null && takePrice == null) toast.error('Ни для стопа, ни для тейка нет числа: ' + notes.join('; '));
                   else if (notes.length) toast(`Подставлено частично — ${notes.join('; ')}`, { icon: 'ℹ️' });
                   else toast.success('Стоп/тейк подставлены по стратегии — можно поправить руками');
                 }}>

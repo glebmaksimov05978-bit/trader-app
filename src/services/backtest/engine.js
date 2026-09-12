@@ -14,7 +14,7 @@ import { computeIndicatorsAtEntry, sma } from '../analytics/indicators';
 import { computePatternsAtEntry } from '../analytics/patterns';
 import { computeMarketContextAtEntry } from '../analytics/marketContext';
 import { evaluateStrategy } from '../analytics/strategy';
-import { computeStopPrice, computeTakePrice, resolveTrailGiveBackPct, resolveTrailMinPeakPct, resolveTrailAdverseThresholdPct, isConfirmedReversal, profitCaptureScore, lossNearBottomScore, profitCaptureBreakdown, lossNearBottomBreakdown } from '../analytics/exitRules';
+import { computeStopPrice, computeTakePrice, computeRiskStopPrice, resolveTrailGiveBackPct, resolveTrailMinPeakPct, resolveTrailAdverseThresholdPct, isConfirmedReversal, profitCaptureScore, lossNearBottomScore, profitCaptureBreakdown, lossNearBottomBreakdown } from '../analytics/exitRules';
 import { calcTrade } from '../../utils/calculator';
 
 // Market-regime filter (2026-08-17): the single strongest, most universal finding of the
@@ -832,12 +832,19 @@ export function createPosition({
   stopPrice = null, takePrice = null, rules = {}, riskSizing = null,
   entryRsi14 = null, drivingPattern = null, atr = null,
 }) {
+  // Стоп для ОБЪЁМА, не для ВЫХОДА. У стратегий с сознательно выключенным стопом
+  // (проверено: без стопа + следящий выход заметно лучше классики — см.
+  // computeRiskStopPrice) `stopPrice` выше остаётся null, и это ПРАВИЛЬНО: exit-логика
+  // ниже (checkIntrabarExit, updateTrailAndCheckExit) продолжает работать без стопа, как
+  // и раньше. Но calcTrade требует хоть какое-то расстояние, чтобы посчитать «% риска от
+  // депозита», — берём тот же ATR-порог, который следящий выход и так считает сам себе.
+  const sizingStopPrice = stopPrice ?? computeRiskStopPrice(direction, entryPrice, rules, { atr });
   return {
     direction, entryIndex, entryDate, entryPrice, entryPercent,
     stopPrice, takePrice, barsHeld: 0,
     signalExitEnabled: !!rules.signalExitEnabled,
     entryRsi14,
-    sizing: sizePosition(entryPrice, stopPrice, riskSizing),
+    sizing: sizePosition(entryPrice, sizingStopPrice, riskSizing),
     trailEnabled: !!rules.trailEnabled,
     trailGiveBackPct: resolveTrailGiveBackPct(rules, drivingPattern),
     trailMinPeakPct: resolveTrailMinPeakPct(rules, entryPrice, atr),

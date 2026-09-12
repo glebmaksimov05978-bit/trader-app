@@ -61,7 +61,7 @@ const commissionUrl = pathToFileURL(path.join(tmp, 'commission.js')).href;
 const portfolioUrl = pathToFileURL(path.join(tmp, 'portfolio.js')).href;
 
 const { buildCtx, readinessPercent } = await import(engineUrl);
-const { computeStopPrice, computeTakePrice } = await import(exitRulesUrl);
+const { computeStopPrice, computeTakePrice, computeRiskStopPrice } = await import(exitRulesUrl);
 const { calcTrade } = await import(calcUrl);
 const { commissionRateFor, DEFAULT_TARIFF } = await import(commissionUrl);
 const { computeBaskets, capitalForStrategy } = await import(portfolioUrl);
@@ -161,10 +161,18 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades }) {
   const priceCtx = { atr: baseCtx.indicators.atr14 ?? null, patterns: baseCtx.patterns };
   const stopPrice = computeStopPrice(direction, entryPrice, rules, priceCtx);
   const takePrice = computeTakePrice(direction, entryPrice, rules, priceCtx);
-  // Без стопа объём по риску посчитать нечем: риск в рублях делится на убыток на контракт,
-  // а он и берётся из расстояния до стопа. Молча подставить «на глаз» было бы хуже, чем
-  // пропустить сигнал.
-  if (stopPrice == null) return { skipped: 'стратегия не дала стоп — объём по риску не посчитать' };
+  // Часть стратегий сознательно торгует БЕЗ стопа (проверено: без стопа + следящий выход
+  // заметно лучше классики — см. комментарий у computeRiskStopPrice). Реальный exit-стоп
+  // (stopPrice, использованный бы для проверки выхода) в этом случае и должен быть null —
+  // сделку закрывает следящий выход, не эта цена. Но calcTrade требует хоть какое-то
+  // расстояние, чтобы посчитать «% риска от депозита»: используем тот же откалиброванный
+  // ATR-порог, что следящий выход уже считает сам себе. ВАЖНО: этот запасной расчёт идёт
+  // только в calcTrade — в саму бумажную сделку ниже пишется настоящий stopPrice
+  // (возможно null), а не эта цифра. Иначе движок Сопровождения принял бы её за реальный
+  // стоп и стал бы закрывать сделку по касанию — ровно то сочетание («ATR-стоп поверх
+  // трейлинга»), которое проверено и оказалось хуже, чем стопа не иметь вовсе.
+  const sizingStopPrice = stopPrice ?? computeRiskStopPrice(direction, entryPrice, rules, priceCtx);
+  if (sizingStopPrice == null) return { skipped: 'нет ни стопа, ни трейлинга — объём по риску не посчитать' };
 
   const specs = await loadSpecs(item.ticker, instrumentType);
   const strategies = profile.strategies || [];
@@ -177,7 +185,7 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades }) {
   const commRate = commissionRateFor(profile.brokerTariff || DEFAULT_TARIFF, instrumentType).rate;
 
   const sizing = calcTrade({
-    entryPrice, stopLoss: stopPrice, takeProfit: takePrice ?? 0,
+    entryPrice, stopLoss: sizingStopPrice, takeProfit: takePrice ?? 0,
     depositSize: capital,
     riskPercent: profile.maxRiskPerTrade || 1,
     lot: specs.lot, minStep: specs.minStep, minStepAmount: specs.minStepAmount,
@@ -214,6 +222,10 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades }) {
     radarItemId: item.id,
     // Параметры контракта подтянуть не удалось — объём посчитан приблизительно.
     sizingApprox: specs.approx || undefined,
+    // У стратегии стоп сознательно выключен: объём посчитан по ATR-порогу следящего
+    // выхода, а не по реальной цене стопа (её нет, stopLoss выше — null). Пометка нужна,
+    // чтобы при разборе сделки было видно, откуда взялся объём, если стопа не видно.
+    sizingFromTrailAdverse: stopPrice == null || undefined,
   };
 
   if (DRY) return { opened: paper, dry: true };
@@ -262,9 +274,10 @@ async function main() {
         if (res.opened) {
           const o = res.opened;
           openTickers.add(o.ticker);
+          const stopLabel = o.stopLoss != null ? o.stopLoss : (o.sizingFromTrailAdverse ? 'нет — следящий выход' : '—');
           console.log(
             `[${uid}] ${res.dry ? 'ОТКРЫЛ БЫ' : 'открыл'} ${o.ticker} ${o.direction} `
-            + `${o.volume} по ${o.entryPrice} (стоп ${o.stopLoss}, цель ${o.takeProfit ?? '—'}, `
+            + `${o.volume} по ${o.entryPrice} (стоп ${stopLabel}, цель ${o.takeProfit ?? '—'}, `
             + `условия ${o.entryPassed}/${o.entryTotal})${o.sizingApprox ? ' [объём приблизительный]' : ''}`,
           );
         } else {
