@@ -55,6 +55,9 @@ const engineUrl = esmify(path.join(repoRoot, 'src/services/backtest/engine.js'),
 const candlesUrl = esmify(path.join(repoRoot, 'src/services/marketData/candles.js'), [["from '../tinkoff.js'", "from './tinkoff.js'"]]);
 const scheduleUrl = esmify(path.join(repoRoot, 'src/services/marketData/tradingSchedule.js'));
 const specsUrl = esmify(path.join(repoRoot, 'src/services/marketData/futuresSpecs.js'));
+// alerts.js намеренно оставлен без единой зависимости (см. его шапку) — поэтому его можно
+// подтянуть сюда без переписывания путей и заглушек.
+const alertsUrl = esmify(path.join(repoRoot, 'src/services/alerts.js'));
 const exitRulesUrl = pathToFileURL(path.join(tmp, 'exitRules.js')).href;
 const calcUrl = pathToFileURL(path.join(tmp, 'calculator.js')).href;
 const commissionUrl = pathToFileURL(path.join(tmp, 'commission.js')).href;
@@ -68,6 +71,7 @@ const { computeBaskets, capitalForStrategy } = await import(portfolioUrl);
 const { fetchDailyCandles, TIMEFRAMES, DEFAULT_TIMEFRAME } = await import(candlesUrl);
 const { shouldWatchNow, marketPhase, anyMarketOpen } = await import(scheduleUrl);
 const { fetchActiveFutureCard, fetchStockLot } = await import(specsUrl);
+const { formatPaperForTelegram } = await import(alertsUrl);
 
 const DRY = process.argv.includes('--dry');
 const FORCE = process.argv.includes('--force') || process.env.FORCE_CHECK === 'true';
@@ -77,6 +81,27 @@ function initFirebase() {
   if (!raw) throw new Error('Нет FIREBASE_SERVICE_ACCOUNT');
   admin.initializeApp({ credential: admin.credential.cert(JSON.parse(raw)) });
   return admin.firestore();
+}
+
+// Отправка в Telegram — намеренно «тихая». К моменту вызова бумажная сделка уже записана
+// в базу, и сообщение это только уведомление: если токена нет или Telegram недоступен,
+// робот должен продолжить работу, а не потерять сделку из-за недоставленного сообщения.
+// Кнопок под сообщением нет сознательно — см. formatPaperForTelegram в alerts.js.
+async function notifyPaper(text) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML', disable_web_page_preview: true }),
+    });
+    const data = await res.json();
+    if (!data.ok) console.error(`Telegram: ${data.description || res.status}`);
+  } catch (e) {
+    console.error(`Telegram: ${e.message}`);
+  }
 }
 
 // Стратегия конкретного тикера: своя, если задана при добавлении в радар, иначе активная
@@ -253,6 +278,18 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades }) {
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   });
+  if (profile.alertPrefs?.paperTelegram !== false) {
+    await notifyPaper(formatPaperForTelegram({
+      title: `${paper.ticker} ${paper.direction === 'short' ? 'шорт' : 'лонг'} — открыта`,
+      lines: [
+        `Вход ${paper.entryPrice}, объём ${paper.volume}.`,
+        paper.stopLoss != null ? `Стоп ${paper.stopLoss}.` : 'Стопа нет — закрывать будет следящий выход.',
+        paper.takeProfit != null ? `Цель ${paper.takeProfit}.` : null,
+        `Условия стратегии «${paper.entryStrategyName || 'без названия'}»: ${paper.entryPassed} из ${paper.entryTotal}.`,
+      ],
+      trade: paper,
+    }));
+  }
   return { opened: paper };
 }
 

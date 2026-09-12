@@ -70,7 +70,10 @@ const closeUrl = esmify(path.join(repoRoot, 'src/services/tradeClose.js'), [
 
 const { computeLiveState } = await import(liveUrl);
 const { fetchDailyCandles, TIMEFRAMES, DEFAULT_TIMEFRAME } = await import(candlesUrl);
+// alerts.js намеренно без единой зависимости (см. его шапку) — подтягивается без заглушек.
+const alertsUrl = esmify(path.join(repoRoot, 'src/services/alerts.js'));
 const { computeClosePnl } = await import(closeUrl);
+const { formatPaperForTelegram } = await import(alertsUrl);
 const { commissionRateFor, DEFAULT_TARIFF } = await import(analyticsUrls.commission);
 
 const DRY = process.argv.includes('--dry');
@@ -80,6 +83,26 @@ function initFirebase() {
   if (!raw) throw new Error('Нет FIREBASE_SERVICE_ACCOUNT');
   admin.initializeApp({ credential: admin.credential.cert(JSON.parse(raw)) });
   return admin.firestore();
+}
+
+// Тихая отправка: к этому моменту изменение по сделке уже записано в базу, и потеря
+// сообщения не должна ломать работу робота. Кнопок нет сознательно — бумажную сделку
+// целиком ведёт робот, решения человека там нет (см. formatPaperForTelegram).
+async function notifyPaper(text) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML', disable_web_page_preview: true }),
+    });
+    const data = await res.json();
+    if (!data.ok) console.error(`Telegram: ${data.description || res.status}`);
+  } catch (e) {
+    console.error(`Telegram: ${e.message}`);
+  }
 }
 
 // Индекс бара, ближайшего к дате и не позже неё — тот же приём, что в Cockpit.js и
@@ -232,6 +255,20 @@ async function manageTrade({ db, uid, profile, trade }) {
     ...plan.patch,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   });
+  if (profile.alertPrefs?.paperTelegram !== false) {
+    const closed = plan.patch.status === 'closed';
+    const left = plan.patch.remainingVolume ?? trade.remainingVolume;
+    await notifyPaper(formatPaperForTelegram({
+      title: `${trade.ticker} ${trade.direction === 'short' ? 'шорт' : 'лонг'} — ${closed ? 'закрыта' : 'частичная фиксация'}`,
+      lines: [
+        ...plan.events,
+        closed
+          ? `Итог по сделке: ${plan.patch.pnl} ₽.`
+          : `В рынке осталось ${left}, накоплено ${plan.patch.pnl} ₽.`,
+      ],
+      trade,
+    }));
+  }
   return plan;
 }
 

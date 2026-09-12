@@ -68,6 +68,10 @@ jobs:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           ALERT_UIDS: ${{ secrets.ALERT_UIDS }}
           FORCE_CHECK: ${{ github.event.inputs.force }}
+          # Без этих двух робот молча не отправит ничего: notifyPaper() выходит сразу,
+          # если токена или чата нет — сделку он при этом всё равно запишет.
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         # Пустое значение бывает ТОЛЬКО при запуске по расписанию (у события schedule нет
         # inputs) — и тогда робот работает по-настоящему. Сухой прогон включается лишь
         # явным "true", что и стоит по умолчанию у кнопки ручного запуска.
@@ -90,6 +94,8 @@ jobs:
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           ALERT_UIDS: ${{ secrets.ALERT_UIDS }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           if [ "${{ github.event.inputs.paper_dry }}" = "true" ]; then
             node scripts/paper/managePaperTrades.mjs --dry

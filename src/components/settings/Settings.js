@@ -23,6 +23,7 @@ export default function Settings() {
     sessionMain: true,
     sessionEvening: true,
     paperIgnoreRiskSizing: false,
+    paperTelegram: true,
   });
   const [saving, setSaving] = useState(false);
   const [showToken, setShowToken] = useState(false);
@@ -43,6 +44,7 @@ export default function Settings() {
         sessionMain: userProfile.alertPrefs?.sessionMain !== false,
         sessionEvening: userProfile.alertPrefs?.sessionEvening !== false,
         paperIgnoreRiskSizing: userProfile.alertPrefs?.paperIgnoreRiskSizing === true,
+        paperTelegram: userProfile.alertPrefs?.paperTelegram !== false,
       }));
       // askExtra инициализируем только один раз
       if (askExtra === null) {
@@ -73,6 +75,7 @@ export default function Settings() {
           sessionMain: form.sessionMain,
           sessionEvening: form.sessionEvening,
           paperIgnoreRiskSizing: form.paperIgnoreRiskSizing,
+          paperTelegram: form.paperTelegram,
         },
       });
       toast.success('Настройки сохранены');
@@ -258,6 +261,23 @@ export default function Settings() {
             />
             <span style={{fontWeight:600}}>Открывать даже те, на которые не хватает денег</span>
           </label>
+
+          <label className="flex items-center gap-2" style={{cursor:'pointer', marginBottom:12}}>
+            <input
+              type="checkbox"
+              checked={form.paperTelegram !== false}
+              onChange={e => set('paperTelegram', e.target.checked)}
+            />
+            <span style={{fontWeight:600}}>Присылать их в Telegram</span>
+          </label>
+
+          <div className="text-xs text-muted" style={{lineHeight:1.7, marginBottom:12}}>
+            Бумажные сообщения помечены значком 📄 и словом «бумажная» в первой строке —
+            в общем потоке видно с одного взгляда, где реальные деньги, а где наблюдение.
+            Кнопок «Снял часть» и «Закрыл целиком» у них нет: эти кнопки записывают ВАШЕ
+            решение, а бумажную сделку целиком ведёт робот. Если наблюдение начнёт шуметь,
+            выключите эту галочку — сигналы по настоящим позициям продолжат приходить.
+          </div>
 
           <div className="text-xs text-muted" style={{lineHeight:1.7}}>
             Обычно робот пропускает сигнал, если по вашему проценту риска на него не
