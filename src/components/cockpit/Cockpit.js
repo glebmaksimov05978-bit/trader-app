@@ -18,7 +18,9 @@ import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { getActiveStrategy, getStrategies } from '../../services/analytics/strategy';
 import { classifyStrategy, kindBadge } from '../../services/analytics/strategyKind';
 import { commissionRateFor, DEFAULT_TARIFF } from '../../services/analytics/commission';
-import { computeBothLines } from '../../services/backtest/livePosition';
+import { computeBaskets, getPortfolio } from '../../services/analytics/portfolio';
+import { formatCurrency } from '../../utils/calculator';
+import { computeBothLines, computeLiveState } from '../../services/backtest/livePosition';
 import { computeProfitBreakdown, computeLossBreakdown } from '../../services/backtest/engine';
 import { evaluateAlerts, DEFAULT_ALERT_PREFS } from '../../services/alerts';
 import { loadBacktestSample, findSimilar, probabilityOfGoal } from '../../services/backtest/similarTrades';
@@ -97,9 +99,13 @@ function SystemOff({ title, text }) {
 }
 
 export default function Cockpit() {
-  const { user, userProfile } = useAuth();
+  const { user, userProfile, updateUserProfile } = useAuth();
   const navigate = useNavigate();
   const [trades, setTrades] = useState([]);
+  // Корзины портфеля считаются по ВСЕМ сделкам, а не только открытым: результат корзины —
+  // это в первую очередь уже закрытые сделки. Открытые лежат в `trades` отдельно, потому
+  // что вкладка ведёт именно их.
+  const [allTrades, setAllTrades] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [state, setState] = useState(null);      // { actual, shadow, deltaPct }
@@ -169,6 +175,7 @@ export default function Cockpit() {
         const all = await getUserTrades(user.uid);
         const open = all.filter((t) => t.status === 'open' || t.status === 'partial');
         setTrades(open);
+        setAllTrades(all);
         setActiveId((cur) => cur || open[0]?.id || null);
       } catch (e) {
         toast.error('Не удалось загрузить сделки');
@@ -351,6 +358,7 @@ export default function Cockpit() {
       const all = await getUserTrades(user.uid);
       const open = all.filter((t) => t.status === 'open' || t.status === 'partial');
       setTrades(open);
+      setAllTrades(all);
       if (!open.some((t) => t.id === activeId)) setActiveId(open[0]?.id || null);
     } catch (e) {
       toast.error(e.message || 'Заявка исполнилась, но запись в Журнал не удалась — зафиксируйте вручную');
@@ -365,6 +373,73 @@ export default function Cockpit() {
     () => availableTimeframes(!!userProfile?.tinkoffToken),
     [userProfile?.tinkoffToken],
   );
+
+  // --- корзины портфеля ---
+  // Раньше портфель жил только в Капитале: чтобы посмотреть, сколько выделено стратегии и
+  // как она идёт, приходилось уходить с вкладки и возвращаться (запрос трейдера — держать
+  // это рядом с позициями). Расчёт тот же самый, computeBaskets, второго источника правды
+  // не заводим.
+  const baskets = useMemo(
+    () => computeBaskets({ userProfile, strategies, trades: allTrades }),
+    [userProfile, strategies, allTrades],
+  );
+  const [newBasketId, setNewBasketId] = useState('');
+  const [newBasketPct, setNewBasketPct] = useState('');
+  const [savingBasket, setSavingBasket] = useState(false);
+
+  const savePortfolio = async (next) => {
+    setSavingBasket(true);
+    try {
+      await updateUserProfile({ portfolio: next });
+    } catch {
+      toast.error('Не удалось сохранить портфель');
+    } finally {
+      setSavingBasket(false);
+    }
+  };
+
+  // Плюсик добавляет стратегию в портфель и спрашивает её долю. Первая же добавленная
+  // корзина включает режим — отдельная галочка «включить» здесь была бы лишним шагом.
+  const addBasket = async () => {
+    const pct = parseFloat(newBasketPct);
+    if (!newBasketId || !(pct > 0)) { toast.error('Выберите стратегию и укажите процент'); return; }
+    const cur = getPortfolio(userProfile);
+    const rest = cur.baskets.filter((b) => b.strategyId !== newBasketId);
+    await savePortfolio({ enabled: true, baskets: [...rest, { strategyId: newBasketId, sharePct: pct }] });
+    setNewBasketId('');
+    setNewBasketPct('');
+  };
+
+  const removeBasket = async (strategyId) => {
+    const cur = getPortfolio(userProfile);
+    await savePortfolio({ ...cur, baskets: cur.baskets.filter((b) => b.strategyId !== strategyId) });
+  };
+
+  // --- третья линия: как эту же сделку вела бы ДРУГАЯ стратегия ---
+  // Две основные линии отвечают на вопрос «слушался я движка или нет». Эта отвечает на
+  // другой: «а стоило ли вообще вести сделку по этим правилам». Считается тем же движком,
+  // на тех же свечах и с тем же баром входа — меняются только правила выхода, режим
+  // shadow (движок исполняет каждый свой сигнал).
+  const [compareId, setCompareId] = useState('');
+  const compareStrategy = useMemo(
+    () => strategies.find((s) => s.id === compareId) || null,
+    [strategies, compareId],
+  );
+  const compareLine = useMemo(() => {
+    if (!compareStrategy || !trade || !candles?.length || state?.entryIndex == null) return null;
+    try {
+      return computeLiveState({
+        candles,
+        entryIndex: state.entryIndex,
+        direction: trade.direction === 'short' ? 'short' : 'long',
+        entryPrice: parseFloat(trade.entryPrice),
+        rules: compareStrategy.exitRules || {},
+        stopPrice: trade.stopLoss ? parseFloat(trade.stopLoss) : null,
+        takePrice: trade.takeProfit ? parseFloat(trade.takeProfit) : null,
+        mode: 'shadow',
+      });
+    } catch { return null; }
+  }, [compareStrategy, trade, candles, state?.entryIndex]);
 
   if (loading) return <div className="ck-wrap"><div className="ck-loading">Загружаю открытые позиции…</div></div>;
 
@@ -507,6 +582,86 @@ export default function Cockpit() {
             </CollapsibleSection>
           )}
 
+          <CollapsibleSection
+            title="Корзины портфеля"
+            badge={baskets.baskets.length || null}
+            defaultOpen={false}
+          >
+            <div className="ck-basket-note">
+              Корзина — это учёт, а не отдельный счёт у брокера. Влияет ровно на одно: риск
+              на сделку считается от денег корзины её стратегии, а не от всего депозита.
+            </div>
+
+            <div className="ck-basket-list">
+              {baskets.baskets.map((b) => (
+                <div className="ck-basket" key={b.strategyId}>
+                  <div className="ck-basket-main">
+                    <div className="ck-basket-name">{b.name}</div>
+                    <div className="ck-basket-sub">
+                      {formatCurrency(Math.round(b.allocated))} · {b.sharePct}%
+                      {Math.abs(b.driftPct) >= 5 && (
+                        <span className="ck-basket-drift">
+                          {' '}(сейчас {b.driftPct > 0 ? '+' : ''}{b.driftPct.toFixed(0)} п.п.)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className={`ck-basket-pnl ${b.pnl >= 0 ? 'up' : 'down'}`}>{fmtRub(b.pnl)}</div>
+                  <button className="ck-radar-del" onClick={() => removeBasket(b.strategyId)} title="Убрать корзину">✕</button>
+                </div>
+              ))}
+              {!baskets.baskets.length && (
+                <div className="ck-radar-empty">
+                  Портфель не разбит на корзины — риск считается от всего депозита.
+                  Добавьте стратегию ниже, чтобы у неё была своя доля счёта.
+                </div>
+              )}
+            </div>
+
+            {/* Доли не подгоняются под 100% молча — трейдер должен видеть, что часть счёта
+                не отдана ни одной стратегии (та же логика, что в карточке Капитала). */}
+            {!!baskets.baskets.length && Math.abs(baskets.shareTotal - 100) > 0.01 && (
+              <div className="ck-basket-warn">
+                Сумма долей — {baskets.shareTotal}%.{' '}
+                {baskets.shareTotal < 100
+                  ? `${(100 - baskets.shareTotal).toFixed(0)}% счёта не участвуют.`
+                  : 'Больше 100%: риск будет считаться от несуществующих денег.'}
+              </div>
+            )}
+
+            <div className="ck-basket-add">
+              <select
+                className="ck-basket-sel"
+                value={newBasketId}
+                onChange={(e) => setNewBasketId(e.target.value)}
+              >
+                <option value="">+ добавить стратегию…</option>
+                {strategies
+                  .filter((s) => !baskets.baskets.some((b) => b.strategyId === s.id))
+                  .map((s) => (
+                    <option key={s.id} value={s.id}>{s.name || 'Без названия'}</option>
+                  ))}
+              </select>
+              {!!newBasketId && (
+                <>
+                  <input
+                    className="ck-basket-pct"
+                    type="number" min="0" max="100" step="5" placeholder="%"
+                    value={newBasketPct}
+                    onChange={(e) => setNewBasketPct(e.target.value)}
+                  />
+                  <button className="ck-btn" onClick={addBasket} disabled={savingBasket}>
+                    {savingBasket ? '…' : 'Добавить'}
+                  </button>
+                </>
+              )}
+            </div>
+
+            <div className="ck-basket-note">
+              Полная таблица с результатом каждой корзины — в <Link to="/capital">Капитале</Link>.
+            </div>
+          </CollapsibleSection>
+
           <RadarPanel />
         </aside>
 
@@ -553,6 +708,37 @@ export default function Cockpit() {
                     {s?.exit ? `закрыла бы: ${s.exit.reason}` : `зафиксировала бы: ${s?.profitCutsDone ?? 0}`}
                   </span>
                 </button>
+                {/* Третье окошко — другая стратегия на этой же сделке. Пока стратегия не
+                    выбрана, считать нечего, поэтому здесь просто выпадающий список. */}
+                {strategies.length > 1 && (
+                  <div className="ck-line ck-line-cmp">
+                    <select
+                      className="ck-line-sel"
+                      value={compareId}
+                      onChange={(e) => setCompareId(e.target.value)}
+                      title="Посмотреть, как эту сделку вела бы другая стратегия"
+                    >
+                      <option value="">+ сравнить</option>
+                      {strategies.filter((x) => x.id !== strategy?.id).map((x) => (
+                        <option key={x.id} value={x.id}>{x.name || 'Без названия'}</option>
+                      ))}
+                    </select>
+                    {!compareStrategy && <span className="ck-line-sub">как вела бы эту сделку</span>}
+                    {compareStrategy && !compareLine && <span className="ck-line-sub">не удалось посчитать</span>}
+                    {compareStrategy && compareLine && (
+                      <>
+                        <span className={`ck-line-v ${(compareLine.resultPct ?? 0) >= 0 ? 'up' : 'down'}`}>
+                          {fmtPct(compareLine.resultPct)}
+                        </span>
+                        <span className="ck-line-sub">
+                          {compareLine.exit
+                            ? `закрыла бы: ${compareLine.exit.reason}`
+                            : `зафиксировала бы: ${compareLine.profitCutsDone ?? 0}`}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                )}
                 {state && (
                   <span className={`ck-delta ${Math.abs(state.deltaPct) < 0.05 ? 'flat' : (state.deltaPct > 0 ? 'good' : 'bad')}`}>
                     {Math.abs(state.deltaPct) < 0.05

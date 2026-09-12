@@ -125,6 +125,12 @@
 .ck-line.off { opacity: 0.45; background: transparent; }
 .ck-line-v { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .ck-line-sub { font-size: 10.5px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.ck-line-cmp { cursor: default; border-style: dashed; border-color: var(--border-subtle); }
+.ck-line-sel {
+  max-width: 118px; padding: 0; border: none; background: none; cursor: pointer;
+  color: var(--text-secondary); font-size: 11px; font-weight: 600; font-family: inherit;
+}
+.ck-line-sel:hover { color: var(--text-primary); }
 .ck-delta {
   padding: 6px 11px; border-radius: 5px; font-size: 11px; font-weight: 700;
   border: 1px solid var(--border-subtle); color: var(--text-secondary); background: var(--bg-surface-2);
@@ -227,6 +233,28 @@
 .ck-radar-live.on { color: var(--green); border-color: rgba(16, 185, 129, 0.3); background: rgba(16, 185, 129, 0.08); }
 .ck-radar-strategy, .ck-radar-updated { padding: 0 7px 6px; font-size: 10.5px; color: var(--text-muted); }
 .ck-radar-strategy a { color: var(--accent-primary); }
+/* корзины портфеля в боковой колонке */
+.ck-basket-note { padding: 0 7px 8px; font-size: 10.5px; line-height: 1.55; color: var(--text-muted); }
+.ck-basket-note a { color: var(--accent-primary); }
+.ck-basket-list { display: flex; flex-direction: column; gap: 3px; }
+.ck-basket { display: flex; align-items: center; gap: 6px; padding: 6px 7px; border-radius: var(--radius-xs); background: var(--bg-surface-2); }
+.ck-basket-main { flex: 1; min-width: 0; }
+.ck-basket-name { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ck-basket-sub { font-size: 10.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.ck-basket-drift { color: var(--gold); }
+.ck-basket-pnl { font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; flex: none; }
+.ck-basket-warn {
+  margin: 8px 0 0; padding: 8px 10px; border-radius: var(--radius-xs); font-size: 10.5px; line-height: 1.5;
+  background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3); color: var(--gold);
+}
+.ck-basket-add { display: flex; gap: 5px; align-items: center; margin-top: 9px; flex-wrap: wrap; }
+.ck-basket-sel, .ck-basket-pct {
+  padding: 4px 6px; border-radius: 5px; border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-2); color: var(--text-primary); font-size: 11px; font-family: inherit;
+}
+.ck-basket-sel { flex: 1; min-width: 0; cursor: pointer; }
+.ck-basket-pct { width: 62px; }
+
 .ck-radar-chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 7px 7px; }
 .ck-radar-chip {
   display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 3px 9px;
