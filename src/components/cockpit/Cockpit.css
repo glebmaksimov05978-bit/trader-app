@@ -126,11 +126,7 @@
 .ck-line-v { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .ck-line-sub { font-size: 10.5px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .ck-line-cmp { cursor: default; border-style: dashed; border-color: var(--border-subtle); }
-.ck-line-sel {
-  max-width: 118px; padding: 0; border: none; background: none; cursor: pointer;
-  color: var(--text-secondary); font-size: 11px; font-weight: 600; font-family: inherit;
-}
-.ck-line-sel:hover { color: var(--text-primary); }
+.ck-line-sel { max-width: 118px; font-weight: 600; }
 .ck-delta {
   padding: 6px 11px; border-radius: 5px; font-size: 11px; font-weight: 700;
   border: 1px solid var(--border-subtle); color: var(--text-secondary); background: var(--bg-surface-2);
@@ -248,29 +244,26 @@
   background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.3); color: var(--gold);
 }
 .ck-basket-add { display: flex; gap: 5px; align-items: center; margin-top: 9px; flex-wrap: wrap; }
-.ck-basket-sel, .ck-basket-pct {
+.ck-basket-pct {
   padding: 4px 6px; border-radius: 5px; border: 1px solid var(--border-subtle);
   background: var(--bg-surface-2); color: var(--text-primary); font-size: 11px; font-family: inherit;
+  width: 62px;
 }
-.ck-basket-sel { flex: 1; min-width: 0; cursor: pointer; }
-.ck-basket-pct { width: 62px; }
+.ck-basket-sel { flex: 1; min-width: 0; font-size: 11px; }
 
-.ck-radar-chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 7px 7px; }
-.ck-radar-chip {
-  display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 3px 9px;
-  border-radius: 999px; border: 1px solid var(--border-subtle); background: var(--bg-surface-2);
-  color: var(--text-secondary); font-size: 10.5px; font-family: inherit; cursor: pointer;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: var(--transition);
+/* Тёмный выпадающий список, общий для всех select'ов Кабины (было: разные select'ы
+   рендерились браузером в системном светлом виде, выбивались из тёмной темы приложения —
+   реальная жалоба со скриншотом). background-color/color на <option> Chrome/Edge на
+   Windows учитывают, так что и открытый список остаётся тёмным, не только сама плашка. */
+.ck-select-dark {
+  appearance: none; -webkit-appearance: none;
+  padding: 2px 20px 2px 8px; border-radius: 5px; border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239ca3af' stroke-width='1.5'/%3E%3C/svg%3E") no-repeat right 6px center;
+  color: var(--text-primary); font-size: 10.5px; font-family: inherit; cursor: pointer;
 }
-.ck-radar-chip:hover { color: var(--text-primary); }
-.ck-radar-chip.on { color: var(--text-primary); border-color: var(--accent-primary); background: rgba(79, 70, 229, 0.12); }
-.ck-radar-chip span { font-weight: 700; font-variant-numeric: tabular-nums; opacity: 0.65; }
-.ck-radar-strat-sel {
-  flex: none; max-width: 84px; margin-right: 2px; padding: 2px 4px;
-  border-radius: 4px; border: 1px solid var(--border-subtle); background: var(--bg-surface-2);
-  color: var(--text-muted); font-size: 10px; font-family: inherit; cursor: pointer;
-}
-.ck-radar-strat-sel:hover { color: var(--text-primary); border-color: var(--accent-primary); }
+.ck-select-dark:hover { border-color: var(--accent-primary); }
+.ck-select-dark option { background: var(--bg-surface-2); color: var(--text-primary); }
+.ck-radar-filter-sel { margin-left: 6px; }
 .ck-radar-list { display: flex; flex-direction: column; gap: 3px; max-height: 420px; overflow-y: auto; }
 .ck-radar-empty { padding: 10px 7px; font-size: 11.5px; color: var(--text-muted); line-height: 1.5; }
 .ck-radar-row {

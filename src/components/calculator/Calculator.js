@@ -91,7 +91,17 @@ export default function Calculator() {
   // they manually clicked MOEX. Default to whichever source actually works without
   // extra clicks — MOEX only when there's no token to lose out on, Т-Инвестиции
   // otherwise (still switchable by hand; an explicit past choice in the draft wins).
-  const [priceSource, setPriceSource] = useState(draft?.priceSource || (userProfile?.tinkoffToken ? 'tinkoff' : 'moex')); // 'tinkoff' | 'moex'
+  // Переход из Радара (?ticker=...) всегда открывается на MOEX, даже если в черновике
+  // сохранён «Т-Инвестиции» с настоящим токеном. Причина — гонка состояний: автозагрузка
+  // ниже жмёт «Загрузить» сама, через мгновение после монтирования, а объект tapi (клиент
+  // Т-Инвестиций) создаётся отдельным эффектом и может ещё не успеть собраться — трейдер
+  // видел «Введите API-токен» на тикере из радара, хотя токен в Настройках был (реальная
+  // жалоба). Смотреть график — не то же самое, что готовить реальную заявку: для этого
+  // хватает бесплатного MOEX без гонки, а источник всегда можно переключить вручную.
+  const autoLoadFromRadar = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('ticker');
+  const [priceSource, setPriceSource] = useState(
+    autoLoadFromRadar ? 'moex' : (draft?.priceSource || (userProfile?.tinkoffToken ? 'tinkoff' : 'moex')),
+  ); // 'tinkoff' | 'moex'
   const [orderType, setOrderType] = useState(draft?.orderType || 'market'); // 'market' | 'limit'
   const [manualContracts, setManualContracts] = useState(draft?.manualContracts || '');
   const [journalAnim, setJournalAnim] = useState(false);

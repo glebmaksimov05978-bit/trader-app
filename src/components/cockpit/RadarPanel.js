@@ -13,7 +13,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { useRadarLive } from '../../context/RadarLiveContext';
-import { getRadarItems, addRadarItem, deleteRadarItem, updateRadarItem } from '../../services/radar';
+import { getRadarItems, addRadarItem, deleteRadarItem } from '../../services/radar';
 import { getUserTrades } from '../../services/trades';
 import { getActiveStrategy, getStrategies } from '../../services/analytics/strategy';
 import { catalogEntry } from '../../services/marketData/instrumentCatalog';
@@ -90,20 +90,6 @@ export default function RadarPanel() {
     }
   };
 
-  // Стратегию тикера раньше можно было задать только при добавлении: чтобы следить за ним
-  // другой стратегией, приходилось удалять и заводить заново. Меняем на месте — результат
-  // пересчитается на ближайшем опросе Live.
-  const handleStrategyChange = async (item, nextId) => {
-    const strategyId = nextId || null;
-    setItems((cur) => cur.map((i) => (i.id === item.id ? { ...i, strategyId } : i)));
-    try {
-      await updateRadarItem(item.id, { strategyId });
-    } catch {
-      toast.error('Не удалось сменить стратегию');
-      load();
-    }
-  };
-
   // Сколько тикеров реально смотрится каждой стратегией — переключатель должен показывать
   // не просто список стратегий, а где сейчас что-то отслеживается.
   const countFor = (id) => items.filter((i) => strategyOf(i)?.id === id).length;
@@ -119,34 +105,30 @@ export default function RadarPanel() {
         </button>
       )}
     >
-      {/* Переключатель «какая стратегия сейчас ищет вход». Радар и раньше умел смотреть
-          разные тикеры разными стратегиями, но увидеть это можно было только по мелкой
-          подписи на строке — теперь список фильтруется целиком, а стратегию тикера можно
-          сменить прямо здесь, не удаляя его. */}
-      {strategies.length > 1 && (
-        <div className="ck-radar-chips">
-          <button
-            className={`ck-radar-chip ${filterId === 'all' ? 'on' : ''}`}
-            onClick={() => setFilterId('all')}
+      {/* Переключатель «какая стратегия сейчас ищет вход». Раньше это был ряд кнопок,
+          по одной на каждую стратегию, — с несколькими стратегиями превращался в стену
+          мелких кнопок (реальная жалоба: «буйство стратегий»). Один выпадающий список
+          занимает одну строку и открывается тем же жестом, к которому все привыкли. */}
+      <div className="ck-radar-strategy">
+        Активная: <b>{filterId === 'all' ? 'Все' : (strategies.find((s) => s.id === filterId)?.name || 'Без названия')}</b>
+        {strategies.length > 1 && (
+          <select
+            className="ck-select-dark ck-radar-filter-sel"
+            value={filterId}
+            onChange={(e) => setFilterId(e.target.value)}
+            title="Показать тикеры конкретной стратегии"
           >
-            Все <span>{items.length}</span>
-          </button>
-          {strategies.map((s) => (
-            <button
-              key={s.id}
-              className={`ck-radar-chip ${filterId === s.id ? 'on' : ''}`}
-              onClick={() => setFilterId(s.id)}
-              title={s.name || 'Без названия'}
-            >
-              {s.name || 'Без названия'} <span>{countFor(s.id)}</span>
-            </button>
-          ))}
-        </div>
-      )}
+            <option value="all">Все ({items.length})</option>
+            {strategies.map((s) => (
+              <option key={s.id} value={s.id}>{s.name || 'Без названия'} ({countFor(s.id)})</option>
+            ))}
+          </select>
+        )}
+      </div>
       {/* По умолчанию новый тикер смотрится по активной стратегии профиля — но при
           добавлении можно выбрать другую именно для него (см. InstrumentPicker). */}
       <div className="ck-radar-strategy">
-        По умолчанию: <b>{strategy?.name || 'не выбрана'}</b>
+        По умолчанию для новых: <b>{strategy?.name || 'не выбрана'}</b>
         {' · '}<Link to="/settings">сменить</Link>
       </div>
       {radarUpdatedAt && (
@@ -191,19 +173,6 @@ export default function RadarPanel() {
                   </div>
                 </div>
               </button>
-              {strategies.length > 1 && (
-                <select
-                  className="ck-radar-strat-sel"
-                  value={it.strategyId || ''}
-                  onChange={(e) => handleStrategyChange(it, e.target.value)}
-                  title="Какой стратегией смотреть этот тикер"
-                >
-                  <option value="">По умолчанию</option>
-                  {strategies.map((s) => (
-                    <option key={s.id} value={s.id}>{s.name || 'Без названия'}</option>
-                  ))}
-                </select>
-              )}
               <button className="ck-radar-del" onClick={() => handleDelete(it)} title="Убрать из радара">✕</button>
             </div>
           );

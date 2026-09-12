@@ -51,6 +51,11 @@ function indexAtOrBefore(candles, date) {
 
 function ScorePanel({ title, hint, score, threshold, max, breakdown, reached, tone }) {
   const pct = Math.max(0, Math.min(100, ((score ?? 0) / max) * 100));
+  // Штраф «слишком рано» на свежей сделке может увести счёт в минус — это верно для
+  // сравнения с порогом (см. reached, который приходит уже посчитанным по сырому score),
+  // но «−1 из 4» крупным числом читается как поломка. В самом разборе ниже штраф всё равно
+  // виден отдельной строкой, так что смысл не теряется — просто заголовок не пугает.
+  const displayScore = score == null ? '—' : Math.max(0, score);
   return (
     <div className="ck-panel ck-score">
       <div className="ck-score-head">
@@ -59,7 +64,7 @@ function ScorePanel({ title, hint, score, threshold, max, breakdown, reached, to
           <div className="ck-hint">{hint}</div>
         </div>
         <div className={`ck-score-num ${reached ? tone : ''}`}>
-          {score ?? '—'}<small>/{threshold}</small>
+          {displayScore}<small>/{threshold}</small>
         </div>
       </div>
       <div className="ck-gauge">
@@ -631,7 +636,7 @@ export default function Cockpit() {
 
             <div className="ck-basket-add">
               <select
-                className="ck-basket-sel"
+                className="ck-select-dark ck-basket-sel"
                 value={newBasketId}
                 onChange={(e) => setNewBasketId(e.target.value)}
               >
@@ -713,7 +718,7 @@ export default function Cockpit() {
                 {strategies.length > 1 && (
                   <div className="ck-line ck-line-cmp">
                     <select
-                      className="ck-line-sel"
+                      className="ck-select-dark ck-line-sel"
                       value={compareId}
                       onChange={(e) => setCompareId(e.target.value)}
                       title="Посмотреть, как эту сделку вела бы другая стратегия"
@@ -794,8 +799,11 @@ export default function Cockpit() {
                 <div className="ck-verdict-body">
                   {alerts.length
                     ? alerts[0].body
-                    : `Профит-система ${a?.now?.profitScore ?? '—'} из ${exitRules.profitCaptureThreshold ?? 4}`
-                      + `, лосс-система ${a?.now?.lossScore ?? '—'} из ${exitRules.lossScoreThreshold ?? 2}.`}
+                    // Счёт может уйти в минус (штраф «слишком рано» на свежей сделке весит
+                    // −1 сам по себе) — это верно для сравнения с порогом, но «−1 из 4» на
+                    // экране читается как поломка, а не как «рано, есть штраф». Показываем 0.
+                    : `Профит-система ${Math.max(0, a?.now?.profitScore ?? 0)} из ${exitRules.profitCaptureThreshold ?? 4}`
+                      + `, лосс-система ${a?.now?.lossScore == null ? '—' : Math.max(0, a.now.lossScore)} из ${exitRules.lossScoreThreshold ?? 2}.`}
                 </div>
               </div>
               {(() => {
