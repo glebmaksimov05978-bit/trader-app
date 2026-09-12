@@ -237,7 +237,12 @@ async function main() {
     await applyPendingDecisions(db, uid, runState);
 
     const snap = await db.collection('trades')
-      .where('userId', '==', uid)
+      // Поле называется `uid` — так его пишет addTrade и так же читает getUserTrades
+      // (src/services/trades.js). Здесь с самого первого дня стояло `userId`, которого в
+      // базе нет вообще: запрос молча возвращал ноль документов, робот каждые 15 минут
+      // писал в лог «открытых сделок: 0» и засыпал. Уведомления не приходили НИ РАЗУ за
+      // всё время, и выглядело это как «робот выключен», а не как ошибка.
+      .where('uid', '==', uid)
       .where('status', 'in', ['open', 'partial'])
       .get();
     console.log(`[${uid}] открытых сделок: ${snap.size}`);
