@@ -12,7 +12,7 @@ import { computeMarketContextAtEntry } from '../../services/analytics/marketCont
 import { getActiveStrategy } from '../../services/analytics/strategy';
 import { commissionRateFor, DEFAULT_TARIFF } from '../../services/analytics/commission';
 import { applyTradeClose, computeClosePnl } from '../../services/tradeClose';
-import { isFuturesCode, isCurrencyCode } from '../../services/import/instrumentResolver';
+import { guessInstrumentType } from '../../services/import/instrumentResolver';
 import { addRadarItem, getRadarItems, deleteRadarItem } from '../../services/radar';
 import { useRadarLive } from '../../context/RadarLiveContext';
 import TechnicalAnalysisBlock from '../shared/TechnicalAnalysisBlock';
@@ -67,11 +67,6 @@ export default function Journal() {
   // Once the trader manually picks a type, stop overriding it as they keep typing.
   const [radarTypeTouched, setRadarTypeTouched] = useState(false);
 
-  const guessInstrumentType = (ticker) => {
-    if (isCurrencyCode(ticker)) return 'currency';
-    if (isFuturesCode(ticker)) return 'future';
-    return 'stock';
-  };
   const [confirmDeleteRadar, setConfirmDeleteRadar] = useState(null);
 
   const deposit = userProfile?.depositSize || 100000;

@@ -24,6 +24,7 @@
     "test:live": "node scripts/livePositionTests.mjs",
     "test:close": "node scripts/tradeCloseTests.mjs",
     "test:exits": "node scripts/exitPricesTests.mjs",
+    "test:commission": "node scripts/commissionTests.mjs",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {

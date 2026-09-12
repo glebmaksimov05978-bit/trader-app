@@ -15,6 +15,7 @@ import { fetchActiveFutureCard, fetchMoexSecurityInfo } from '../../services/mar
 import { evaluateStrategy, getActiveStrategy, getStrategies } from '../../services/analytics/strategy';
 import { computeBaskets, capitalForStrategy, getPortfolio } from '../../services/analytics/portfolio';
 import { commissionRateFor, DEFAULT_TARIFF, TARIFFS } from '../../services/analytics/commission';
+import { guessInstrumentType } from '../../services/import/instrumentResolver';
 import { fetchOrderConfig } from '../../services/broker';
 import OrderModal from './OrderModal';
 import { computeStopPrice, computeTakePrice, exitTypeLabel } from '../../services/analytics/exitRules';
@@ -289,6 +290,21 @@ export default function Calculator() {
       ticker: upper,
       ...(stillSameTicker ? {} : { entryPrice: '', stopLoss: '', takeProfit: '' }),
     }));
+    // Тип инструмента определяем по самому коду тикера, а не оставляем на переключателе.
+    // Переключатель по умолчанию стоит на «Фьючерс», и у акции (реальный случай — SVCB)
+    // комиссия считалась по фьючерсной ставке тарифа: 0.04% вместо 0.05% на «Трейдере».
+    // Этот же неверный тип потом сохранялся в сделку и жил в ней дальше.
+    //
+    // Перебить осознанный выбор трейдера это не может: кнопки «Фьючерс / Акция» стирают
+    // тикер целиком (см. их onClick ниже), так что после ручного переключения тикер в
+    // любом случае набирается заново. Валюту не трогаем — у переключателя нет такой
+    // кнопки, и молча уводить интерфейс в состояние, которого он не умеет показывать,
+    // хуже, чем оставить как есть.
+    if (!upper) return;
+    const detected = guessInstrumentType(upper);
+    if ((detected === 'future' || detected === 'stock') && detected !== instrumentType) {
+      setInstrumentType(detected);
+    }
   };
 
   useEffect(() => {
