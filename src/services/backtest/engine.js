@@ -73,14 +73,18 @@ function sizePosition(entryPrice, stopPrice, riskSizing) {
 // cycles on bars that can't possibly qualify.
 const DEFAULT_WARMUP_BARS = 30;
 
-function buildCtx(candles, atDate, direction, timeframeMinutes) {
+// Экспортируются ради робота бумажных сделок: он должен открывать позицию ПО ТЕМ ЖЕ
+// правилам, что и бэктест, иначе бумажная статистика будет отвечать на другой вопрос, чем
+// исследование, и сравнивать их станет нельзя. Собственная копия этих трёх строк на
+// стороне робота неизбежно разъехалась бы с этой при первой же правке здесь.
+export function buildCtx(candles, atDate, direction, timeframeMinutes) {
   const indicators = computeIndicatorsAtEntry(candles, atDate);
   const patterns = computePatternsAtEntry(candles, atDate, { timeframeMinutes });
   const marketContext = computeMarketContextAtEntry(candles, atDate);
   return { direction, indicators, patterns, marketContext };
 }
 
-function readinessPercent(strategy, ctx) {
+export function readinessPercent(strategy, ctx) {
   const { total, passed } = evaluateStrategy(strategy, ctx);
   return { total, passed, pct: total > 0 ? (passed / total) * 100 : 0 };
 }
