@@ -64,14 +64,38 @@ if (svcb.rate === gazpf.rate) {
 check('Акция на «Инвесторе» — 0.3%', commissionRateFor('investor', 'stock').rate, 0.003);
 check('Акция на «Премиуме» — 0.04%', commissionRateFor('premium', 'stock').rate, 0.0004);
 
-// --- неподтверждённые ставки честно помечаются прикидкой ---
-const premiumFuture = commissionRateFor('premium', 'future');
-check('Фьючерс на «Премиуме» — ставка не подтверждена, помечена прикидкой', premiumFuture.approx, true);
+// --- валюта: подтверждена официальным тарифом, прикидкой больше не помечается ---
+const traderCurrency = commissionRateFor('trader', 'currency');
+check('Валюта на «Трейдере» — 0.5%', traderCurrency.rate, 0.005);
+check('Валюта на «Трейдере» — ставка подтверждённая, не прикидка', traderCurrency.approx, false);
+check('Валюта на «Премиуме» — 0.4%', commissionRateFor('premium', 'currency').rate, 0.004);
 
-// --- фьючерсы на «Трейдере» несут пояснение про лестницу оборота ---
+// --- лестница по обороту за день: «Трейдер» ---
+const ladder = (turnover) => commissionRateFor('trader', 'future', { dayTurnoverRub: turnover }).rate;
+check('Трейдер, оборот не указан — верхняя ступень 0.040%', commissionRateFor('trader', 'future').rate, 0.0004);
+check('Трейдер, оборот 1 млн — 0.040%', ladder(1_000_000), 0.0004);
+check('Трейдер, ровно 5 млн (включительно) — ещё 0.040%', ladder(5_000_000), 0.0004);
+check('Трейдер, 5 млн + рубль — уже 0.03%', ladder(5_000_001), 0.0003);
+check('Трейдер, ровно 10 млн (включительно) — 0.03%', ladder(10_000_000), 0.0003);
+check('Трейдер, свыше 10 млн — 0.025%', ladder(20_000_000), 0.00025);
+
+// --- лестница по обороту за день: «Премиум», пороги другие ---
+const premLadder = (t) => commissionRateFor('premium', 'future', { dayTurnoverRub: t }).rate;
+check('Премиум, 1 млн — 0.025%', premLadder(1_000_000), 0.00025);
+check('Премиум, ровно 12 млн — 0.025%', premLadder(12_000_000), 0.00025);
+check('Премиум, 15 млн — 0.02%', premLadder(15_000_000), 0.0002);
+check('Премиум, свыше 17 млн — 0.015%', premLadder(20_000_000), 0.00015);
+check('Премиум, фьючерсы — ставка подтверждена, не прикидка',
+  commissionRateFor('premium', 'future').approx, false);
+
+// --- фьючерсы из «Дополнительного списка»: фиксированная ставка, оборот не важен ---
+const extra = commissionRateFor('trader', 'future', { extraList: true, dayTurnoverRub: 50_000_000 });
+check('Доп. список на «Трейдере» — 0.08% независимо от оборота', extra.rate, 0.0008);
+
+// --- пояснение про лестницу остаётся, когда оборот неизвестен ---
 const traderFuture = commissionRateFor('trader', 'future');
 check(
-  'Фьючерс на «Трейдере» — есть пояснение про лестницу оборота',
+  'Фьючерс на «Трейдере» без оборота — есть пояснение про лестницу',
   typeof traderFuture.note === 'string' && traderFuture.note.includes('оборот'),
   true,
 );
