@@ -196,10 +196,14 @@ export function computeLiveState({
     // всё равно есть, просто нулевой на старте. Раньше в этот момент показывался прочерк
     // вместо «0 из 4» (реальная жалоба: «цифры нет, как будто тире»).
     now: trace.length ? trace[trace.length - 1] : {
-      index: entryIndex, date: candles[entryIndex].date, close: entryPrice, returnPct: 0,
+      index: entryIndex, date: candles[entryIndex].date, close: last.close, returnPct: currentPct,
       peakPct: 0,
-      profitScore: computeProfitCaptureScore(position, candles[entryIndex], candles, entryIndex, 0),
-      lossScore: null,
+      profitScore: computeProfitCaptureScore(position, candles[entryIndex], candles, entryIndex, currentPct),
+      // Как и в основном цикле выше: лосс-система вообще не считается, пока сделка не в
+      // минусе — прочерк здесь означает "пока не актуально", а не "не посчитали". Но если
+      // сделка ушла в минус ПРЯМО на баре входа (проскальзывание), считаем и здесь, а не
+      // только в основном цикле — тот же баг с прочерком, только для лосс-системы.
+      lossScore: currentPct < 0 ? computeLossScore(position, candles[entryIndex], candles, entryIndex, currentPct) : null,
       remaining: position.remaining,
     },
   };

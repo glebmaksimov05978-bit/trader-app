@@ -25,16 +25,23 @@ import toast from 'react-hot-toast';
 import './Calculator.css';
 
 // MOEX API — бесплатные цены без токена
+// Вне часов торгов на MOEX блок marketdata приходит пустым (LAST=null) — это НЕ значит,
+// что инструмента не существует, просто сейчас нет живой котировки. Раньше это читалось
+// как «инструмент не найден» (реальная жалоба: «тикер же есть, почему недоступен») — на
+// самом деле просто нерабочее время. securities.PREVPRICE — цена последнего закрытия,
+// она отдаётся всегда, независимо от сессии, поэтому запрашиваем оба блока сразу.
 async function getMoexPrice(ticker, type) {
   try {
     const board = type === 'future' ? 'SPBFUT' : 'TQBR';
     const market = type === 'future' ? 'forts' : 'shares';
     const engine = type === 'future' ? 'futures' : 'stock';
-    const url = `https://iss.moex.com/iss/engines/${engine}/markets/${market}/boards/${board}/securities/${ticker}.json?iss.meta=off&iss.only=marketdata&marketdata.columns=LAST,LASTTOPREVPRICE`;
+    const url = `https://iss.moex.com/iss/engines/${engine}/markets/${market}/boards/${board}/securities/${ticker}.json?iss.meta=off&iss.only=marketdata,securities&marketdata.columns=LAST,LASTTOPREVPRICE&securities.columns=PREVPRICE`;
     const res = await fetch(url);
     const data = await res.json();
-    const price = data?.marketdata?.data?.[0]?.[0];
-    return price ? parseFloat(price) : null;
+    const live = data?.marketdata?.data?.[0]?.[0];
+    if (live) return { price: parseFloat(live), stale: false };
+    const prev = data?.securities?.data?.[0]?.[0];
+    return prev ? { price: parseFloat(prev), stale: true } : null;
   } catch { return null; }
 }
 
@@ -400,8 +407,9 @@ export default function Calculator() {
       if (priceSource === 'moex') {
         // MOEX — цена, имя/экспирация контракта, а для фьючерсов ещё и ГО/шаг цены/лот
         // с бесплатного ISS API (если контракт сейчас торгуется — иначе вручную).
-        const price = await getMoexPrice(ticker, instrumentType);
-        if (!price) { toast.error('Инструмент не найден на MOEX'); return; }
+        const moex = await getMoexPrice(ticker, instrumentType);
+        if (!moex) { toast.error('Инструмент не найден на MOEX'); return; }
+        const { price, stale } = moex;
         fetchMoexSecurityInfo(ticker).then((info) => { if (info) setInstrumentInfo(info); });
         if (orderType === 'market') set('entryPrice', String(price));
         // Market orders always get a fresh price above; limit orders keep whatever the
@@ -421,12 +429,18 @@ export default function Calculator() {
               minStepAmount: fmtNum(card.minPriceIncrementAmount) || '',
               initialMargin: fmtNum(card.initialMargin) || '',
             }));
-            toast.success(`${ticker}: ${price} ₽, ГО и шаг цены подтянуты с MOEX (задержка 15 мин)`);
+            toast.success(stale
+              ? `${ticker}: ${price} ₽ — рынок сейчас закрыт, это цена последнего закрытия. ГО и шаг цены подтянуты с MOEX`
+              : `${ticker}: ${price} ₽, ГО и шаг цены подтянуты с MOEX (задержка 15 мин)`);
           } else {
-            toast.success(`${ticker}: ${price} ₽ (MOEX, задержка 15 мин). ГО/шаг цены не найдены — введите вручную`);
+            toast.success(stale
+              ? `${ticker}: ${price} ₽ — рынок сейчас закрыт, это цена последнего закрытия. ГО/шаг цены не найдены — введите вручную`
+              : `${ticker}: ${price} ₽ (MOEX, задержка 15 мин). ГО/шаг цены не найдены — введите вручную`);
           }
         } else {
-          toast.success(`${ticker}: ${price} ₽ (MOEX, задержка 15 мин)`);
+          toast.success(stale
+            ? `${ticker}: ${price} ₽ — рынок сейчас закрыт, это цена последнего закрытия`
+            : `${ticker}: ${price} ₽ (MOEX, задержка 15 мин)`);
         }
         loadedTickerRef.current = ticker;
         setResolvedTicker(ticker);
