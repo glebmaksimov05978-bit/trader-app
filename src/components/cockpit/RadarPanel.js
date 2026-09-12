@@ -105,26 +105,26 @@ export default function RadarPanel() {
         </button>
       )}
     >
-      {/* Переключатель «какая стратегия сейчас ищет вход». Раньше это был ряд кнопок,
-          по одной на каждую стратегию, — с несколькими стратегиями превращался в стену
-          мелких кнопок (реальная жалоба: «буйство стратегий»). Один выпадающий список
-          занимает одну строку и открывается тем же жестом, к которому все привыкли. */}
-      <div className="ck-radar-strategy">
-        Активная: <b>{filterId === 'all' ? 'Все' : (strategies.find((s) => s.id === filterId)?.name || 'Без названия')}</b>
-        {strategies.length > 1 && (
+      {/* Переключатель, КАКИЕ тикеры сейчас показывать в списке — не путать с «активной
+          стратегией» профиля ниже (та ровно одна и используется для новых сделок).
+          «Активная: Все» звучало так, будто у профиля вдруг стало много активных
+          стратегий сразу, — реальная жалоба «так не бывает». Это просто фильтр вида. */}
+      {strategies.length > 1 && (
+        <div className="ck-radar-strategy">
+          Показывать:{' '}
           <select
             className="ck-select-dark ck-radar-filter-sel"
             value={filterId}
             onChange={(e) => setFilterId(e.target.value)}
             title="Показать тикеры конкретной стратегии"
           >
-            <option value="all">Все ({items.length})</option>
+            <option value="all">Все инструменты ({items.length})</option>
             {strategies.map((s) => (
               <option key={s.id} value={s.id}>{s.name || 'Без названия'} ({countFor(s.id)})</option>
             ))}
           </select>
-        )}
-      </div>
+        </div>
+      )}
       {/* По умолчанию новый тикер смотрится по активной стратегии профиля — но при
           добавлении можно выбрать другую именно для него (см. InstrumentPicker). */}
       <div className="ck-radar-strategy">
