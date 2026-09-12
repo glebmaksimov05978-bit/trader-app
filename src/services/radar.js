@@ -4,7 +4,7 @@
 // forming, before it becomes a real trade. Deliberately separate from `trades`: a radar
 // item is not a position, has no entry price yet, and its technical-analysis snapshot is
 // live (recomputed on demand for "now"), unlike a trade's frozen "as of entry" snapshot.
-import { collection, addDoc, deleteDoc, doc, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
+import { collection, addDoc, deleteDoc, updateDoc, doc, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
 
 const COLL = 'radarItems';
@@ -52,4 +52,13 @@ export async function getRadarItems(uid) {
 
 export async function deleteRadarItem(id) {
   return deleteDoc(doc(db, COLL, id));
+}
+
+/**
+ * Поменять поля уже добавленного тикера — сейчас это только `strategyId`. Раньше
+ * стратегию можно было задать ровно один раз, при добавлении: чтобы следить за тем же
+ * тикером другой стратегией, приходилось удалять его и заводить заново.
+ */
+export async function updateRadarItem(id, patch) {
+  return updateDoc(doc(db, COLL, id), patch);
 }
