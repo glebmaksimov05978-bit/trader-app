@@ -26,6 +26,7 @@
     "test:exits": "node scripts/exitPricesTests.mjs",
     "test:commission": "node scripts/commissionTests.mjs",
     "test:schedule": "node scripts/scheduleTests.mjs",
+    "paper:dry": "node scripts/paper/runPaperTrades.mjs --dry --force",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {
