@@ -27,6 +27,7 @@
     "test:commission": "node scripts/commissionTests.mjs",
     "test:schedule": "node scripts/scheduleTests.mjs",
     "paper:dry": "node scripts/paper/runPaperTrades.mjs --dry --force",
+    "test:paper": "node scripts/paper/paperManageTests.mjs",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {

@@ -77,3 +77,22 @@ jobs:
           else
             node scripts/paper/runPaperTrades.mjs
           fi
+
+      # Третий робот: ведёт уже открытые бумажные сделки и закрывает их сам — по стопу и
+      # цели там, где они есть, и следящим выходом там, где стратегия сознательно торгует
+      # без стопа. Идёт ПОСЛЕ открытия: сделка, открытая на этом же проходе, получит первую
+      # проверку на следующем, когда появится новый бар — раньше проверять нечего.
+      #
+      # FORCE_CHECK здесь не нужен: у ведения нет привязки к часам сессии, его собственное
+      # условие — «появился ли новый бар», и вне торгов оно само ничего не делает.
+      - name: Ведение бумажных сделок
+        continue-on-error: true
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ALERT_UIDS: ${{ secrets.ALERT_UIDS }}
+        run: |
+          if [ "${{ github.event.inputs.paper_dry }}" = "true" ]; then
+            node scripts/paper/managePaperTrades.mjs --dry
+          else
+            node scripts/paper/managePaperTrades.mjs
+          fi
