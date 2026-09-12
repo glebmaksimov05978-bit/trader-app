@@ -42,5 +42,19 @@ service cloud.firestore {
       allow create: if request.auth != null &&
         request.auth.uid == request.resource.data.uid;
     }
+
+    // Бумажные сделки: их открывает и ведёт фоновый робот по радару, реальных денег они
+    // не касаются. ОТДЕЛЬНАЯ коллекция — это и есть гарантия, что они физически не могут
+    // попасть в Журнал, депозит, отчёт за месяц и корзины портфеля: все они читают только
+    // trades и про эту коллекцию не знают.
+    //
+    // Робот ходит через firebase-admin и правила обходит по определению — эти правила
+    // защищают браузер: один пользователь не должен видеть чужие бумажные сделки.
+    match /paperTrades/{tradeId} {
+      allow read, write: if request.auth != null &&
+        request.auth.uid == resource.data.uid;
+      allow create: if request.auth != null &&
+        request.auth.uid == request.resource.data.uid;
+    }
   }
 }

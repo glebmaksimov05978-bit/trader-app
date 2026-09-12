@@ -13,6 +13,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, resolveOpenedAt } from '../../services/trades';
+import { getOpenPaperTrades } from '../../services/paperTrades';
 import { fetchDailyCandles, availableTimeframes } from '../../services/marketData/candles';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { getActiveStrategy, getStrategies } from '../../services/analytics/strategy';
@@ -111,6 +112,9 @@ export default function Cockpit() {
   // это в первую очередь уже закрытые сделки. Открытые лежат в `trades` отдельно, потому
   // что вкладка ведёт именно их.
   const [allTrades, setAllTrades] = useState([]);
+  // Бумажные сделки лежат в своей коллекции и в статистику не попадают — см. шапку
+  // services/paperTrades.js. Здесь они нужны только чтобы их можно было вести и смотреть.
+  const [paperTrades, setPaperTrades] = useState([]);
   const [activeId, setActiveId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [state, setState] = useState(null);      // { actual, shadow, deltaPct }
@@ -190,7 +194,19 @@ export default function Cockpit() {
     })();
   }, [user]);
 
-  const trade = useMemo(() => trades.find((t) => t.id === activeId) || null, [trades, activeId]);
+  // Грузятся отдельно от настоящих: если чтение упадёт (например, коллекции в базе ещё
+  // нет), вкладка должна продолжить вести реальные позиции, а не остаться пустой.
+  useEffect(() => {
+    if (!user) { setPaperTrades([]); return; }
+    getOpenPaperTrades(user.uid).then(setPaperTrades).catch(() => setPaperTrades([]));
+  }, [user]);
+
+  // Активной может быть и бумажная сделка: движок ведёт её тем же кодом, что и настоящую,
+  // — в этом и смысл, иначе сравнивать было бы не с чем.
+  const trade = useMemo(
+    () => trades.find((t) => t.id === activeId) || paperTrades.find((t) => t.id === activeId) || null,
+    [trades, paperTrades, activeId],
+  );
   const timeframe = tfOverride || trade?.entryTimeframe || userProfile?.preferredTimeframe || 'H1';
 
   // --- состояние позиции по данным движка ---
@@ -549,6 +565,40 @@ export default function Cockpit() {
                   </div>
                 );
               })}
+            </div>
+          </CollapsibleSection>
+
+          {/* Бумажные сделки — отдельной группой, а не вперемешку с настоящими. Их
+              открывает и закрывает робот, поэтому кнопки «Закрыть» здесь нет: закрыть
+              бумажную сделку руками означало бы вмешаться в тот самый эксперимент, ради
+              которого она и заведена. */}
+          <CollapsibleSection title="Бумажные сделки" badge={paperTrades.length || null} defaultOpen={false}>
+            <div className="ck-basket-note">
+              Их ведёт робот по списку радара: реальных денег не касаются и в Журнал,
+              депозит и отчёты не попадают. Нужны, чтобы увидеть, как стратегия торгует
+              сама, без твоего вмешательства.
+            </div>
+            <div className="ck-pos-list">
+              {paperTrades.map((t) => (
+                <div key={t.id} className={`ck-pos ${t.id === activeId ? 'on' : ''}`}>
+                  <button className="ck-pos-main" onClick={() => setActiveId(t.id)}>
+                    <div className="ck-pos-row">
+                      <span className="ck-ticker">{t.ticker}</span>
+                      <span className={`ck-dir ${t.direction}`}>
+                        {t.direction === 'short' ? 'ШОРТ' : 'ЛОНГ'}
+                      </span>
+                    </div>
+                    <div className="ck-pos-sub">{fmtNum(parseFloat(t.volume) || 0, 0)} конт. · бумажная</div>
+                    <div className="ck-pos-sub">вход {fmtNum(t.entryPrice)}</div>
+                  </button>
+                </div>
+              ))}
+              {!paperTrades.length && (
+                <div className="ck-radar-empty">
+                  Пока ни одной. Робот, который их открывает, ещё не запущен — это
+                  следующий шаг.
+                </div>
+              )}
             </div>
           </CollapsibleSection>
 
