@@ -33,6 +33,12 @@ export const DEFAULT_ALERT_PREFS = {
   sessionMorning: true,
   sessionMain: true,
   sessionEvening: true,
+  // Бумажные сделки: открывать ли сигнал, на который по правилам риска не хватает денег.
+  // По умолчанию выключено — робот ведёт себя как настоящая торговля и такой сигнал
+  // пропускает. Включённый режим нужен для НАБЛЮДЕНИЯ: бумажная сделка денег не тратит,
+  // и трейдеру важно видеть, сработала бы стратегия, даже если войти в неё он сейчас всё
+  // равно не смог бы (дорогой инструмент + широкий стоп + небольшой депозит).
+  paperIgnoreRiskSizing: false,
 };
 
 // Здесь раньше была функция isTradingHours: будни, 10:00-18:40 МСК, одинаково для всех
@@ -50,6 +56,16 @@ export const DEFAULT_ALERT_PREFS = {
  * @param {object} prefs  - настройки пользователя, см. DEFAULT_ALERT_PREFS
  * @returns {Array<{type, key, title, body, severity}>}
  */
+// «За последние 1 бара» — реальная жалоба со скриншота. Русский счётный падеж одной
+// формой не зашьёшь: 1 бар, 2-4 бара, 5 и больше — баров.
+function barsPhrase(n) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return `последний ${n} бар`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `последние ${n} бара`;
+  return `последние ${n} баров`;
+}
+
 export function evaluateAlerts(state, trade, prefs = DEFAULT_ALERT_PREFS) {
   if (!state?.now || !state.position) return [];
   const p = state.position;
@@ -69,7 +85,7 @@ export function evaluateAlerts(state, trade, prefs = DEFAULT_ALERT_PREFS) {
   };
   const inMarket = Math.round(state.remaining * 100);
   const moveLine = state.momentum
-    ? `За последние ${state.momentum.bars} бара цена ${state.momentum.label} (${pct(state.momentum.changePct)}).`
+    ? `За ${barsPhrase(state.momentum.bars)} цена ${state.momentum.label} (${pct(state.momentum.changePct)}).`
     : '';
   const peakLine = state.peakPct > 0
     ? `Лучшее, что было по этой сделке: ${pct(state.peakPct)}, сейчас ${pct(now.returnPct)} — отдано ${state.givebackPct.toFixed(2)} пункта.`
@@ -102,7 +118,16 @@ export function evaluateAlerts(state, trade, prefs = DEFAULT_ALERT_PREFS) {
   }
 
   // Низкий near-bottom score = дна не видно, позиция продолжает ухудшаться.
-  if (prefs[ALERT_TYPES.LOSS_SIGNAL] && now.lossScore != null && now.lossScore <= lossThreshold) {
+  //
+  // Порог шума — тот же, которым сам движок отделяет настоящее движение против позиции от
+  // обычного колебания (engine.js: `-closeReturnPct >= position.trailMinPeakPct`). Без него
+  // тревожное «падение похоже не закончилось» приходило на убытке в −0.04%, да ещё и рядом
+  // со строкой «цена идёт в нашу сторону (+1.08%)» — реальная жалоба со скриншотом. Данные
+  // там не противоречили друг другу (сделка чуть в минусе, а последний бар отскочил вверх),
+  // но вместе это читалось как поломка. По сути это был крик волка на шуме: пока просадка
+  // не вышла за шумовую единицу, никакого «падения» ещё нет.
+  const lossBeyondNoise = p.trailMinPeakPct == null || -now.returnPct >= p.trailMinPeakPct;
+  if (prefs[ALERT_TYPES.LOSS_SIGNAL] && now.lossScore != null && now.lossScore <= lossThreshold && lossBeyondNoise) {
     out.push({
       type: ALERT_TYPES.LOSS_SIGNAL,
       key: `${trade.id}:${ALERT_TYPES.LOSS_SIGNAL}:${now.lossScore}`,

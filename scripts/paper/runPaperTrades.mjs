@@ -194,7 +194,19 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades }) {
     maxMarginPercent: parseFloat(profile.maxMarginPercent) || 30,
     instrumentType,
   });
-  if (!sizing || !(sizing.contracts > 0)) return { skipped: 'объём получился нулевым' };
+  // По правилам риска объём вполне может выйти нулевым: дорогой инструмент + широкий стоп
+  // + небольшой депозит. Для НАСТОЯЩЕЙ торговли это честный отказ — денег на такую позицию
+  // действительно нет, и округление вниз тут защита, а не придирка.
+  //
+  // Но бумажная сделка денег не тратит, а смысл её в наблюдении: трейдеру важно видеть,
+  // сработала бы стратегия вообще. Реальный случай — фьючерс на индекс при небольшом
+  // депозите вообще никогда не попадал в наблюдение, хотя условия по нему сходились.
+  // Галочка в Настройках → «Бумажные сделки» разрешает открыть такой сигнал условным
+  // объёмом в 1 контракт и пометить, что реально войти в него было бы нельзя.
+  const ignoreRiskSizing = profile.alertPrefs?.paperIgnoreRiskSizing === true;
+  const riskTooBig = !sizing || !(sizing.contracts > 0);
+  if (riskTooBig && !ignoreRiskSizing) return { skipped: 'объём получился нулевым' };
+  const volume = riskTooBig ? 1 : sizing.contracts;
 
   const paper = {
     ticker: item.ticker.toUpperCase(),
@@ -203,8 +215,8 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades }) {
     entryPrice,
     stopLoss: stopPrice,
     takeProfit: takePrice ?? null,
-    volume: sizing.contracts,
-    remainingVolume: sizing.contracts,
+    volume,
+    remainingVolume: volume,
     lot: specs.lot,
     minStep: specs.minStep,
     minStepAmount: specs.minStepAmount,
@@ -226,6 +238,11 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades }) {
     // выхода, а не по реальной цене стопа (её нет, stopLoss выше — null). Пометка нужна,
     // чтобы при разборе сделки было видно, откуда взялся объём, если стопа не видно.
     sizingFromTrailAdverse: stopPrice == null || undefined,
+    // Объём условный: по риску не набралось и одного контракта, сделка открыта только
+    // ради наблюдения. Реально войти в неё при текущем депозите было бы нельзя — это
+    // должно быть видно и в интерфейсе, и в уведомлении, чтобы результат такой сделки не
+    // принимали за достижимый.
+    riskTooBig: riskTooBig || undefined,
   };
 
   if (DRY) return { opened: paper, dry: true };
@@ -278,7 +295,8 @@ async function main() {
           console.log(
             `[${uid}] ${res.dry ? 'ОТКРЫЛ БЫ' : 'открыл'} ${o.ticker} ${o.direction} `
             + `${o.volume} по ${o.entryPrice} (стоп ${stopLabel}, цель ${o.takeProfit ?? '—'}, `
-            + `условия ${o.entryPassed}/${o.entryTotal})${o.sizingApprox ? ' [объём приблизительный]' : ''}`,
+            + `условия ${o.entryPassed}/${o.entryTotal})${o.sizingApprox ? ' [объём приблизительный]' : ''}`
+            + `${o.riskTooBig ? ' [денег на эту сделку не хватило бы — объём условный]' : ''}`,
           );
         } else {
           console.log(`[${uid}] ${item.ticker}: ${res.skipped}`);

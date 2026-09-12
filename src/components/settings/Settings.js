@@ -22,6 +22,7 @@ export default function Settings() {
     sessionMorning: true,
     sessionMain: true,
     sessionEvening: true,
+    paperIgnoreRiskSizing: false,
   });
   const [saving, setSaving] = useState(false);
   const [showToken, setShowToken] = useState(false);
@@ -41,6 +42,7 @@ export default function Settings() {
         sessionMorning: userProfile.alertPrefs?.sessionMorning !== false,
         sessionMain: userProfile.alertPrefs?.sessionMain !== false,
         sessionEvening: userProfile.alertPrefs?.sessionEvening !== false,
+        paperIgnoreRiskSizing: userProfile.alertPrefs?.paperIgnoreRiskSizing === true,
       }));
       // askExtra инициализируем только один раз
       if (askExtra === null) {
@@ -70,6 +72,7 @@ export default function Settings() {
           sessionMorning: form.sessionMorning,
           sessionMain: form.sessionMain,
           sessionEvening: form.sessionEvening,
+          paperIgnoreRiskSizing: form.paperIgnoreRiskSizing,
         },
       });
       toast.success('Настройки сохранены');
@@ -226,6 +229,46 @@ export default function Settings() {
               С 23 марта 2026 фьючерсы торгуются без остановок на клиринг в течение дня —
               клиринг один, с 23:50 до 00:30. В эти минуты торгов нет, последняя цена
               висит старая, поэтому робот в них ничего не считает и не шлёт.
+            </div>
+          </div>
+
+          <button className="btn btn-primary" style={{marginTop:16}} onClick={save} disabled={saving}>
+            {saving ? 'Сохранение…' : '💾 Сохранить'}
+          </button>
+        </div>
+
+        {/* Бумажные сделки ведёт робот, реальных денег они не касаются — поэтому здесь
+            можно позволить то, что для настоящей торговли было бы опасно. */}
+        <div className="card" style={{marginBottom:20}}>
+          <div className="section-title">
+            <div className="section-title-icon">📄</div>
+            Бумажные сделки
+          </div>
+          <p className="text-sm text-secondary" style={{marginBottom:16}}>
+            Виртуальные сделки, которые робот открывает сам по списку радара, чтобы было
+            видно, как стратегия торгует без вашего вмешательства. Денег не тратят и в
+            Журнал, депозит и отчёты не попадают.
+          </p>
+
+          <label className="flex items-center gap-2" style={{cursor:'pointer', marginBottom:12}}>
+            <input
+              type="checkbox"
+              checked={form.paperIgnoreRiskSizing === true}
+              onChange={e => set('paperIgnoreRiskSizing', e.target.checked)}
+            />
+            <span style={{fontWeight:600}}>Открывать даже те, на которые не хватает денег</span>
+          </label>
+
+          <div className="text-xs text-muted" style={{lineHeight:1.7}}>
+            Обычно робот пропускает сигнал, если по вашему проценту риска на него не
+            набирается даже одного контракта — так же, как это было бы в реальной торговле.
+            Из-за этого дорогие инструменты с широким стопом (например фьючерс на индекс
+            при небольшом депозите) вообще никогда не появятся в наблюдении.
+            <div style={{marginTop:8}}>
+              С включённой галочкой такой сигнал всё равно открывается — условным объёмом в
+              1 контракт, с пометкой, что реально войти в него вы бы сейчас не смогли.
+              На настоящие сделки в Калькуляторе это не влияет никак: там расчёт риска
+              остаётся обязательным.
             </div>
           </div>
 
