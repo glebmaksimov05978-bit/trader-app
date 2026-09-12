@@ -470,12 +470,41 @@ export function computeStopPrice(direction, entryPrice, exitRules, ctx) {
   return null;
 }
 
+// Зеркало usableStop для цели: в лонге цель ВЫШЕ входа, в шорте — НИЖЕ. Проверка нужна
+// ровно по той же причине, по которой она есть у стопа: тип «У уровня» берёт ближайший
+// уровень из разметки, и он может прийти не с той стороны от входа. У стопа это ловилось,
+// у цели — нет, и в шорт подставлялся тейк ВЫШЕ цены входа, то есть цель «заработать»
+// стояла там, где сделка на самом деле в убытке (реальная жалоба).
+function usableTake(price, direction, entryPrice) {
+  if (price == null) return false;
+  const distPct = (Math.abs(entryPrice - price) / entryPrice) * 100;
+  if (distPct < STRUCTURE_STOP_MIN_PCT) return false;
+  return direction === 'long' ? price > entryPrice : price < entryPrice;
+}
+
 export function computeTakePrice(direction, entryPrice, exitRules, ctx) {
-  return computeOne(direction, 'take', entryPrice, exitRules.takeType, {
+  const params = {
     pct: exitRules.takePct, atrMult: exitRules.takeAtrMult,
     levelSource: exitRules.takeLevelSource, tolerancePct: exitRules.takeLevelTolerancePct,
     levelFallbackPct: exitRules.takeLevelFallbackPct,
-  }, ctx);
+  };
+  // «Нет» — это осознанный выбор «цели не ставим» (выходим трейлингом), а не пропущенное
+  // значение. Та же защита, что у стопа: без неё запасная цепочка ниже молча вернула бы
+  // цель стратегии, которая её намеренно не использует.
+  if (exitRules.takeType === 'none') return null;
+  const price = computeOne(direction, 'take', entryPrice, exitRules.takeType, params, ctx);
+  if (usableTake(price, direction, entryPrice)) return price;
+  // Цель пришла не с той стороны (или не пришла вовсе) — та же запасная цепочка, что и у
+  // стопа: сначала собственный «запасной %» трейдера, потом ATR.
+  if (params.levelFallbackPct != null) {
+    const fallback = entryPrice * (1 + (direction === 'long' ? 1 : -1) * params.levelFallbackPct / 100);
+    if (usableTake(fallback, direction, entryPrice)) return fallback;
+  }
+  if (ctx?.atr != null) {
+    const fallback = entryPrice + (direction === 'long' ? 1 : -1) * ctx.atr * LEVEL_FALLBACK_TAKE_ATR_MULT;
+    if (usableTake(fallback, direction, entryPrice)) return fallback;
+  }
+  return null;
 }
 
 // --- Loss-side score ("дно близко или ещё падать?") ------------------------------------

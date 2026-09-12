@@ -7,6 +7,7 @@
 // from the same `fetchDailyCandles` used for indicators — this component doesn't know or
 // care whether it's MOEX or Tinkoff behind it.
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { createChart, CrosshairMode, CandlestickSeries, LineSeries, AreaSeries, HistogramSeries, BaselineSeries, createSeriesMarkers } from 'lightweight-charts';
 import { ema, bollingerSeries, rsi, macd } from '../../services/analytics/indicators';
 import { TIMEFRAMES } from '../../services/marketData/candles';
@@ -616,7 +617,7 @@ export default function CandleChart({
   const chartHeight = fullscreen ? '100%' : `${(height ?? 300) + rsiMacdPanes}px`;
   const visibleLayers = LAYER_DEFS.filter((l) => (!l.tradeOnly || isTrade) && (!l.overviewOnly || trades?.length));
 
-  return (
+  const content = (
     <div style={fullscreen ? { position:'fixed', inset:0, zIndex:9998, background:'var(--bg-surface)', padding:16, display:'flex', flexDirection:'column', overflow:'hidden' } : undefined}>
       <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:8, marginBottom:8, flexShrink:0}}>
         <div style={{fontSize:14, fontWeight:700, color:'var(--text-primary)'}}>{ticker}</div>
@@ -681,4 +682,12 @@ export default function CandleChart({
       </div>
     </div>
   );
+
+  // В полноэкранном режиме оверлей уходит порталом прямо в <body>. Причина: .main-content
+  // имеет position:relative + z-index:1, то есть образует собственный слой, и position:fixed
+  // внутри него остаётся ВНУТРИ этого слоя. Боковое меню (z-index:100) — сосед этого слоя,
+  // поэтому рисовалось ПОВЕРХ полноэкранного графика и закрывало его левый край: кнопки
+  // «Уровни S/R», EMA9 и EMA13 просто уходили под меню, а ряд начинался с осиротевшего
+  // кружка выбора цвета (реальная жалоба со скриншотом — «индикаторы уезжают за край»).
+  return fullscreen ? createPortal(content, document.body) : content;
 }
