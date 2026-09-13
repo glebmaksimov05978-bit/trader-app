@@ -15,6 +15,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useRadarLive } from '../../context/RadarLiveContext';
 import { getRadarItems, addRadarItem, deleteRadarItem } from '../../services/radar';
 import { getUserTrades } from '../../services/trades';
+import { getOpenPaperTrades } from '../../services/paperTrades';
 import { getActiveStrategy, getStrategies } from '../../services/analytics/strategy';
 import { catalogEntry } from '../../services/marketData/instrumentCatalog';
 import CollapsibleSection from './CollapsibleSection';
@@ -28,6 +29,11 @@ export default function RadarPanel() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [ownTickers, setOwnTickers] = useState([]);
+  // Если по тикеру уже есть открытая бумажная сделка — робот её реально ведёт, и клик
+  // должен показать ИМЕННО это (обе линии, следящий выход в Сопровождении), а не просто
+  // график в Калькуляторе. Раньше клик всегда вёл в Калькулятор, даже когда система уже
+  // торгует инструмент — то, что трейдер и просил показать.
+  const [paperByTicker, setPaperByTicker] = useState({});
   // Какой стратегией сейчас смотрим список: 'all' — все тикеры разом, иначе только те,
   // что отслеживаются выбранной стратегией.
   const [filterId, setFilterId] = useState('all');
@@ -39,6 +45,17 @@ export default function RadarPanel() {
 
   const load = () => { if (user) getRadarItems(user.uid).then(setItems).catch(() => setItems([])); };
   useEffect(load, [user]);
+
+  useEffect(() => {
+    if (!user) { setPaperByTicker({}); return; }
+    getOpenPaperTrades(user.uid)
+      .then((paper) => {
+        const map = {};
+        for (const t of paper) map[String(t.ticker).toUpperCase()] = t.id;
+        setPaperByTicker(map);
+      })
+      .catch(() => setPaperByTicker({}));
+  }, [user]);
 
   // «Вы этим торговали» — самые частые тикеры из журнала. Читается один раз при первом
   // открытии каталога: на старте вкладки это лишний запрос, а внутри окна — самая
@@ -153,18 +170,23 @@ export default function RadarPanel() {
           const pct = res?.result?.total ? Math.round((res.result.passed / res.result.total) * 100) : null;
           const hot = pct != null && pct >= (itemStrategy?.readinessThreshold ?? 100);
           const known = catalogEntry(it.ticker);
+          const paperTradeId = paperByTicker[it.ticker.toUpperCase()];
           return (
             <div key={it.id} className="ck-radar-item">
               <button
                 className={`ck-radar-row ${hot ? 'hot' : ''}`}
-                onClick={() => navigate(`/calculator?ticker=${encodeURIComponent(it.ticker)}&type=${encodeURIComponent(it.instrumentType || 'stock')}`)}
-                title="Открыть график инструмента"
+                onClick={() => (paperTradeId
+                  ? navigate(`/cockpit?activeId=${encodeURIComponent(paperTradeId)}`)
+                  : navigate(`/calculator?ticker=${encodeURIComponent(it.ticker)}&type=${encodeURIComponent(it.instrumentType || 'stock')}`)
+                )}
+                title={paperTradeId ? 'Систему уже торгует эту сделку — открыть в Сопровождении' : 'Открыть график инструмента'}
               >
                 <RadarRing pct={pct} hot={hot} />
                 <div className="ck-radar-info">
                   <div className="ck-radar-ticker">
                     {it.ticker}
                     {known && <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}> · {known.name}</span>}
+                    {paperTradeId && <span title="Уже торгует бумажной сделкой" style={{ marginLeft: 4 }}>📄</span>}
                   </div>
                   <div className="ck-radar-sub">
                     {res?.error ? res.error

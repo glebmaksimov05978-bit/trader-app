@@ -9,7 +9,7 @@
 // полей журнала, что показывает Журнал. Иначе панель и бэктест начнут расходиться, и
 // доверять будет нечему.
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, resolveOpenedAt } from '../../services/trades';
@@ -115,7 +115,12 @@ export default function Cockpit() {
   // Бумажные сделки лежат в своей коллекции и в статистику не попадают — см. шапку
   // services/paperTrades.js. Здесь они нужны только чтобы их можно было вести и смотреть.
   const [paperTrades, setPaperTrades] = useState([]);
-  const [activeId, setActiveId] = useState(null);
+  // Переход из Радара может указывать конкретную сделку (обычно бумажную, которую уже
+  // ведёт система) — ?activeId=... в ссылке. Читается один раз при заходе на вкладку;
+  // эффекты ниже, загружающие настоящие/бумажные сделки, не перезатирают уже заданный
+  // activeId (там стоит `cur || ...`), так что порядок загрузки не важен.
+  const [searchParams] = useSearchParams();
+  const [activeId, setActiveId] = useState(() => searchParams.get('activeId') || null);
   const [loading, setLoading] = useState(true);
   const [state, setState] = useState(null);      // { actual, shadow, deltaPct }
   const [candles, setCandles] = useState(null);
