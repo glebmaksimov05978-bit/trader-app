@@ -16,6 +16,8 @@ import { useRadarLive } from '../../context/RadarLiveContext';
 import { getRadarItems, addRadarItem, deleteRadarItem } from '../../services/radar';
 import { getUserTrades } from '../../services/trades';
 import { getOpenPaperTrades } from '../../services/paperTrades';
+import { getCachedLogos, logoUrlFromName, logoCacheKey } from '../../services/marketData/instrumentLogos';
+import InstrumentIcon from '../shared/InstrumentIcon';
 import { getActiveStrategy, getStrategies } from '../../services/analytics/strategy';
 import { catalogEntry } from '../../services/marketData/instrumentCatalog';
 import CollapsibleSection from './CollapsibleSection';
@@ -34,6 +36,11 @@ export default function RadarPanel() {
   // график в Калькуляторе. Раньше клик всегда вёл в Калькулятор, даже когда система уже
   // торгует инструмент — то, что трейдер и просил показать.
   const [paperByTicker, setPaperByTicker] = useState({});
+  // Логотипы — общий кэш на всех трейдеров (см. services/marketData/instrumentLogos.js).
+  // Ключ у фьючерса — basicAsset, если он у тикера известен из встроенного каталога;
+  // не известен — используется сам тикер (логотип конкретного контракта, а не базового
+  // актива, но это лучше, чем совсем без иконки).
+  const [logos, setLogos] = useState(new Map());
   // Какой стратегией сейчас смотрим список: 'all' — все тикеры разом, иначе только те,
   // что отслеживаются выбранной стратегией.
   const [filterId, setFilterId] = useState('all');
@@ -43,7 +50,16 @@ export default function RadarPanel() {
   // RadarLiveContext: своя стратегия, если задана и ещё существует, иначе активная.
   const strategyOf = (item) => (item.strategyId && strategies.find((s) => s.id === item.strategyId)) || strategy;
 
-  const load = () => { if (user) getRadarItems(user.uid).then(setItems).catch(() => setItems([])); };
+  const load = () => {
+    if (!user) return;
+    getRadarItems(user.uid).then((rows) => {
+      setItems(rows);
+      const keys = rows.map((it) => logoCacheKey({
+        ticker: it.ticker, instrumentType: it.instrumentType, basicAsset: catalogEntry(it.ticker)?.basicAsset,
+      }));
+      getCachedLogos(keys).then(setLogos);
+    }).catch(() => setItems([]));
+  };
   useEffect(load, [user]);
 
   useEffect(() => {
@@ -171,6 +187,7 @@ export default function RadarPanel() {
           const hot = pct != null && pct >= (itemStrategy?.readinessThreshold ?? 100);
           const known = catalogEntry(it.ticker);
           const paperTradeId = paperByTicker[it.ticker.toUpperCase()];
+          const logoKey = logoCacheKey({ ticker: it.ticker, instrumentType: it.instrumentType, basicAsset: known?.basicAsset });
           return (
             <div key={it.id} className="ck-radar-item">
               <button
@@ -182,6 +199,7 @@ export default function RadarPanel() {
                 title={paperTradeId ? 'Систему уже торгует эту сделку — открыть в Сопровождении' : 'Открыть график инструмента'}
               >
                 <RadarRing pct={pct} hot={hot} />
+                <InstrumentIcon ticker={it.ticker} logoUrl={logoUrlFromName(logos.get(logoKey))} size={22} />
                 <div className="ck-radar-info">
                   <div className="ck-radar-ticker">
                     {it.ticker}

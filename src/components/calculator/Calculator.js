@@ -16,6 +16,8 @@ import { evaluateStrategy, getActiveStrategy, getStrategies } from '../../servic
 import { computeBaskets, capitalForStrategy, getPortfolio } from '../../services/analytics/portfolio';
 import { commissionRateFor, DEFAULT_TARIFF, TARIFFS } from '../../services/analytics/commission';
 import { guessInstrumentType } from '../../services/import/instrumentResolver';
+import { cacheLogo, logoUrlFromName } from '../../services/marketData/instrumentLogos';
+import InstrumentIcon from '../shared/InstrumentIcon';
 import { fetchOrderConfig } from '../../services/broker';
 import OrderModal from './OrderModal';
 import { computeStopPrice, computeTakePrice, computeRiskStopPrice, exitTypeLabel } from '../../services/analytics/exitRules';
@@ -489,6 +491,9 @@ export default function Calculator() {
         if (!raw) { toast.error(`Инструмент ${ticker} не найден`); return; }
         const info = instrumentType === 'stock' ? parseShareInfo(raw) : parseFutureInfo(raw);
         setInstrumentInfo(info);
+        // Логотип пришёл в этом же ответе Т-Банка — кладём в общий кэш, чтобы Радар,
+        // каталог и Журнал показывали его без обращения к Т-Банку сами.
+        cacheLogo({ ticker, instrumentType, basicAsset: info.basicAsset, logoName: info.logoName });
         const price = await tapi.getLastPrice(info.figi);
         const fmtNum = (n) => n ? String(n).replace(',', '.') : '';
         setForm(f => ({
@@ -981,7 +986,8 @@ export default function Calculator() {
               </div>
             </div>
             {instrumentInfo && (
-              <div className="instrument-info">
+              <div className="instrument-info" style={{display:'flex', alignItems:'center', gap:8, flexWrap:'wrap'}}>
+                <InstrumentIcon ticker={instrumentInfo.ticker} logoUrl={logoUrlFromName(instrumentInfo.logoName)} size={22} />
                 <span className="badge badge-purple">{instrumentInfo.ticker}</span>
                 <span className="text-sm text-secondary">{instrumentInfo.name}</span>
                 {instrumentInfo.isShare

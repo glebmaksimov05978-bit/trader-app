@@ -15,8 +15,11 @@ import { applyTradeClose, computeClosePnl } from '../../services/tradeClose';
 import { guessInstrumentType } from '../../services/import/instrumentResolver';
 import { addRadarItem, getRadarItems, deleteRadarItem } from '../../services/radar';
 import { useRadarLive } from '../../context/RadarLiveContext';
+import { catalogEntry } from '../../services/marketData/instrumentCatalog';
+import { getCachedLogos, logoUrlFromName, logoCacheKey } from '../../services/marketData/instrumentLogos';
 import TechnicalAnalysisBlock from '../shared/TechnicalAnalysisBlock';
 import CandleChart from '../shared/CandleChart';
+import InstrumentIcon from '../shared/InstrumentIcon';
 import toast from 'react-hot-toast';
 import TradeModal from './TradeModal';
 import ImportModal from './ImportModal';
@@ -29,6 +32,7 @@ export default function Journal() {
   const activeStrategy = getActiveStrategy(userProfile);
   const { radarLive, setRadarLive, radarUpdatedAt, radarResults } = useRadarLive();
   const [trades, setTrades] = useState([]);
+  const [logos, setLogos] = useState(new Map());
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -80,6 +84,16 @@ export default function Journal() {
   }, [user]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Логотипы — общий кэш на всех трейдеров, см. services/marketData/instrumentLogos.js.
+  // Ключ у фьючерса — базовый актив, если он известен из встроенного каталога, чтобы
+  // логотип не терялся при смене квартального контракта.
+  useEffect(() => {
+    const keys = trades.map((t) => logoCacheKey({
+      ticker: t.ticker, instrumentType: t.instrumentType, basicAsset: catalogEntry(t.ticker)?.basicAsset,
+    }));
+    if (keys.length) getCachedLogos(keys).then(setLogos);
+  }, [trades]);
 
   // Переход из «Сопровождения»: там показывают состояние сделки и предлагают долю для
   // фиксации, но саму фиксацию считает Журнал — своей же формулой (шаг цены, комиссия),
@@ -626,6 +640,13 @@ export default function Journal() {
                         >
                           {isExpanded ? '▾' : '▸'}
                         </button>
+                        <InstrumentIcon
+                          ticker={trade.ticker}
+                          logoUrl={logoUrlFromName(logos.get(logoCacheKey({
+                            ticker: trade.ticker, instrumentType: trade.instrumentType, basicAsset: catalogEntry(trade.ticker)?.basicAsset,
+                          })))}
+                          size={20}
+                        />
                         <span className="font-semibold">{trade.ticker || '—'}</span>
                       </div>
                     </td>

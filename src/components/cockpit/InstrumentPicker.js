@@ -11,6 +11,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { SECTORS, searchCatalog, searchInstruments, catalogEntry } from '../../services/marketData/instrumentCatalog';
 import { availableTimeframes } from '../../services/marketData/candles';
+import { getCachedLogos, logoUrlFromName, logoCacheKey } from '../../services/marketData/instrumentLogos';
+import InstrumentIcon from '../shared/InstrumentIcon';
 
 const TYPE_LABEL = { stock: 'акция', future: 'фьючерс', currency: 'валюта' };
 const TYPES = [
@@ -42,6 +44,7 @@ export default function InstrumentPicker({
   const [strategyId, setStrategyId] = useState(defaultStrategyId);
   const [searching, setSearching] = useState(false);
   const reqId = useRef(0);
+  const [logos, setLogos] = useState(new Map());
 
   const existingSet = useMemo(() => new Set(existing.map((t) => (t || '').toUpperCase())), [existing]);
   const pickedSet = useMemo(() => new Set(picked.map((p) => p.ticker)), [picked]);
@@ -69,6 +72,26 @@ export default function InstrumentPicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  // Считается независимо от «!open» ниже — используется в эффекте загрузки логотипов,
+  // а хуки нельзя вызывать после условного return.
+  const suggested = (!query.trim() && !sector && !type)
+    ? ownTickers
+      .filter((t) => !existingSet.has(t))
+      .slice(0, 8)
+      .map((t) => catalogEntry(t) || { ticker: t, name: 'из вашего журнала', type: 'stock', sector: null })
+    : [];
+
+  // Ключи — строкой, а не сами массивы: rows/suggested пересчитываются заново на каждый
+  // рендер, и эффект на их ссылку гонял бы запрос в базу без остановки.
+  const logoKeysStr = [...rows, ...suggested]
+    .map((it) => logoCacheKey({ ticker: it.ticker, instrumentType: it.type, basicAsset: it.basicAsset }))
+    .join(',');
+  useEffect(() => {
+    const keys = logoKeysStr ? logoKeysStr.split(',') : [];
+    if (!keys.length) { setLogos(new Map()); return; }
+    getCachedLogos(keys).then(setLogos);
+  }, [logoKeysStr]);
+
   if (!open) return null;
 
   const toggle = (item) => {
@@ -86,13 +109,6 @@ export default function InstrumentPicker({
     && !rows.some((r) => r.ticker === raw)
     && !existingSet.has(raw)
     && /^[A-Z0-9]+$/.test(raw);
-
-  const suggested = (!query.trim() && !sector && !type)
-    ? ownTickers
-      .filter((t) => !existingSet.has(t))
-      .slice(0, 8)
-      .map((t) => catalogEntry(t) || { ticker: t, name: 'из вашего журнала', type: 'stock', sector: null })
-    : [];
 
   // Через портал в document.body — иначе окно каталога оказывается внутри колонки
   // «Сопровождения», и график цены из соседней колонки рисуется ПОВЕРХ него (реальная
@@ -147,7 +163,8 @@ export default function InstrumentPicker({
               <div className="ip-group">Вы этим торговали</div>
               {suggested.map((item) => (
                 <Row key={`own-${item.ticker}`} item={item} picked={pickedSet.has(item.ticker)}
-                  already={existingSet.has(item.ticker)} onClick={() => toggle(item)} />
+                  already={existingSet.has(item.ticker)} onClick={() => toggle(item)}
+                  logoUrl={logoUrlFromName(logos.get(logoCacheKey({ ticker: item.ticker, instrumentType: item.type, basicAsset: item.basicAsset })))} />
               ))}
               <div className="ip-group">Весь каталог</div>
             </>
@@ -155,7 +172,8 @@ export default function InstrumentPicker({
 
           {rows.map((item) => (
             <Row key={item.ticker} item={item} picked={pickedSet.has(item.ticker)}
-              already={existingSet.has(item.ticker)} onClick={() => toggle(item)} />
+              already={existingSet.has(item.ticker)} onClick={() => toggle(item)}
+              logoUrl={logoUrlFromName(logos.get(logoCacheKey({ ticker: item.ticker, instrumentType: item.type, basicAsset: item.basicAsset })))} />
           ))}
 
           {showRaw && (
@@ -213,10 +231,11 @@ export default function InstrumentPicker({
   );
 }
 
-function Row({ item, picked, already, onClick }) {
+function Row({ item, picked, already, onClick, logoUrl }) {
   return (
     <button className={`ip-row ${picked ? 'on' : ''} ${already ? 'off' : ''}`} onClick={onClick} disabled={already}>
       <span className="ip-check">{already ? '•' : picked ? '✓' : '+'}</span>
+      <InstrumentIcon ticker={item.ticker} logoUrl={logoUrl} size={22} />
       <div className="ip-info">
         <div className="ip-ticker">{item.ticker}</div>
         <div className="ip-name">{item.name}</div>

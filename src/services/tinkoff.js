@@ -256,6 +256,10 @@ export function parseFutureInfo(instrument) {
     currency: instrument.currency,
     expirationDate: instrument.expirationDate,
     basicAsset: instrument.basicAsset,
+    // Логотип базового актива — приходит в ответе Т-Банка, раньше просто отбрасывался.
+    // См. services/marketData/instrumentLogos.js про то, почему кэшируется по basicAsset,
+    // а не по тикеру контракта.
+    logoName: instrument.brand?.logoName || null,
   };
 }
 
@@ -278,5 +282,6 @@ export function parseShareInfo(instrument) {
     isin: instrument.isin,
     sector: instrument.sector,
     isShare: true,
+    logoName: instrument.brand?.logoName || null,
   };
 }
