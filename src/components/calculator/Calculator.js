@@ -494,12 +494,6 @@ export default function Calculator() {
         // Логотип пришёл в этом же ответе Т-Банка — кладём в общий кэш, чтобы Радар,
         // каталог и Журнал показывали его без обращения к Т-Банку сами.
         cacheLogo({ ticker, instrumentType, basicAsset: info.basicAsset, logoName: info.logoName });
-        // ВРЕМЕННО: логотипы у трейдера показывают только заглушку — нужно увидеть, что
-        // Т-Банк реально прислал в поле brand, чтобы понять, чего именно не хватает: поля
-        // вообще нет, или оно есть, но путь к картинке (LOGO_CDN) угадан неверно. Убрать
-        // после того, как разберёмся.
-        console.log('[логотип] raw.brand:', raw.brand);
-        toast(`Лого от Т-Банка: ${raw.brand ? JSON.stringify(raw.brand) : 'поля brand нет вообще'}`, { duration: 15000 });
         const price = await tapi.getLastPrice(info.figi);
         const fmtNum = (n) => n ? String(n).replace(',', '.') : '';
         setForm(f => ({
