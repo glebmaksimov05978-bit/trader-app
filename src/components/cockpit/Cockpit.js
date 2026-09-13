@@ -12,8 +12,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
-import { getUserTrades, resolveOpenedAt } from '../../services/trades';
-import { getOpenPaperTrades } from '../../services/paperTrades';
+import { addTrade, getUserTrades, resolveOpenedAt } from '../../services/trades';
+import { getOpenPaperTrades, updatePaperTrade } from '../../services/paperTrades';
 import { fetchDailyCandles, availableTimeframes } from '../../services/marketData/candles';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { getActiveStrategy, getStrategies } from '../../services/analytics/strategy';
@@ -145,6 +145,9 @@ export default function Cockpit() {
   // жалоба: «кнопки нет и пояснения тоже нет»). Явный флаг "запрос завершён" разводит их.
   const [orderCfgLoaded, setOrderCfgLoaded] = useState(false);
   const [closeOrder, setCloseOrder] = useState(null); // { lots, side } — что фиксируем сейчас
+  // Повтор бумажной сделки настоящей заявкой — { lots }. Единственный путь, которым
+  // бумажная сделка превращается в реальную позицию, и только по явному нажатию человека.
+  const [repeatOrder, setRepeatOrder] = useState(null);
 
   useEffect(() => { loadBacktestSample().then(setSample); }, []);
 
@@ -212,6 +215,10 @@ export default function Cockpit() {
     () => trades.find((t) => t.id === activeId) || paperTrades.find((t) => t.id === activeId) || null,
     [trades, paperTrades, activeId],
   );
+  // Бумажная сделка или настоящая — различие принципиальное, а не косметическое: у
+  // бумажной в рынке НЕТ позиции. Всё, что закрывает сделку настоящей заявкой брокеру или
+  // пишет фиксацию в коллекцию trades, для неё недопустимо (см. canOrderClose ниже).
+  const isPaper = !!trade && (trade.paper === true || paperTrades.some((p) => p.id === trade.id));
   const timeframe = tfOverride || trade?.entryTimeframe || userProfile?.preferredTimeframe || 'H1';
 
   // --- состояние позиции по данным движка ---
@@ -354,13 +361,26 @@ export default function Cockpit() {
   // Иначе кнопки просто нет — остаётся обычный путь через Журнал. Но молчать о ПРИЧИНЕ
   // нельзя: реальная жалоба — «снова не вижу кнопки фиксации» — оказалась именно этим:
   // тикер (фьючерс IMOEXF) не входил в белый список сервера, где были только акции.
-  const canOrderClose = !!(orderCfg?.enabled && trade?.ticker
+  const tickerOrderable = !!(orderCfg?.enabled && trade?.ticker
     && (orderCfg.wildcard || orderCfg.whitelist?.includes(trade.ticker.toUpperCase())));
-  const orderUnavailableReason = !trade || canOrderClose ? null
+  // Закрывать настоящей заявкой можно только НАСТОЯЩУЮ позицию. У бумажной сделки в рынке
+  // ничего нет: «Зафиксировать» по ней отправило бы брокеру реальную продажу бумаги,
+  // которой у трейдера нет (а для шорта — покупку), и следом попыталось бы записать
+  // фиксацию в trades по id из совсем другой коллекции. Поэтому у бумажных сделок кнопок
+  // фиксации нет вовсе — вместо них «Повторить реальной заявкой», то есть ОТКРЫТИЕ.
+  const canOrderClose = tickerOrderable && !isPaper;
+  const canOrderRepeat = tickerOrderable && isPaper;
+  const orderUnavailableReason = !trade || isPaper || canOrderClose ? null
     : !orderCfgLoaded ? null // конфиг ещё грузится — рано делать вывод
       : !orderCfg ? 'Не удалось получить настройки отправки заявок с сервера — заявку по этой сделке можно только записать вручную.'
         : !orderCfg.enabled ? 'Отправка заявок не настроена (см. Настройки → Отправка заявок брокеру).'
           : `${trade.ticker} нет в белом списке разрешённых инструментов на сервере — заявку по нему отправить нельзя, только записать вручную.`;
+  // Почему кнопки повтора нет — те же причины, но формулировки про открытие, а не фиксацию.
+  const repeatUnavailableReason = !isPaper || canOrderRepeat ? null
+    : !orderCfgLoaded ? null
+      : !orderCfg ? 'Не удалось получить настройки отправки заявок с сервера — повторить такую сделку можно только руками в приложении брокера.'
+        : !orderCfg.enabled ? 'Отправка заявок не настроена (см. Настройки → Отправка заявок брокеру).'
+          : `${trade.ticker} нет в белом списке разрешённых инструментов на сервере — заявку по нему отправить нельзя.`;
 
   const openCloseOrder = (lots) => {
     const l = Math.max(1, Math.round(lots));
@@ -393,6 +413,79 @@ export default function Cockpit() {
       if (!open.some((t) => t.id === activeId)) setActiveId(open[0]?.id || null);
     } catch (e) {
       toast.error(e.message || 'Заявка исполнилась, но запись в Журнал не удалась — зафиксируйте вручную');
+    }
+  };
+
+  // Повторить бумажную сделку своей, настоящей заявкой. Объём берётся тот же, что у
+  // бумажной, — он посчитан по риску от РЕАЛЬНОГО капитала трейдера (calcTrade теми же
+  // функциями, что и Калькулятор), так что подставлять что-то своё тут не нужно.
+  // Исключение — riskTooBig: там объём условный, и об этом рядом с кнопкой сказано прямо.
+  const openRepeatOrder = () => {
+    const lots = Math.max(1, Math.round(parseFloat(trade?.volume) || 0));
+    if (!(lots >= 1)) return;
+    setRepeatOrder({ lots });
+  };
+
+  // Заявка на повтор исполнилась → в Журнале появляется НАСТОЯЩАЯ сделка трейдера. Сама
+  // бумажная при этом продолжает жить своей жизнью: её ведёт и закроет робот по своим
+  // правилам — в этом и смысл эксперимента, сравнить его решения со своими. Поэтому
+  // бумажная не закрывается и не удаляется, а только помечается «повторена».
+  const handleRepeatOrderPlaced = async (res) => {
+    const lotsExecuted = res?.order?.lotsExecuted;
+    const executedPrice = res?.order?.executedPrice;
+    if (!(lotsExecuted > 0) || executedPrice == null || !trade) return;
+    const openedAtDate = new Date();
+    const lot = parseFloat(trade.lot) || 1;
+    const commRate = parseFloat(trade.commissionRate)
+      || commissionRateFor(userProfile?.brokerTariff || DEFAULT_TARIFF, trade.instrumentType || 'stock').rate;
+    try {
+      await addTrade(user.uid, {
+        ticker: trade.ticker.toUpperCase(),
+        date: openedAtDate.toISOString().split('T')[0],
+        openedAt: openedAtDate.toISOString(),
+        status: 'open',
+        direction: trade.direction === 'short' ? 'short' : 'long',
+        entryPrice: executedPrice,
+        // Цена бумажной сделки — это ПЛАН (открытие бара, на котором сошлись условия), а
+        // исполнилось по своей цене и, как правило, позже. Разбор сделки сможет честно
+        // сравнить одно с другим, а не подменить факт планом.
+        intendedEntryPrice: parseFloat(trade.entryPrice) || null,
+        exitPrice: null,
+        stopLoss: trade.stopLoss ?? null,
+        takeProfit: trade.takeProfit ?? null,
+        volume: lotsExecuted,
+        lot,
+        instrumentType: trade.instrumentType || 'stock',
+        isFuture: (trade.instrumentType || 'stock') === 'future',
+        minStep: parseFloat(trade.minStep) || null,
+        minStepAmount: parseFloat(trade.minStepAmount) || null,
+        commissionRate: commRate,
+        commission: Math.round(executedPrice * lotsExecuted * lot * commRate * 2),
+        depositSize: parseFloat(userProfile?.depositSize) || 0,
+        pnl: null,
+        source: 'paper-repeat',
+        orderId: res?.order?.orderId || null,
+        orderAccountId: res?.preview?.accountId || null,
+        entryTimeframe: trade.entryTimeframe || null,
+        entryStrategyId: trade.entryStrategyId || null,
+        entryStrategyName: trade.entryStrategyName || null,
+        strategyMatchAtEntry: trade.entryTotal
+          ? { passed: trade.entryPassed ?? null, total: trade.entryTotal, percent: trade.entryPercent ?? null }
+          : null,
+        // Из какой бумажной сделки повторено — чтобы позже можно было сравнить пару
+        // «система вошла тогда-то по такой цене / я повторил тогда-то по такой».
+        repeatedFromPaperId: trade.id,
+      });
+      try {
+        await updatePaperTrade(trade.id, { repeatedAt: openedAtDate.toISOString() });
+      } catch { /* отметка не критична — сделка в Журнале уже есть, это главное */ }
+      toast.success(`Записано в Журнал: ${lotsExecuted} по ${executedPrice}`);
+      const all = await getUserTrades(user.uid);
+      setTrades(all.filter((t) => t.status === 'open' || t.status === 'partial'));
+      setAllTrades(all);
+      getOpenPaperTrades(user.uid).then(setPaperTrades).catch(() => {});
+    } catch (e) {
+      toast.error(e.message || 'Заявка исполнилась, но записать в Журнал не удалось — заведите сделку вручную');
     }
   };
 
@@ -603,15 +696,23 @@ export default function Cockpit() {
                         {t.direction === 'short' ? 'ШОРТ' : 'ЛОНГ'}
                       </span>
                     </div>
-                    <div className="ck-pos-sub">{fmtNum(parseFloat(t.volume) || 0, 0)} конт. · бумажная</div>
+                    {/* «объём условный» — по правилам риска денег на такую позицию не
+                        хватает, робот открыл её одним контрактом только ради наблюдения.
+                        Помечено неброско, как и просил трейдер: это не ошибка, просто
+                        результат такой сделки нельзя считать достижимым. */}
+                    <div className="ck-pos-sub">
+                      {fmtNum(parseFloat(t.volume) || 0, 0)} конт. · бумажная
+                      {t.riskTooBig ? ' · объём условный' : ''}
+                      {t.repeatedAt ? ' · повторена' : ''}
+                    </div>
                     <div className="ck-pos-sub">вход {fmtNum(t.entryPrice)}</div>
                   </button>
                 </div>
               ))}
               {!paperTrades.length && (
                 <div className="ck-radar-empty">
-                  Пока ни одной. Робот, который их открывает, ещё не запущен — это
-                  следующий шаг.
+                  Пока ни одной. Робот проверяет список радара каждые 15 минут в торговые
+                  часы и откроет сделку сам, когда по инструменту сойдутся условия стратегии.
                 </div>
               )}
             </div>
@@ -878,6 +979,32 @@ export default function Cockpit() {
                 </div>
               </div>
               {(() => {
+                // У бумажной сделки фиксировать нечего — в рынке позиции нет. Вместо
+                // кнопок закрытия предлагается ПОВТОРИТЬ её своей заявкой, то есть
+                // открыть позицию, а не закрыть.
+                if (isPaper) {
+                  return (
+                    <div className="ck-verdict-actions" style={{ flexDirection: 'column', alignItems: 'flex-end' }}>
+                      {canOrderRepeat && (
+                        <button className="ck-btn ck-btn-primary" onClick={openRepeatOrder}>
+                          ⚡ Повторить реальной заявкой
+                        </button>
+                      )}
+                      {trade.repeatedAt && (
+                        <div className="ck-order-hint">
+                          Эту сделку ты уже повторял — проверь Журнал, чтобы не войти второй раз.
+                        </div>
+                      )}
+                      {trade.riskTooBig && (
+                        <div className="ck-order-hint">
+                          Объём у бумажной условный: по твоим правилам риска на эту позицию
+                          не хватает денег. Настоящая заявка уйдёт на тот же объём — решай сам.
+                        </div>
+                      )}
+                      {repeatUnavailableReason && <div className="ck-order-hint">{repeatUnavailableReason}</div>}
+                    </div>
+                  );
+                }
                 const suggestedQty = alerts[0]?.suggestedShare && money
                   ? money.remainingVol * (alerts[0].suggestedShare / 100) : money?.remainingVol;
                 return canOrderClose ? (
@@ -929,7 +1056,7 @@ export default function Cockpit() {
           {/* ---------- если закрыть сейчас ---------- */}
           {money && (
             <section className="ck-panel ck-calc">
-              <h3>Если закрыть сейчас</h3>
+              <h3>{isPaper ? 'Если бы закрыл сейчас' : 'Если закрыть сейчас'}</h3>
               <div className="ck-shares">
                 {[25, 50, 100].map((sh) => (
                   <button
@@ -942,7 +1069,7 @@ export default function Cockpit() {
                 ))}
               </div>
               <div className="ck-calc-grid">
-                <div><span className="ck-k">Закрываем</span><b>{fmtNum(money.closingVol, 0)} конт. по {fmtNum(money.price)}</b></div>
+                <div><span className="ck-k">{isPaper ? 'Считаем' : 'Закрываем'}</span><b>{fmtNum(money.closingVol, 0)} конт. по {fmtNum(money.price)}</b></div>
                 <div><span className="ck-k">Грязными</span><b>{fmtRub(money.gross)}</b></div>
                 <div><span className="ck-k">Комиссия</span><b className="down">{fmtRub(-money.commission)}</b></div>
                 <div><span className="ck-k">Уже зафиксировано</span><b>{fmtRub(money.realized)}</b></div>
@@ -955,7 +1082,12 @@ export default function Cockpit() {
                   {canOrderClose && ' Оценка выше — по последней цене графика; в заявке сервер покажет реальную.'}
                 </div>
                 {orderUnavailableReason && <div className="ck-order-hint">{orderUnavailableReason}</div>}
-                {canOrderClose ? (
+                {isPaper ? (
+                  <div className="ck-order-hint" style={{ textAlign: 'left', maxWidth: 'none' }}>
+                    Закрывать нечего: позиции в рынке нет, это расчёт «чем бы она шла, если
+                    бы ты в неё вошёл». Саму бумажную сделку ведёт и закроет робот.
+                  </div>
+                ) : canOrderClose ? (
                   <div className="ck-verdict-actions">
                     <button className="ck-btn ck-btn-primary" onClick={() => openCloseOrder(money.closingVol)}>
                       ⚡ Зафиксировать {closeShare}% сейчас
@@ -991,6 +1123,28 @@ export default function Cockpit() {
               price: money?.price ?? null,
             } : null}
             onPlaced={handleCloseOrderPlaced}
+          />
+
+          {/* Повтор бумажной сделки — то же окно подтверждения, но направление
+              ОТКРЫВАЮЩЕЕ: покупка для лонга, продажа для шорта (у заявки на закрытие выше
+              всё наоборот). Цена подставляется ТЕКУЩАЯ с графика, а не та, по которой
+              вошла бумажная сделка: та могла быть вчера, и лимитная заявка по ней просто
+              повисла бы, ничего не исполнив. */}
+          <OrderModal
+            open={!!repeatOrder}
+            onClose={() => setRepeatOrder(null)}
+            userProfile={userProfile}
+            accounts={orderCfg?.accounts}
+            title={trade?.direction === 'short' ? 'Продать (открыть шорт) через Т-Банк' : 'Купить через Т-Банк'}
+            autoRecordsToJournal
+            intent={trade && repeatOrder ? {
+              ticker: trade.ticker.toUpperCase(),
+              instrumentType: trade.instrumentType || 'stock',
+              direction: trade.direction === 'short' ? 'sell' : 'buy',
+              lots: repeatOrder.lots,
+              price: money?.price ?? null,
+            } : null}
+            onPlaced={handleRepeatOrderPlaced}
           />
 
           {/* ---------- похожие исторические ситуации ----------
