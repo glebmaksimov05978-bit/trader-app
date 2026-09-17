@@ -22,6 +22,11 @@
 import { buildReasonKeyboard, describeDecision, escapeHtml } from '../../../src/services/alerts.js';
 import { handleOrder, handleOrderConfig } from './orders.js';
 
+// Репозиторий с роботом уведомлений/бумажных сделок — тот же, что и у этого воркера.
+// Не секрет (это просто адрес открытого репозитория), поэтому можно хранить прямо тут.
+const GITHUB_REPO = 'glebmaksimov05978-bit/trader-app';
+const GITHUB_WORKFLOW = 'traderpro-alerts.yml';
+
 async function tg(token, method, body) {
   const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: 'POST',
@@ -32,6 +37,43 @@ async function tg(token, method, body) {
 }
 
 export default {
+  // Будильник для робота уведомлений/бумажных сделок.
+  //
+  // Почему это здесь, а не просто в расписании самого GitHub Actions: собственное
+  // расписание GitHub (`schedule: cron:`) — best-effort и НЕ гарантирует частоту. На
+  // практике за 9 дней с cron "каждые 15 минут" реально сработало 16 раз вместо
+  // ожидаемых нескольких сотен — то есть робот почти не искал новые сделки и почти
+  // не проверял открытые позиции. Cloudflare Cron Triggers устроены иначе: они
+  // не полагаются на очередь самого GitHub, а по своему надёжному таймеру САМИ стучатся
+  // в GitHub API и просят немедленно запустить workflow (workflow_dispatch) — это не
+  // «расписание», а обычный API-вызов по требованию, и он не подвержен той же проблеме.
+  //
+  // Сам робот при этом не переехал: код и логика остаются в GitHub Actions (там же
+  // Firebase, esmify исходников и т.д.) — воркер только нажимает на кнопку «запустить
+  // сейчас» по расписанию, которое реально соблюдается.
+  async scheduled(event, env, ctx) {
+    if (!env.GITHUB_PAT) {
+      console.error('GITHUB_PAT не задан — будильник не может достучаться до GitHub');
+      return;
+    }
+    const res = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${GITHUB_WORKFLOW}/dispatches`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${env.GITHUB_PAT}`,
+          Accept: 'application/vnd.github+json',
+          'Content-Type': 'application/json',
+          'User-Agent': 'traderpro-cron-worker',
+        },
+        body: JSON.stringify({ ref: 'main' }),
+      },
+    );
+    if (!res.ok) {
+      console.error(`Будильник: GitHub ответил ${res.status} ${await res.text()}`);
+    }
+  },
+
   async fetch(request, env) {
     const path = new URL(request.url).pathname;
     if (path === '/order') return handleOrder(request, env);
