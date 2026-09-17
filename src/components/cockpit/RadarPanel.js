@@ -194,9 +194,13 @@ export default function RadarPanel() {
                 className={`ck-radar-row ${hot ? 'hot' : ''}`}
                 onClick={() => (paperTradeId
                   ? navigate(`/cockpit?activeId=${encodeURIComponent(paperTradeId)}`)
-                  : navigate(`/calculator?ticker=${encodeURIComponent(it.ticker)}&type=${encodeURIComponent(it.instrumentType || 'stock')}`)
+                  // Раньше вело сразу в Калькулятор — реальная просьба: график и технический
+                  // анализ показывать прямо здесь же, в Сопровождении, даже если система
+                  // ещё ничего не открыла; Калькулятор остаётся отдельной кнопкой на той
+                  // странице для явного входа.
+                  : navigate(`/cockpit?previewTicker=${encodeURIComponent(it.ticker)}&previewType=${encodeURIComponent(it.instrumentType || 'stock')}`)
                 )}
-                title={paperTradeId ? 'Систему уже торгует эту сделку — открыть в Сопровождении' : 'Открыть график инструмента'}
+                title={paperTradeId ? 'Систему уже торгует эту сделку — открыть в Сопровождении' : 'Открыть график и технический анализ'}
               >
                 <RadarRing pct={pct} hot={hot} />
                 <InstrumentIcon ticker={it.ticker} logoUrl={logoUrlFromName(logos.get(logoKey))} size={22} />

@@ -16,6 +16,10 @@ import { addTrade, getUserTrades, resolveOpenedAt } from '../../services/trades'
 import { getOpenPaperTrades, updatePaperTrade } from '../../services/paperTrades';
 import { fetchDailyCandles, availableTimeframes } from '../../services/marketData/candles';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
+import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
+import { computeMarketContextAtEntry } from '../../services/analytics/marketContext';
+import { catalogEntry } from '../../services/marketData/instrumentCatalog';
+import TechnicalAnalysisBlock from '../shared/TechnicalAnalysisBlock';
 import { getActiveStrategy, getStrategies } from '../../services/analytics/strategy';
 import { classifyStrategy, kindBadge } from '../../services/analytics/strategyKind';
 import { commissionRateFor, DEFAULT_TARIFF } from '../../services/analytics/commission';
@@ -121,6 +125,16 @@ export default function Cockpit() {
   // activeId (там стоит `cur || ...`), так что порядок загрузки не важен.
   const [searchParams] = useSearchParams();
   const [activeId, setActiveId] = useState(() => searchParams.get('activeId') || null);
+  // Клик по инструменту в радаре, у которого система ЕЩЁ ничего не открыла (нет условий
+  // или бумажная сделка ещё не завелась) — раньше вёл прямиком в Калькулятор, реальная
+  // просьба трейдера: показывать график и технический анализ прямо здесь, в привычном
+  // оформлении Сопровождения, а в Калькулятор вести только по явному нажатию, если решил
+  // сам открыть сделку. ?previewTicker=... задаёт это ровно так же, как ?activeId=... —
+  // читается один раз при заходе.
+  const previewTicker = searchParams.get('previewTicker');
+  const previewType = searchParams.get('previewType') || 'stock';
+  const [previewTf, setPreviewTf] = useState(null);
+  const [previewState, setPreviewState] = useState({ loading: false, data: null, error: null });
   const [loading, setLoading] = useState(true);
   const [state, setState] = useState(null);      // { actual, shadow, deltaPct }
   const [candles, setCandles] = useState(null);
@@ -182,6 +196,33 @@ export default function Cockpit() {
   // выглядит это как «переключил стратегию, а ничего не пересчиталось» (реальная жалоба).
   // Молчать об этом нельзя: пустая панель и «правила выключены» — разные вещи.
   const noExitRules = !exitRules.trailEnabled && !usesProfitSystem && !usesLossSystem;
+
+  // Тот же расчёт, что и «Технический анализ сейчас» в радаре Журнала (та же тройка
+  // функций) — намеренно не общий хук с тем местом, чтобы не тащить сюда состояние
+  // экрана Журнала, но результат должен читаться одинаково, поэтому логика скопирована
+  // буквально, а не переизобретена.
+  const loadPreview = useCallback(async (tfArg) => {
+    if (!previewTicker) return;
+    const tf = tfArg || previewTf || userProfile?.preferredTimeframe || 'D1';
+    setPreviewState({ loading: true, data: null, error: null });
+    try {
+      const now = new Date();
+      const cs = await fetchDailyCandles({
+        ticker: previewTicker, instrumentType: previewType, toDate: now,
+        tinkoffToken: userProfile?.tinkoffToken, timeframe: tf,
+      });
+      const indicators = computeIndicatorsAtEntry(cs, now);
+      const patterns2 = computePatternsAtEntry(cs, now);
+      const marketContext = computeMarketContextAtEntry(cs, now);
+      if (!indicators) throw new Error('Нет исторических свечей по этому тикеру');
+      setPreviewState({ loading: false, data: { indicators, patterns: patterns2, marketContext, candles: cs }, error: null });
+    } catch (e) {
+      setPreviewState({ loading: false, data: null, error: e.message || 'Не удалось загрузить данные' });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewTicker, previewType, previewTf, userProfile]);
+
+  useEffect(() => { if (previewTicker) loadPreview(); }, [previewTicker]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- открытые позиции ---
   useEffect(() => {
@@ -571,6 +612,68 @@ export default function Cockpit() {
   }, [compareStrategy, trade, candles, state?.entryIndex]);
 
   if (loading) return <div className="ck-wrap"><div className="ck-loading">Загружаю открытые позиции…</div></div>;
+
+  // Предпросмотр инструмента из радара — раньше клик по тикеру, которым система ещё не
+  // торгует (условия не сошлись или бумажная сделка ещё не завелась), сразу вёл в
+  // Калькулятор. Реальная просьба: показывать график и технический анализ прямо здесь, в
+  // привычном оформлении, а в Калькулятор вести только по явному нажатию «Открыть в
+  // Калькуляторе» — если трейдер решил сам считать вход. Проверяется раньше остальных
+  // веток, чтобы работать независимо от того, есть ли у трейдера другие открытые сделки.
+  if (previewTicker && !trade) {
+    const known = catalogEntry(previewTicker);
+    return (
+      <div className="ck-wrap">
+        <div className="ck-layout">
+          <aside className="ck-side">
+            <RadarPanel />
+          </aside>
+          <div className="ck-main">
+            <section className="ck-panel">
+              <div className="ck-head">
+                <div className="ck-head-id">
+                  <span className="ck-head-ticker">{previewTicker}</span>
+                  {known && <span style={{ color: 'var(--text-muted)' }}>{known.name}</span>}
+                </div>
+                <Link
+                  className="btn btn-primary btn-sm"
+                  to={`/calculator?ticker=${encodeURIComponent(previewTicker)}&type=${encodeURIComponent(previewType)}`}
+                >
+                  Открыть в Калькуляторе
+                </Link>
+              </div>
+              <div className="ck-sub" style={{ marginTop: 4 }}>
+                Систему пока не торгует этот инструмент — условия стратегии ещё не сошлись,
+                или бумажная сделка ещё не завелась. Здесь можно посмотреть график и технический
+                анализ, ничего не открывая.
+              </div>
+            </section>
+
+            {previewState.data?.candles?.length > 0 && (
+              <section className="ck-panel ck-chart">
+                <CandleChart
+                  candles={previewState.data.candles}
+                  patterns={previewState.data.patterns}
+                  height={390}
+                  ticker={previewTicker}
+                  timeframe={previewTf || userProfile?.preferredTimeframe || 'D1'}
+                  timeframeOptions={availableTimeframes(!!userProfile?.tinkoffToken)}
+                  onTimeframeChange={(tf) => { setPreviewTf(tf); loadPreview(tf); }}
+                />
+              </section>
+            )}
+
+            <section className="ck-panel">
+              <TechnicalAnalysisBlock
+                state={previewState}
+                onRefresh={() => loadPreview()}
+                title="Технический анализ сейчас"
+              />
+            </section>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Раньше вкладка целиком блокировалась, если нет НАСТОЯЩИХ сделок — даже радар и список
   // бумажных (которые робот мог открыть сам) были недоступны. Реальная жалоба: «хочу
