@@ -22,6 +22,7 @@ export default function Settings() {
     sessionMorning: true,
     sessionMain: true,
     sessionEvening: true,
+    sessionWeekend: true,
     paperIgnoreRiskSizing: false,
     paperTelegram: true,
   });
@@ -43,6 +44,7 @@ export default function Settings() {
         sessionMorning: userProfile.alertPrefs?.sessionMorning !== false,
         sessionMain: userProfile.alertPrefs?.sessionMain !== false,
         sessionEvening: userProfile.alertPrefs?.sessionEvening !== false,
+        sessionWeekend: userProfile.alertPrefs?.sessionWeekend !== false,
         paperIgnoreRiskSizing: userProfile.alertPrefs?.paperIgnoreRiskSizing === true,
         paperTelegram: userProfile.alertPrefs?.paperTelegram !== false,
       }));
@@ -74,6 +76,7 @@ export default function Settings() {
           sessionMorning: form.sessionMorning,
           sessionMain: form.sessionMain,
           sessionEvening: form.sessionEvening,
+          sessionWeekend: form.sessionWeekend,
           paperIgnoreRiskSizing: form.paperIgnoreRiskSizing,
           paperTelegram: form.paperTelegram,
         },
@@ -213,6 +216,7 @@ export default function Settings() {
               ['sessionMorning', 'Утренняя сессия'],
               ['sessionMain', 'Основная сессия'],
               ['sessionEvening', 'Вечерняя сессия'],
+              ['sessionWeekend', 'Сессия выходного дня (суббота и воскресенье, акции и фьючерсы)'],
             ].map(([key, label]) => (
               <label key={key} className="flex items-center gap-2" style={{cursor:'pointer'}}>
                 <input
