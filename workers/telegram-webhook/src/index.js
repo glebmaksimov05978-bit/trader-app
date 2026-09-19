@@ -56,7 +56,12 @@ async function ringAlarm(env) {
         'Content-Type': 'application/json',
         'User-Agent': 'traderpro-cron-worker',
       },
-      body: JSON.stringify({ ref: 'main' }),
+      // paper_dry ЯВНО "false". У workflow этот параметр по умолчанию "true" (защита для
+      // ручной кнопки "Run workflow" — показать, что открылось бы, ничего не записывая), и
+      // при запуске через API без inputs GitHub подставляет именно это значение по
+      // умолчанию. Так и вышло: все запуски от будильников шли "понарошку" — робот
+      // считал "открыл бы", но не открывал и не вёл бумажные сделки (найдено 2026-09-19).
+      body: JSON.stringify({ ref: 'main', inputs: { paper_dry: 'false' } }),
     },
   );
   if (!res.ok) {
