@@ -36,48 +36,73 @@ async function tg(token, method, body) {
   return res.json();
 }
 
+// Собственно будильник — просит GitHub немедленно запустить робота (workflow_dispatch).
+// Вызывается ДВУМЯ независимыми путями (см. ниже, почему их два): встроенным Cron
+// Trigger'ом Cloudflare и обычным HTTP-запросом с внешнего крон-сервиса. Сам робот при
+// этом не переехал: код и логика остаются в GitHub Actions — воркер только нажимает
+// «запустить сейчас» по расписанию, которое реально соблюдается.
+async function ringAlarm(env) {
+  if (!env.GITHUB_PAT) {
+    console.error('GITHUB_PAT не задан — будильник не может достучаться до GitHub');
+    return { ok: false, reason: 'no-token' };
+  }
+  const res = await fetch(
+    `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${GITHUB_WORKFLOW}/dispatches`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.GITHUB_PAT}`,
+        Accept: 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'traderpro-cron-worker',
+      },
+      body: JSON.stringify({ ref: 'main' }),
+    },
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    console.error(`Будильник: GitHub ответил ${res.status} ${text}`);
+    return { ok: false, status: res.status, text };
+  }
+  return { ok: true };
+}
+
 export default {
-  // Будильник для робота уведомлений/бумажных сделок.
-  //
   // Почему это здесь, а не просто в расписании самого GitHub Actions: собственное
   // расписание GitHub (`schedule: cron:`) — best-effort и НЕ гарантирует частоту. На
   // практике за 9 дней с cron "каждые 15 минут" реально сработало 16 раз вместо
-  // ожидаемых нескольких сотен — то есть робот почти не искал новые сделки и почти
-  // не проверял открытые позиции. Cloudflare Cron Triggers устроены иначе: они
-  // не полагаются на очередь самого GitHub, а по своему надёжному таймеру САМИ стучатся
-  // в GitHub API и просят немедленно запустить workflow (workflow_dispatch) — это не
-  // «расписание», а обычный API-вызов по требованию, и он не подвержен той же проблеме.
-  //
-  // Сам робот при этом не переехал: код и логика остаются в GitHub Actions (там же
-  // Firebase, esmify исходников и т.д.) — воркер только нажимает на кнопку «запустить
-  // сейчас» по расписанию, которое реально соблюдается.
+  // ожидаемых нескольких сотен. Cloudflare Cron Triggers сначала решили эту проблему, но
+  // и они сами оказались ненадёжны на практике (2026-09-19: срабатывает сразу после
+  // переустановки сервера и затем сам замолкает на много часов — похоже на нестабильность
+  // самого Cloudflare, у них в эти же дни были свои открытые инциденты по фоновым
+  // процессам). Поэтому это уже не единственный будильник, а один из двух.
   async scheduled(event, env, ctx) {
-    if (!env.GITHUB_PAT) {
-      console.error('GITHUB_PAT не задан — будильник не может достучаться до GitHub');
-      return;
-    }
-    const res = await fetch(
-      `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${GITHUB_WORKFLOW}/dispatches`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${env.GITHUB_PAT}`,
-          Accept: 'application/vnd.github+json',
-          'Content-Type': 'application/json',
-          'User-Agent': 'traderpro-cron-worker',
-        },
-        body: JSON.stringify({ ref: 'main' }),
-      },
-    );
-    if (!res.ok) {
-      console.error(`Будильник: GitHub ответил ${res.status} ${await res.text()}`);
-    }
+    await ringAlarm(env);
   },
 
   async fetch(request, env) {
     const path = new URL(request.url).pathname;
     if (path === '/order') return handleOrder(request, env);
     if (path === '/order/config') return handleOrderConfig(request, env);
+
+    // Второй, независимый путь для будильника — обычный веб-адрес, на который может
+    // стучаться внешний крон-сервис (cron-job.org и т.п.), а не встроенный механизм
+    // Cloudflare. Так один и тот же адрес не зависит от надёжности ровно одной компании:
+    // если подведёт Cloudflare Cron Trigger, сработает внешний сервис, и наоборот.
+    // Лишние повторные запуски робота не опасны — сам робот безопасен для повторных
+    // проходов (не откроет вторую бумажную сделку на тот же тикер, а на закрытой бирже
+    // просто выходит с "рынки закрыты"), поэтому проверять точное время здесь не нужно.
+    // TICK_SECRET в самом адресе — не защита денег (открывать реальные позиции этот путь
+    // не может), а просто чтобы случайный бот в интернете не гонял наш workflow впустую.
+    if (path === '/tick') {
+      if (!env.TICK_SECRET || new URL(request.url).searchParams.get('key') !== env.TICK_SECRET) {
+        return new Response('forbidden', { status: 403 });
+      }
+      const result = await ringAlarm(env);
+      return new Response(result.ok ? 'ok' : `error: ${result.reason || result.status}`, {
+        status: result.ok ? 200 : 502,
+      });
+    }
 
     // Всё остальное — вебхук Telegram: он ходит на корень адреса.
     if (request.method !== 'POST') return new Response('ok');
