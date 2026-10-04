@@ -84,6 +84,8 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
         classified,
         repoOperations: parseResult.repoOperations || [],
         unmatchedClosings,
+        totalTransactions: parseResult.transactions.length,
+        alreadyImportedCount: parseResult.transactions.length - newTransactions.length,
         repoCount: parseResult.repoOperations?.length || 0,
         unmatchedCount: unmatchedClosings.length,
         unexecutedCount: parseResult.unexecutedCount || 0,
@@ -219,11 +221,32 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
 
           {preview && preview.classified.length === 0 && (
             <div style={{textAlign:'center', padding:'32px 16px'}}>
-              <div style={{fontSize:32, marginBottom:8}}>✅</div>
-              <div style={{fontSize:15, fontWeight:600, marginBottom:6}}>Все сделки из этого отчёта уже загружены</div>
-              <div style={{fontSize:13, color:'var(--text-muted)'}}>
-                Новых сделок в файле не найдено — либо вы уже импортировали этот период, либо сделок в нём не было.
-              </div>
+              {preview.alreadyImportedCount > 0 ? (
+                <>
+                  <div style={{fontSize:32, marginBottom:8}}>✅</div>
+                  <div style={{fontSize:15, fontWeight:600, marginBottom:6}}>Эти сделки уже загружены в журнал этого аккаунта</div>
+                  <div style={{fontSize:13, color:'var(--text-muted)'}}>
+                    Уже есть в журнале: {preview.alreadyImportedCount} из {preview.totalTransactions} операций отчёта.
+                  </div>
+                </>
+              ) : preview.unmatchedCount > 0 ? (
+                <>
+                  <div style={{fontSize:32, marginBottom:8}}>⚠️</div>
+                  <div style={{fontSize:15, fontWeight:600, marginBottom:6}}>Дублей нет, но сделки не с чем сопоставить</div>
+                  <div style={{fontSize:13, color:'var(--text-muted)'}}>
+                    В отчёте {preview.unmatchedCount} закрывающих операций, а покупок/продаж, которые они закрывают, в файле нет —
+                    позиции были открыты раньше периода отчёта. Загрузите сначала более ранний период (или весь отчёт целиком), затем этот.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{fontSize:32, marginBottom:8}}>📄</div>
+                  <div style={{fontSize:15, fontWeight:600, marginBottom:6}}>В отчёте не найдено сделок</div>
+                  <div style={{fontSize:13, color:'var(--text-muted)'}}>
+                    Операций в файле: {preview.totalTransactions}. Проверьте, что это брокерский отчёт Т-Инвестиций с разделом сделок.
+                  </div>
+                </>
+              )}
             </div>
           )}
 
