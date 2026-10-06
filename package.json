@@ -28,6 +28,7 @@
     "test:schedule": "node scripts/scheduleTests.mjs",
     "test:telegram": "node scripts/telegramMenuTests.mjs",
     "test:undefined": "node scripts/firestoreUndefinedTest.mjs",
+    "test:turnover": "node scripts/dayTurnoverTests.mjs",
     "test:roll": "node scripts/futuresRollTests.mjs",
     "test:entrystats": "node scripts/entryStatsTests.mjs",
     "paper:dry": "node scripts/paper/runPaperTrades.mjs --dry --force",

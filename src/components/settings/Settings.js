@@ -4,10 +4,19 @@ import { useAuth } from '../../context/AuthContext';
 import { availableTimeframes } from '../../services/marketData/candles';
 import { TARIFF_OPTIONS, TARIFFS, DEFAULT_TARIFF, commissionRateFor } from '../../services/analytics/commission';
 import { describeSchedule } from '../../services/marketData/tradingSchedule';
+import { getUserTrades } from '../../services/trades';
+import { futuresTurnoverRub, turnoverStatus } from '../../services/analytics/dayTurnover';
 import toast from 'react-hot-toast';
 
 export default function Settings() {
   const { user, userProfile, updateUserProfile } = useAuth();
+  // Оборот по фьючерсам за сегодня — по записям журнала; нужен карточке тарифа, чтобы показать
+  // ступень лестницы комиссии. Не получилось загрузить — карточка просто без этой строки.
+  const [todayTurnover, setTodayTurnover] = useState(null);
+  useEffect(() => {
+    if (!user) return;
+    getUserTrades(user.uid).then((t) => setTodayTurnover(futuresTurnoverRub(t))).catch(() => setTodayTurnover(null));
+  }, [user]);
   const [form, setForm] = useState({
     displayName: '',
     tinkoffToken: '',
@@ -192,7 +201,7 @@ export default function Settings() {
           </div>
         </div>
 
-        <TariffCard tariffId={form.brokerTariff} onChange={(id) => set('brokerTariff', id)} onSave={save} saving={saving} />
+        <TariffCard tariffId={form.brokerTariff} onChange={(id) => set('brokerTariff', id)} onSave={save} saving={saving} turnover={todayTurnover} />
 
         <OrderWorkerCard userProfile={userProfile} updateUserProfile={updateUserProfile} />
 
@@ -475,8 +484,9 @@ function OrderWorkerCard({ userProfile, updateUserProfile }) {
 // Журнал, Сопровождение). Раньше в каждом из них была своя копия числа 0.0006 (0.06%),
 // которое не совпадало ни с одним реальным тарифом брокера — трейдер получал в приложении
 // одну прибыль, а в реальном отчёте брокера другую, и расхождение накапливалось молча.
-function TariffCard({ tariffId, onChange, onSave, saving }) {
+function TariffCard({ tariffId, onChange, onSave, saving, turnover }) {
   const tariff = TARIFFS[tariffId] || TARIFFS[DEFAULT_TARIFF];
+  const ladder = turnover != null ? turnoverStatus(tariffId, turnover) : null;
   const rows = [
     ['stock', 'Акции / облигации / ETF'],
     ['future', 'Фьючерсы'],
@@ -530,6 +540,18 @@ function TariffCard({ tariffId, onChange, onSave, saving }) {
           сделке, приложение не будет его менять.
         </div>
       )}
+      {ladder && (
+        <div className="card" style={{ marginTop: 12, background: 'var(--bg-surface-2)', padding: '12px 14px' }}>
+          <div className="text-sm" style={{ fontWeight: 600 }}>Фьючерсы сегодня: оборот {turnover.toLocaleString('ru-RU')} ₽</div>
+          <div className="text-xs text-secondary" style={{ marginTop: 4, lineHeight: 1.6 }}>
+            Ваша ступень — {ladder.ratePct.toFixed(3).replace(/0+$/, '')}% за сторону.{' '}
+            {ladder.toNextRub != null
+              ? `До следующей ступени (${ladder.nextRatePct.toFixed(3).replace(/0+$/, '')}%) ещё ${ladder.toNextRub.toLocaleString('ru-RU')} ₽ оборота за день.`
+              : 'Это самая низкая ставка тарифа.'}
+            {' '}Оценка по записям журнала — сделки, не внесённые в него, не учтены.
+          </div>
+        </div>
+      )}
       {tariffId === 'trader' && (
         <div className="text-xs text-muted" style={{marginTop:8, lineHeight:1.6}}>
           Комиссия за фьючерсы на «Трейдере» на самом деле считается по обороту ВСЕГО счёта
@@ -537,7 +559,8 @@ function TariffCard({ tariffId, onChange, onSave, saving }) {
           ниже) — приложение считает комиссию каждой сделки отдельно и не видит суммарный
           дневной оборот по всем инструментам, поэтому всегда берёт первую ступень. При
           обороте до 5 млн ₽/день это точное число; при бОльшем — реальная комиссия ниже
-          показанной, то есть приложение немного завышает расход, а не занижает.
+          показанной, то есть приложение немного завышает расход, а не занижает. Оборот за
+          сегодня по журналу показан выше, чтобы видеть свою ступень.
         </div>
       )}
       <button className="btn btn-secondary btn-sm" style={{marginTop:12}} onClick={onSave} disabled={saving}>
