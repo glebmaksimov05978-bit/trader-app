@@ -1073,14 +1073,14 @@ export default function Journal() {
               <div style={{marginBottom:4}}>
                 <label style={{
                   display:'block', fontSize:11, fontWeight:500,
-                  color:'rgba(255,255,255,0.4)', letterSpacing:'0.3px',
+                  color:'var(--text-muted)', letterSpacing:'0.3px',
                   marginBottom:4, paddingLeft:4,
                 }}>
                   Цена выхода *
                 </label>
                 <div style={{
                   display:'flex', alignItems:'center',
-                  background:'rgba(255,255,255,0.05)',
+                  background:'var(--bg-surface-2)',
                   border:'1px solid rgba(79,70,229,0.4)',
                   borderRadius:10, overflow:'hidden',
                   boxShadow:'0 0 0 2px rgba(79,70,229,0.1)',
@@ -1096,7 +1096,7 @@ export default function Journal() {
                       flex:1, background:'none', border:'none', outline:'none',
                       padding:'9px 12px',
                       fontSize:13, fontFamily:'inherit',
-                      color:'#f0f4ff', fontWeight:600,
+                      color:'var(--text-primary)', fontWeight:600,
                     }}
                   />
                 </div>
@@ -1120,7 +1120,7 @@ export default function Journal() {
               <div style={{marginTop:12, marginBottom:4}}>
                 <label style={{
                   display:'block', fontSize:11, fontWeight:500,
-                  color:'rgba(255,255,255,0.4)', letterSpacing:'0.3px',
+                  color:'var(--text-muted)', letterSpacing:'0.3px',
                   marginBottom:4, paddingLeft:4,
                 }}>
                   Сколько закрываем
@@ -1173,7 +1173,7 @@ export default function Journal() {
               <div style={{marginTop:12, marginBottom:4}}>
                 <label style={{
                   display:'block', fontSize:11, fontWeight:500,
-                  color:'rgba(255,255,255,0.4)', letterSpacing:'0.3px',
+                  color:'var(--text-muted)', letterSpacing:'0.3px',
                   marginBottom:4, paddingLeft:4,
                 }}>
                   {isPartialClose() ? 'Время фиксации' : 'Время закрытия'}

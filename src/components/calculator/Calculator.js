@@ -1323,7 +1323,7 @@ export default function Calculator() {
                 {/* Контракты */}
                 <div className={`calc-metric-card ${displayResult.direction === 'long' ? 'green' : 'red'}`}>
                   <div className="calc-metric-label">{instrumentType === 'stock' ? 'Лотов' : 'Контрактов'}</div>
-                  <div style={{display:'flex',alignItems:'center',gap:6,background:'rgba(255,255,255,0.07)',border:manualContracts?'1px solid var(--gold)':'1px solid rgba(255,255,255,0.12)',borderRadius:10,padding:'6px 10px',marginBottom:8,position:'relative',zIndex:10}}>
+                  <div style={{display:'flex',alignItems:'center',gap:6,background:'var(--bg-surface-2)',border:manualContracts?'1px solid var(--gold)':'1px solid rgba(255,255,255,0.12)',borderRadius:10,padding:'6px 10px',marginBottom:8,position:'relative',zIndex:10}}>
                     <input type="number" min="1" value={manualContracts}
                       onChange={e => setManualContracts(e.target.value)}
                       onClick={e => e.stopPropagation()}
@@ -1333,7 +1333,7 @@ export default function Calculator() {
                     <span style={{fontSize:11,color:'var(--text-muted)'}}>шт.</span>
                     {manualContracts && <button onClick={() => setManualContracts('')} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text-muted)',fontSize:13,padding:0}}>✕</button>}
                   </div>
-                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',background:'rgba(255,255,255,0.04)',borderRadius:8,padding:'4px 10px'}}>
+                  <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',background:'var(--bg-surface-2)',borderRadius:8,padding:'4px 10px'}}>
                     <span style={{fontSize:11,color:'var(--text-muted)'}}>авто:</span>
                     <span style={{fontSize:20,fontWeight:800,color:manualContracts?'var(--text-muted)':'var(--text-primary)'}}>{result.contracts}</span>
                     <span style={{fontSize:11,color:'var(--text-muted)'}}>шт.</span>
