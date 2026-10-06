@@ -80,6 +80,14 @@ function toIsoDate(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pa
 const MOEX_PAGE_SIZE = 500;
 const MOEX_MAX_PAGES = 60; // safety cap: 30k daily bars (~120 years) — we'll never hit it
 
+// ISS отдаёт время свечи как московское "YYYY-MM-DD HH:MM:SS" БЕЗ пояса. `new Date(строка)`
+// читает такую строку по поясу машины (ПК трейдера UTC+4, сервер робота UTC) — свеча «10:00»
+// получалась сдвинутой на 1 или 3 часа относительно настоящего момента, а свечи Т-Банка
+// (настоящие моменты) и сделки (timestampUtc) лежали по-другому. Задаём пояс явно.
+export function parseMoexTime(s) {
+  return new Date(`${String(s).trim().replace(' ', 'T')}+03:00`);
+}
+
 async function fetchCandlesFromMoex(ticker, instrumentType, from, to, moexInterval) {
   const em = ISS_ENGINE_MARKET[instrumentType] || ISS_ENGINE_MARKET.stock;
   const base = `${ISS_BASE}/engines/${em.engine}/markets/${em.market}/securities/${encodeURIComponent(ticker)}/candles.json`
@@ -100,7 +108,7 @@ async function fetchCandlesFromMoex(ticker, instrumentType, from, to, moexInterv
       const close = r[iClose];
       if (!Number.isFinite(close)) continue;
       out.push({
-        date: new Date(r[iBegin]),
+        date: parseMoexTime(r[iBegin]),
         open: r[iOpen], high: r[iHigh], low: r[iLow], close, volume: r[iVolume],
       });
     }
