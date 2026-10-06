@@ -178,7 +178,10 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades }) {
   else if (okLong) { direction = 'long'; best = long; }
   else if (okShort) { direction = 'short'; best = short; }
   if (!direction) {
-    return { skipped: `условия не сошлись (лонг ${long.passed}/${long.total}, шорт ${short.passed}/${short.total})` };
+    return {
+      skipped: `условия не сошлись на закрытой свече ${new Date(signalBar.date).toISOString().slice(0, 10)}: `
+        + `лонг ${long.passed}/${long.total} (${Math.round(long.pct)}%), шорт ${short.passed}/${short.total} (${Math.round(short.pct)}%), нужно ${threshold}%`,
+    };
   }
 
   const entryPrice = entryBar.open;
@@ -293,6 +296,21 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades }) {
   return { opened: paper };
 }
 
+// Итог проверки пишем прямо в карточку радара — приложение показывает его под тикером.
+// Раньше причину «почему не открыл» можно было узнать только из логов GitHub Actions, куда
+// трейдер не заходит. Писать в radarItems, а не в новую коллекцию: правила чтения уже есть.
+// Тихо: сбой записи статуса не должен мешать самой работе робота.
+async function saveRobotCheck(db, item, text, opened) {
+  if (DRY || !item?.id) return;
+  try {
+    await db.collection('radarItems').doc(item.id).update({
+      robotCheck: { at: new Date().toISOString(), text: String(text).slice(0, 300), opened },
+    });
+  } catch (e) {
+    console.error(`robotCheck ${item.ticker}: ${e.message}`);
+  }
+}
+
 async function main() {
   if (!FORCE && !anyMarketOpen()) {
     console.log('Все рынки закрыты — искать входы незачем.');
@@ -325,6 +343,7 @@ async function main() {
     for (const item of items) {
       try {
         const res = await checkItem({ db, uid, profile, item, openTickers, allTrades });
+        await saveRobotCheck(db, item, res.opened ? `открыл ${res.opened.direction === 'short' ? 'шорт' : 'лонг'}` : res.skipped, !!res.opened);
         if (res.opened) {
           const o = res.opened;
           openTickers.add(o.ticker);
@@ -340,6 +359,7 @@ async function main() {
         }
       } catch (e) {
         console.error(`[${uid}] ${item.ticker}: ${e.message}`);
+        await saveRobotCheck(db, item, `ошибка проверки: ${e.message}`, false);
       }
     }
   }

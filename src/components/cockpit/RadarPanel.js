@@ -215,6 +215,11 @@ export default function RadarPanel() {
                       : pct != null ? `${res.result.passed} из ${res.result.total} условий`
                         : 'ждёт проверки'}
                   </div>
+                  {it.robotCheck?.text && (
+                    <div className="ck-radar-sub" title={`Робот, ${new Date(it.robotCheck.at).toLocaleString('ru-RU')}: ${it.robotCheck.text}`}>
+                      🤖 {new Date(it.robotCheck.at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} · {it.robotCheck.text}
+                    </div>
+                  )}
                 </div>
               </button>
               <button className="ck-radar-del" onClick={() => handleDelete(it)} title="Убрать из радара">✕</button>
