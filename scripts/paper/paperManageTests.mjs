@@ -17,7 +17,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const { planPaperUpdate } = await import(pathToFileURL(path.join(__dirname, 'managePaperTrades.mjs')).href);
+const { planPaperUpdate, planExpiryClose } = await import(pathToFileURL(path.join(__dirname, 'managePaperTrades.mjs')).href);
 
 let failed = 0;
 function check(name, actual, expect) {
@@ -88,6 +88,21 @@ const shortPlan = planPaperUpdate({ trade: shortTrade, rules: RULES, candles: sh
 check('Шорт: цель ниже входа — сделка закрыта', shortPlan.patch?.status, (v) => v === 'closed');
 // Шорт: (100 − 90) × 10 = 100 грязными, минус та же комиссия 1 → 99.
 check('Шорт: прибыль считается в обратную сторону', shortPlan.patch?.pnl, (v) => Math.abs(v - 99) < 1e-6);
+
+// --- экспирация фьючерса: закрытие остатка по последней цене ---
+const futTrade = { ...baseTrade, instrumentType: 'future', ticker: 'BRX6', direction: 'long', volume: 4, remainingVolume: 4 };
+const expPlan = planExpiryClose({ trade: futTrade, lastBar: bar(5, 100, 108, 99, 106), commRate: COMM });
+check('Экспирация: сделка закрыта', expPlan.patch?.status, (v) => v === 'closed');
+check('Экспирация: цена выхода — закрытие последнего бара', expPlan.patch?.exitPrice, (v) => v === 106);
+check('Экспирация: причина помечена', expPlan.patch?.exitReason, (v) => v === 'expiry');
+check('Экспирация: результат = (106−100)×4 минус комиссия', expPlan.patch?.pnl, (v) => v > 23 && v < 24);
+const expAfterFire = planExpiryClose({
+  trade: { ...futTrade, remainingVolume: 2, legs: [{ type: 'close', quantity: 2, price: 104 }], pnl: 7 },
+  lastBar: bar(5, 100, 108, 99, 106), commRate: COMM,
+});
+check('Экспирация после частичной фиксации: закрывается только остаток (2)', expAfterFire.patch?.legs?.at(-1)?.quantity, (v) => v === 2);
+check('Экспирация: P&L прибавляется к уже накопленному', expAfterFire.patch?.pnl, (v) => v > 7 + 11 && v < 7 + 12);
+check('Экспирация: повторный проход по закрытой — пропуск', planExpiryClose({ trade: { ...futTrade, status: 'closed' }, lastBar: bar(5, 1, 1, 1, 1), commRate: COMM }).skipped, (v) => v === 'уже закрыта');
 
 if (failed) {
   console.error(`\nПровалено проверок: ${failed}`);

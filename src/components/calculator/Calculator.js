@@ -12,6 +12,7 @@ import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { computeMarketContextAtEntry } from '../../services/analytics/marketContext';
 import { fetchActiveFutureCard, fetchMoexSecurityInfo } from '../../services/marketData/futuresSpecs';
+import { isFuturesRoot, resolveFutureRoot, DEFAULT_MIN_DAYS_TO_EXPIRY } from '../../services/marketData/futuresRoll';
 import { evaluateStrategy, getActiveStrategy, getStrategies } from '../../services/analytics/strategy';
 import { computeBaskets, capitalForStrategy, getPortfolio } from '../../services/analytics/portfolio';
 import { commissionRateFor, DEFAULT_TARIFF, TARIFFS } from '../../services/analytics/commission';
@@ -435,9 +436,35 @@ export default function Calculator() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Контракт у самого конца жизни: ликвидность уходит, цены ведут себя иначе — предупреждаем
+  // сразу при загрузке, до расчёта сделки (то же правило, по которому робот не открывает входы).
+  useEffect(() => {
+    const exp = instrumentInfo?.expirationDate;
+    if (instrumentType !== 'future' || !exp) return;
+    const d = new Date(`${String(exp).slice(0, 10)}T23:59:59+03:00`);
+    if (Number.isNaN(d.getTime()) || d.getUTCFullYear() >= 2099) return;
+    const daysLeft = Math.floor((d.getTime() - Date.now()) / 86400000);
+    if (daysLeft < DEFAULT_MIN_DAYS_TO_EXPIRY) {
+      toast.error(`Контракт истекает ${daysLeft < 0 ? 'уже' : `через ${daysLeft} дн.`} — новую позицию лучше открывать в следующем контракте`, { duration: 7000 });
+    }
+  }, [instrumentInfo?.expirationDate, instrumentType]);
+
   const loadInstrument = useCallback(async () => {
     if (!form.ticker) { toast.error('Введите тикер'); return; }
-    const ticker = form.ticker.toUpperCase();
+    let ticker = form.ticker.toUpperCase();
+    // «Корень» (BR — нефть) — не контракт: торговать нужно конкретным (BRX6/BRZ6…). Подставляем
+    // ближайший с запасом до экспирации и говорим об этом, а не ищем на бирже тикер «BR».
+    if (instrumentType === 'future' && isFuturesRoot(ticker)) {
+      try {
+        const r = await resolveFutureRoot(ticker);
+        const c = r?.tradable || r?.nearest;
+        if (c) {
+          toast(`${ticker} → контракт ${c.secid} (до экспирации ${c.daysLeft} дн.)`, { icon: 'ℹ️' });
+          ticker = c.secid;
+          setForm((f) => ({ ...f, ticker: c.secid }));
+        }
+      } catch { /* не вышло — пойдём как есть, дальше будет понятная ошибка биржи */ }
+    }
     const isNewTicker = loadedTickerRef.current && loadedTickerRef.current !== ticker;
 
     setLoadingPrice(true);

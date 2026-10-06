@@ -180,7 +180,18 @@ async function fetchCandlesFromTinkoff(ticker, instrumentType, from, to, token, 
 // silently fall back to D1 without a token rather than erroring, since the caller (UI)
 // is expected to not offer those buttons in the first place — this is a safety net, not
 // the primary gate.
+// Подключаемый разборщик «вечных» инструментов (нефть, газ, платина…), см. futuresRoll.js.
+// Регистрируется самим модулем futuresRoll при его загрузке, а не импортом отсюда: у
+// candles.js нет и не должно быть новых зависимостей — его без правок загружают десятки
+// исследовательских скриптов и фоновые роботы, которым лишний import сломал бы запуск.
+let rootResolver = null;
+export function registerRootResolver(fn) { rootResolver = fn; }
+
 export async function fetchDailyCandles({ ticker, instrumentType, toDate, tinkoffToken, timeframe = DEFAULT_TIMEFRAME, lookbackDays }) {
+  if (rootResolver) {
+    const stitched = await rootResolver({ ticker, instrumentType, toDate, tinkoffToken, timeframe, lookbackDays });
+    if (stitched) return stitched;
+  }
   const tf = TIMEFRAMES[timeframe] || TIMEFRAMES[DEFAULT_TIMEFRAME];
   const effectiveTf = (tf.requiresToken && !tinkoffToken) ? TIMEFRAMES[DEFAULT_TIMEFRAME] : tf;
 

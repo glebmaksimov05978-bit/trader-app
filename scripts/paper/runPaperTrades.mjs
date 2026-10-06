@@ -54,6 +54,7 @@ const engineUrl = esmify(path.join(repoRoot, 'src/services/backtest/engine.js'),
 ]);
 const candlesUrl = esmify(path.join(repoRoot, 'src/services/marketData/candles.js'), [["from '../tinkoff.js'", "from './tinkoff.js'"]]);
 const scheduleUrl = esmify(path.join(repoRoot, 'src/services/marketData/tradingSchedule.js'));
+const rollUrl = esmify(path.join(repoRoot, 'src/services/marketData/futuresRoll.js'));
 const specsUrl = esmify(path.join(repoRoot, 'src/services/marketData/futuresSpecs.js'));
 // alerts.js намеренно оставлен без единой зависимости (см. его шапку) — поэтому его можно
 // подтянуть сюда без переписывания путей и заглушек.
@@ -71,6 +72,7 @@ const { computeBaskets, capitalForStrategy } = await import(portfolioUrl);
 const { fetchDailyCandles, TIMEFRAMES, DEFAULT_TIMEFRAME } = await import(candlesUrl);
 const { shouldWatchNow, marketPhase, anyMarketOpen } = await import(scheduleUrl);
 const { fetchActiveFutureCard, fetchStockLot } = await import(specsUrl);
+const { entryGuard, DEFAULT_MIN_DAYS_TO_EXPIRY } = await import(rollUrl);
 const { formatPaperForTelegram } = await import(alertsUrl);
 
 const DRY = process.argv.includes('--dry');
@@ -80,7 +82,14 @@ function initFirebase() {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (!raw) throw new Error('Нет FIREBASE_SERVICE_ACCOUNT');
   admin.initializeApp({ credential: admin.credential.cert(JSON.parse(raw)) });
-  return admin.firestore();
+  const db = admin.firestore();
+  // Firestore Admin ОТВЕРГАЕТ поля со значением undefined целиком («Cannot use "undefined" as a
+  // Firestore value»). Робот бумажных сделок собирает документ с полями вида `x || undefined`,
+  // поэтому запись открытия падала у КАЖДОГО сигнала — тихо, шаг помечен continue-on-error, а в
+  // сухом прогоне и тестах записи нет вовсе (найдено 2026-10-07: ни одной бумажной сделки за всё
+  // время работы). Настройка ниже просто выбрасывает такие поля при записи.
+  db.settings({ ignoreUndefinedProperties: true });
+  return db;
 }
 
 // Отправка в Telegram — намеренно «тихая». К моменту вызова бумажная сделка уже записана
@@ -146,6 +155,22 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades }) {
   // повторных входов по одному и тому же сигналу.
   if (openTickers.has(item.ticker.toUpperCase())) return { skipped: 'бумажная сделка уже открыта' };
 
+  // Фьючерсы с датой экспирации: в радаре может лежать «корень» (BR — нефть), тогда торгуем
+  // ближайшим контрактом с запасом; конкретный контракт у самого конца не открываем вовсе
+  // (за несколько дней до экспирации ликвидность уходит и цены ведут себя иначе).
+  // Анализ при этом идёт по склеенной истории (candles.js + futuresRoll.js), а сама сделка
+  // пишется по конкретному контракту.
+  let tradeTicker = item.ticker.toUpperCase();
+  let rootTicker = null;
+  if (instrumentType === 'future') {
+    const minDays = Number(profile.alertPrefs?.futuresMinDaysToExpiry) || DEFAULT_MIN_DAYS_TO_EXPIRY;
+    const guard = await entryGuard(item.ticker, 'future', new Date(), minDays);
+    if (!guard.ok) return { skipped: guard.reason };
+    tradeTicker = guard.ticker;
+    rootTicker = guard.rootTicker || null;
+    if (openTickers.has(tradeTicker)) return { skipped: 'бумажная сделка уже открыта' };
+  }
+
   const tfKey = item.timeframe || profile.preferredTimeframe || DEFAULT_TIMEFRAME;
   const tf = TIMEFRAMES[tfKey] || TIMEFRAMES[DEFAULT_TIMEFRAME];
   const candles = await fetchDailyCandles({
@@ -202,7 +227,7 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades }) {
   const sizingStopPrice = stopPrice ?? computeRiskStopPrice(direction, entryPrice, rules, priceCtx);
   if (sizingStopPrice == null) return { skipped: 'нет ни стопа, ни трейлинга — объём по риску не посчитать' };
 
-  const specs = await loadSpecs(item.ticker, instrumentType);
+  const specs = await loadSpecs(tradeTicker, instrumentType);
   const strategies = profile.strategies || [];
   const computed = computeBaskets({ userProfile: profile, strategies, trades: allTrades });
   const capital = capitalForStrategy({
@@ -237,7 +262,9 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades }) {
   const volume = riskTooBig ? 1 : sizing.contracts;
 
   const paper = {
-    ticker: item.ticker.toUpperCase(),
+    ticker: tradeTicker,
+    // Корень радара (BR), если торгуем конкретным контрактом (BRX6) — для связи сделки с записью радара.
+    radarRoot: rootTicker || undefined,
     instrumentType,
     direction,
     entryPrice,

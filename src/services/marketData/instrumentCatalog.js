@@ -102,7 +102,6 @@ export const CATALOG = [
   { ticker: 'X5', name: 'X5 Group', type: 'stock', sector: 'Потребительский', aliases: ['FIVE', 'ПЯТЁРОЧКА'] },
   { ticker: 'LENT', name: 'Лента', type: 'stock', sector: 'Потребительский' },
   { ticker: 'BELU', name: 'Novabev Group', type: 'stock', sector: 'Потребительский', aliases: ['БЕЛУГА'] },
-  { ticker: 'FIXP', name: 'Fix Price', type: 'stock', sector: 'Потребительский' },
   { ticker: 'MVID', name: 'М.Видео', type: 'stock', sector: 'Потребительский' },
   { ticker: 'ABRD', name: 'Абрау-Дюрсо', type: 'stock', sector: 'Потребительский' },
   { ticker: 'RAGR', name: 'Русагро', type: 'stock', sector: 'Потребительский', aliases: ['AGRO'] },
@@ -150,12 +149,19 @@ export const CATALOG = [
   { ticker: 'EURRUBF', name: 'Евро/рубль', type: 'future', sector: 'Фьючерсы' },
   { ticker: 'GLDRUBF', name: 'Золото', type: 'future', sector: 'Фьючерсы' },
   { ticker: 'SLVRUBF', name: 'Серебро', type: 'future', sector: 'Фьючерсы' },
+  // «Корни» сменяемых контрактов: ниже они превращаются в конкретный контракт (BR → BRX6 → BRZ6…),
+  // история для анализа склеивается — см. futuresRoll.js. Ровно такие записи (тикер = корень)
+  // робот и приложение понимают как «нефть», а не как код одного контракта.
+  { ticker: 'BR', name: 'Нефть Brent', type: 'future', sector: 'Фьючерсы', aliases: ['BRENT', 'НЕФТЬ'] },
+  { ticker: 'NG', name: 'Природный газ', type: 'future', sector: 'Фьючерсы', aliases: ['ГАЗ'] },
+  { ticker: 'PT', name: 'Платина', type: 'future', sector: 'Фьючерсы', aliases: ['PLATINUM'] },
+  { ticker: 'PD', name: 'Палладий', type: 'future', sector: 'Фьючерсы', aliases: ['PALLADIUM'] },
+  { ticker: 'GK', name: 'Норникель (фьючерс)', type: 'future', sector: 'Фьючерсы', aliases: ['GMKN'] },
+  { ticker: 'LK', name: 'Лукойл (фьючерс)', type: 'future', sector: 'Фьючерсы', aliases: ['LKOH'] },
+  { ticker: 'RN', name: 'Роснефть (фьючерс)', type: 'future', sector: 'Фьючерсы', aliases: ['ROSN'] },
+  { ticker: 'VB', name: 'ВТБ (фьючерс)', type: 'future', sector: 'Фьючерсы', aliases: ['VTBR'] },
   { ticker: 'SBERF', name: 'Сбербанк (фьючерс)', type: 'future', sector: 'Фьючерсы' },
   { ticker: 'GAZPF', name: 'Газпром (фьючерс)', type: 'future', sector: 'Фьючерсы' },
-  { ticker: 'LKOHF', name: 'Лукойл (фьючерс)', type: 'future', sector: 'Фьючерсы' },
-  { ticker: 'ROSNF', name: 'Роснефть (фьючерс)', type: 'future', sector: 'Фьючерсы' },
-  { ticker: 'GMKNF', name: 'Норникель (фьючерс)', type: 'future', sector: 'Фьючерсы' },
-  { ticker: 'VTBRF', name: 'ВТБ (фьючерс)', type: 'future', sector: 'Фьючерсы' },
 ];
 
 const norm = (s) => (s || '').toString().trim().toUpperCase();

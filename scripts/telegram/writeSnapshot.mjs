@@ -56,7 +56,14 @@ function initFirebase() {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (!raw) throw new Error('Нет FIREBASE_SERVICE_ACCOUNT');
   admin.initializeApp({ credential: admin.credential.cert(JSON.parse(raw)) });
-  return admin.firestore();
+  const db = admin.firestore();
+  // Firestore Admin ОТВЕРГАЕТ поля со значением undefined целиком («Cannot use "undefined" as a
+  // Firestore value»). Робот бумажных сделок собирает документ с полями вида `x || undefined`,
+  // поэтому запись открытия падала у КАЖДОГО сигнала — тихо, шаг помечен continue-on-error, а в
+  // сухом прогоне и тестах записи нет вовсе (найдено 2026-10-07: ни одной бумажной сделки за всё
+  // время работы). Настройка ниже просто выбрасывает такие поля при записи.
+  db.settings({ ignoreUndefinedProperties: true });
+  return db;
 }
 
 // Последняя известная цена: закрытие самой свежей часовой свечи (за неё же отвечают и

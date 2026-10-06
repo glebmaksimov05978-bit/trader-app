@@ -61,6 +61,7 @@ esmify(path.join(repoRoot, 'src/services/backtest/engine.js'), [
 ]);
 const liveUrl = esmify(path.join(repoRoot, 'src/services/backtest/livePosition.js'), [["from './engine'", "from './engine.js'"]]);
 const candlesUrl = esmify(path.join(repoRoot, 'src/services/marketData/candles.js'), [["from '../tinkoff.js'", "from './tinkoff.js'"]]);
+const rollUrl = esmify(path.join(repoRoot, 'src/services/marketData/futuresRoll.js'));
 // Осторожно: общий шаг esmify() выше уже сам дописывает ".js" к путям без расширения —
 // заменять нужно ПОСЛЕ этого дописывания, иначе строка для поиска не совпадёт ни с чем.
 const closeUrl = esmify(path.join(repoRoot, 'src/services/tradeClose.js'), [
@@ -70,6 +71,7 @@ const closeUrl = esmify(path.join(repoRoot, 'src/services/tradeClose.js'), [
 
 const { computeLiveState } = await import(liveUrl);
 const { fetchDailyCandles, TIMEFRAMES, DEFAULT_TIMEFRAME } = await import(candlesUrl);
+const { expiryOfContract } = await import(rollUrl);
 // alerts.js намеренно без единой зависимости (см. его шапку) — подтягивается без заглушек.
 const alertsUrl = esmify(path.join(repoRoot, 'src/services/alerts.js'));
 const { computeClosePnl } = await import(closeUrl);
@@ -82,7 +84,14 @@ function initFirebase() {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (!raw) throw new Error('Нет FIREBASE_SERVICE_ACCOUNT');
   admin.initializeApp({ credential: admin.credential.cert(JSON.parse(raw)) });
-  return admin.firestore();
+  const db = admin.firestore();
+  // Firestore Admin ОТВЕРГАЕТ поля со значением undefined целиком («Cannot use "undefined" as a
+  // Firestore value»). Робот бумажных сделок собирает документ с полями вида `x || undefined`,
+  // поэтому запись открытия падала у КАЖДОГО сигнала — тихо, шаг помечен continue-on-error, а в
+  // сухом прогоне и тестах записи нет вовсе (найдено 2026-10-07: ни одной бумажной сделки за всё
+  // время работы). Настройка ниже просто выбрасывает такие поля при записи.
+  db.settings({ ignoreUndefinedProperties: true });
+  return db;
 }
 
 // Тихая отправка: к этому моменту изменение по сделке уже записано в базу, и потеря
@@ -226,6 +235,40 @@ export function planPaperUpdate({ trade, rules, candles, entryIndex, commRate })
   };
 }
 
+/**
+ * ЧИСТОЕ решение: контракт истёк, а бумажная сделка по нему ещё открыта — закрываем остаток
+ * по цене последнего бара. Иначе после экспирации свечи по контракту прекращаются, «новых
+ * баров ещё нет» вечно, и сделка висит открытой, показывая цену месячной давности.
+ * Закрытие помечено причиной «экспирация», чтобы в статистике его было видно отдельно.
+ */
+export function planExpiryClose({ trade, lastBar, commRate }) {
+  if (trade.status === 'closed') return { skipped: 'уже закрыта' };
+  const originalVolume = parseFloat(trade.volume) || 1;
+  const legs = Array.isArray(trade.legs) ? [...trade.legs] : [];
+  const closedSoFar = legs.filter((l) => l.type === 'close').reduce((s, l) => s + (l.quantity || 0), 0);
+  const qty = Math.max(0, originalVolume - closedSoFar);
+  const exitAt = new Date(lastBar.date).toISOString();
+  let pnlAdd = 0, commissionAdd = 0;
+  if (qty > 0) {
+    const result = computeClosePnl({ trade, exitPrice: lastBar.close, qty, commRate });
+    if (!result) return { skipped: 'не удалось посчитать результат' };
+    pnlAdd = result.pnl; commissionAdd = result.commission;
+    legs.push({
+      type: 'close', side: trade.direction === 'long' ? 'sell' : 'buy',
+      price: lastBar.close, quantity: qty, commission: result.commission,
+      timestampUtc: exitAt, dealNumber: null, source: 'paper',
+    });
+  }
+  return {
+    events: [`контракт истёк — закрыл остаток ${qty} по ${lastBar.close} (экспирация)`],
+    patch: {
+      status: 'closed', remainingVolume: 0, closeDate: exitAt, closedAt: exitAt,
+      exitPrice: lastBar.close, exitReason: 'expiry',
+      legs, pnl: (trade.pnl ?? 0) + pnlAdd, commission: (trade.commission ?? 0) + commissionAdd,
+    },
+  };
+}
+
 // Обвязка вокруг чистого решения выше: сходить за свечами, применить результат к базе.
 async function manageTrade({ db, uid, profile, trade }) {
   const strategy = strategyForTrade(trade, profile);
@@ -238,6 +281,33 @@ async function manageTrade({ db, uid, profile, trade }) {
     toDate: new Date(), timeframe: tfKey, lookbackDays: tf.lookbackDays,
   });
   if (!candles?.length) return { skipped: 'нет свечей' };
+
+  // Фьючерс, которого уже нет в списке действующих и по которому свечи прекратились, истёк:
+  // сделку нужно закрыть, а не ждать бар, который не появится. Сбой списка биржи — не повод
+  // закрывать (expiry остаётся undefined), поэтому ловим исключение и идём дальше.
+  const lastBar = candles[candles.length - 1];
+  if ((trade.instrumentType || 'stock') === 'future' && Date.now() - new Date(lastBar.date).getTime() > 36 * 3600 * 1000) {
+    let expiry;
+    try { expiry = await expiryOfContract(trade.ticker); } catch { expiry = undefined; }
+    if (expiry === null) {
+      const commRateX = trade.commissionRate
+        ?? commissionRateFor(profile.brokerTariff || DEFAULT_TARIFF, 'future').rate;
+      const expPlan = planExpiryClose({ trade, lastBar, commRate: commRateX });
+      if (expPlan.skipped) return expPlan;
+      if (DRY) return { ...expPlan, dry: true };
+      await db.collection('paperTrades').doc(trade.id).update({
+        ...expPlan.patch, updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      if (profile.alertPrefs?.paperTelegram !== false) {
+        await notifyPaper(formatPaperForTelegram({
+          title: `${trade.ticker} ${trade.direction === 'short' ? 'шорт' : 'лонг'} — закрыта по экспирации`,
+          lines: [...expPlan.events, `Итог по сделке: ${expPlan.patch.pnl} ₽.`],
+          trade,
+        }));
+      }
+      return expPlan;
+    }
+  }
 
   const entryIndex = indexAtOrBefore(candles, trade.openedAt);
   if (entryIndex < 0 || entryIndex >= candles.length - 1) return { skipped: 'новых баров ещё нет' };
