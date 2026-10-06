@@ -21,6 +21,7 @@
 // ничего, кроме адреса.
 import { buildReasonKeyboard, describeDecision, escapeHtml } from '../../../src/services/alerts.js';
 import { handleOrder, handleOrderConfig } from './orders.js';
+import { MENU_KEYBOARD, renderMenuReply, commandOf } from './menu.js';
 
 // Репозиторий с роботом уведомлений/бумажных сделок — тот же, что и у этого воркера.
 // Не секрет (это просто адрес открытого репозитория), поэтому можно хранить прямо тут.
@@ -72,6 +73,50 @@ async function ringAlarm(env) {
   return { ok: true };
 }
 
+// Меню бота. Отвечает только чату, записанному в снимке (его кладёт сам робот из своего
+// TELEGRAM_CHAT_ID); пока снимка нет или чат другой — молчит, ничего не выдавая.
+async function handleMenuMessage(message, env) {
+  const raw = await env.DECISIONS.get('snap:main');
+  const snap = raw ? JSON.parse(raw) : null;
+  if (!snap?.chatId || String(message.chat.id) !== String(snap.chatId)) return new Response('ok');
+
+  const command = commandOf(message.text);
+  if (!command) return new Response('ok');
+  const text = command === 'start'
+    ? '<b>TraderPro</b>\nМеню внизу: открытые сделки, бумажные, радар, статус робота.\nЭто только просмотр — открывать и закрывать сделки здесь пока нельзя.'
+    : renderMenuReply(command, snap);
+  await tg(env.BOT_TOKEN, 'sendMessage', {
+    chat_id: message.chat.id, text, parse_mode: 'HTML', disable_web_page_preview: true,
+    reply_markup: MENU_KEYBOARD,
+  });
+  return new Response('ok');
+}
+
+// Разовая настройка: говорит Telegram присылать этому воркеру не только нажатия кнопок, но
+// и обычные сообщения (иначе меню молчит), и регистрирует список команд. Токен бота берётся
+// из секретов самого воркера — мне/в чат/в браузер он не попадает. Безопасно открывать
+// сколько угодно раз и кому угодно: запрос всегда ставит один и тот же адрес этого воркера.
+async function handleSetup(request, env) {
+  const origin = new URL(request.url).origin;
+  const hook = await tg(env.BOT_TOKEN, 'setWebhook', {
+    url: `${origin}/`,
+    allowed_updates: ['message', 'callback_query'],
+    ...(env.WEBHOOK_SECRET ? { secret_token: env.WEBHOOK_SECRET } : {}),
+  });
+  const cmds = await tg(env.BOT_TOKEN, 'setMyCommands', {
+    commands: [
+      { command: 'menu', description: 'Показать меню' },
+      { command: 'trades', description: 'Открытые сделки' },
+      { command: 'paper', description: 'Бумажные сделки' },
+      { command: 'radar', description: 'Что решил робот по радару' },
+      { command: 'robot', description: 'Статус робота' },
+    ],
+  });
+  return new Response(`webhook: ${hook.ok ? 'ok' : hook.description}\ncommands: ${cmds.ok ? 'ok' : cmds.description}\n`, {
+    status: hook.ok ? 200 : 502, headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+  });
+}
+
 export default {
   // Почему это здесь, а не просто в расписании самого GitHub Actions: собственное
   // расписание GitHub (`schedule: cron:`) — best-effort и НЕ гарантирует частоту. На
@@ -89,6 +134,7 @@ export default {
     const path = new URL(request.url).pathname;
     if (path === '/order') return handleOrder(request, env);
     if (path === '/order/config') return handleOrderConfig(request, env);
+    if (path === '/setup') return handleSetup(request, env);
 
     // Второй, независимый путь для будильника — обычный веб-адрес, на который может
     // стучаться внешний крон-сервис (cron-job.org и т.п.), а не встроенный механизм
@@ -120,6 +166,11 @@ export default {
     }
 
     const update = await request.json().catch(() => null);
+
+    // Обычное сообщение (нажатие кнопки меню или команда) — отдельная ветка от кнопок
+    // под уведомлениями.
+    if (update?.message?.text) return handleMenuMessage(update.message, env);
+
     const cq = update?.callback_query;
     if (!cq?.data?.startsWith('d|')) return new Response('ok'); // не наша кнопка — молча выходим
 
