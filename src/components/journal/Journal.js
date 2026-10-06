@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, addTrade, updateTrade, deleteTrade, calcStats, resolveOpenedAt, resolveClosedAt } from '../../services/trades';
 import { fetchTradeLegs, resolveAccountId } from '../../services/positionSync';
 import { formatCurrency, formatNumber } from '../../utils/calculator';
+import { fetchMarketPrice } from '../../services/marketData/lastPrice';
 import { fetchDailyCandles, availableTimeframes, recommendTimeframe, TIMEFRAMES, DEFAULT_TIMEFRAME } from '../../services/marketData/candles';
 import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
@@ -44,6 +45,8 @@ export default function Journal() {
   // Кастомный confirm вместо window.confirm
   const [confirmDelete, setConfirmDelete] = useState(null); // trade.id // trade object
   const [closePrice, setClosePrice] = useState('');
+  // Текущая рыночная цена закрываемого инструмента — предлагается подставить в «Цену выхода».
+  const [marketPx, setMarketPx] = useState(null); // null | 'loading' | {price, source, delayed} | 'none'
   const [closedAt, setClosedAt] = useState('');
   const [closing, setClosing] = useState(false);
   // Частичная фиксация: сколько контрактов закрываем этой операцией. Пусто = весь остаток.
@@ -189,6 +192,10 @@ export default function Journal() {
     setCloseModal(trade);
     setClosePrice('');
     setCloseQty('');
+    setMarketPx('loading');
+    fetchMarketPrice({ ticker: trade.ticker, instrumentType: trade.instrumentType || 'stock', tinkoffToken: userProfile?.tinkoffToken })
+      .then((r) => setMarketPx(r || 'none'))
+      .catch(() => setMarketPx('none'));
     const now = new Date();
     const pad = (n) => String(n).padStart(2, '0');
     setClosedAt(`${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`);
@@ -1093,6 +1100,18 @@ export default function Journal() {
                     }}
                   />
                 </div>
+                {/* Подсказка с рыночной ценой: раньше цену выхода приходилось вводить с нуля,
+                    и убыток считался от «примерно». Подставляется по нажатию — не молча,
+                    потому что трейдер мог закрыть по другой цене. */}
+                {marketPx === 'loading' && (
+                  <div style={{ marginTop: 6, paddingLeft: 4, fontSize: 11.5, color: 'var(--text-muted)' }}>Узнаю рыночную цену…</div>
+                )}
+                {marketPx && typeof marketPx === 'object' && (
+                  <div style={{ marginTop: 6, paddingLeft: 4, fontSize: 11.5, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span>Рынок сейчас: <b style={{ color: 'var(--text-secondary)' }}>{marketPx.price}</b> · {marketPx.source}{marketPx.delayed ? ' (задержка ~15 мин)' : ''}</span>
+                    <button type="button" className="btn btn-ghost btn-sm" style={{ padding: '2px 10px', fontSize: 11 }} onClick={() => setClosePrice(String(marketPx.price))}>Подставить</button>
+                  </div>
+                )}
               </div>
 
               {/* Объём фиксации — сколько контрактов закрываем этой операцией.
