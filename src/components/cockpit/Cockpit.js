@@ -372,6 +372,36 @@ export default function Cockpit() {
 
   useEffect(() => { recompute(); }, [recompute]);
 
+  // Раз в минуту обновляем позицию сами, пока вкладка на виду, — раньше цены и итог
+  // менялись только по кнопке «⟳ Обновить». С токеном Т-Банка свечи уже идут оттуда
+  // (fetchDailyCandles выше), без токена — с Мосбиржи с задержкой ~15 минут.
+  useEffect(() => {
+    if (!trade) return undefined;
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') recompute();
+    }, 60000);
+    return () => clearInterval(id);
+  }, [trade, recompute]);
+
+  // Где система закрыла бы позицию (целиком или частями) — метки на графике рядом с реальными
+  // операциями. Берутся из теневой линии: движок исполняет там каждый свой сигнал. У бумажной
+  // сделки метки не нужны — её и так ведёт система, реальные операции там не с чем сравнивать.
+  const systemMarkers = useMemo(() => {
+    const sh = state?.shadow;
+    if (isPaper || !sh || !candles?.length) return null;
+    const out = [];
+    const seen = new Set();
+    const add = (index, text) => {
+      const c = candles[index];
+      if (!c || seen.has(index)) return;
+      seen.add(index);
+      out.push({ date: c.date, text });
+    };
+    (sh.fired || []).forEach((f) => add(f.index, f.fraction >= 0.999 ? 'Система: выход' : 'Система: часть'));
+    if (sh.exit) add(sh.exit.index, 'Система: выход');
+    return out.length ? out : null;
+  }, [state, candles, isPaper]);
+
   // --- разбор по признакам на текущем баре ---
   const breakdowns = useMemo(() => {
     if (!state?.actual?.position || !candles?.length) return { profit: null, loss: null };
@@ -1211,6 +1241,7 @@ export default function Cockpit() {
                 timeframeOptions={tfOptions}
                 onTimeframeChange={trade ? setTfOverride : (tf) => { setTaTf(tf); loadTa(tf); }}
                 legs={trade?.legs}
+                systemMarkers={systemMarkers}
                 direction={trade?.direction}
                 entryPrice={trade?.entryPrice ? parseFloat(trade.entryPrice) : null}
                 planLines={{

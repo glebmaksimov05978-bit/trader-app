@@ -260,6 +260,7 @@ export default function CandleChart({
   exitPrice,   // avg exit price — closes the P&L zone (null while the trade is open)
   planLines,   // { entry, stop, take } — Calculator plan
   trades,      // Бэктест: [{ direction, entryDate, exitDate, status, pnlPct }, ...] — ALL trades on one chart, overrides legs/entryMarker/exitMarker
+  systemMarkers, // [{ date, text }] — где система (движок) закрыла бы позицию; только у открытых сделок в Сопровождении
   height,      // px, необязательный — переопределяет высоту графика вне полноэкранного режима (по умолчанию 300 + панели RSI/MACD)
 }) {
   const containerRef = useRef(null);
@@ -598,12 +599,25 @@ export default function CandleChart({
     } else {
       fillsByBarRef.current = new Map();
     }
+    // Метки «система вышла бы здесь» — рядом с реальными операциями трейдера, другой формы
+    // и цвета, чтобы их нельзя было принять за настоящую сделку.
+    if (systemMarkers?.length && times.length) {
+      const accent = themeColor('--accent-primary', '#4f46e5');
+      systemMarkers.forEach((m) => {
+        if (!m?.date) return;
+        markers.push({
+          time: barTimeForLeg(toChartTime(toDate(m.date)), times),
+          position: 'aboveBar', color: accent, shape: 'square', text: m.text || 'Система',
+        });
+      });
+      markers.sort((a, b) => a.time - b.time);
+    }
     if (!seriesRef.current.markersPlugin) {
       seriesRef.current.markersPlugin = createSeriesMarkers(candleSeries, markers);
     } else {
       seriesRef.current.markersPlugin.setMarkers(markers);
     }
-  }, [candles, patterns, layers, entryMarker, exitMarker, legs, direction, entryPrice, exitPrice, planLines, colors, isTrade, trades]);
+  }, [candles, patterns, layers, entryMarker, exitMarker, legs, direction, entryPrice, exitPrice, planLines, colors, isTrade, trades, systemMarkers]);
 
   const rsiMacdPanes = (layers.rsi ? 110 : 0) + (layers.macd ? 110 : 0);
   // Real user report 2026-08-17: fullscreen used to hard-code `calc(100vh - 150px)` for
