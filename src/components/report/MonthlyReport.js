@@ -8,13 +8,14 @@
 // перечитать через полгода и понять, каким был август.
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { getUserTrades } from '../../services/trades';
+import { getUserTrades, resolveClosedAt } from '../../services/trades';
 import { getActiveStrategy } from '../../services/analytics/strategy';
 import {
   buildMonthlyReport, listReportMonths, monthKeyOf, reportVerdict,
 } from '../../services/analytics/monthlyReport';
 import { formatCurrency } from '../../utils/calculator';
 import { MIN_SAMPLE } from '../../services/analytics/insightsEngine';
+import { buildEntryStats } from '../../services/analytics/entryStats';
 import './MonthlyReport.css';
 
 const money = (v) => `${v >= 0 ? '+' : '−'}${formatCurrency(Math.abs(Math.round(v)))}`;
@@ -24,6 +25,7 @@ export default function MonthlyReport() {
   const [trades, setTrades] = useState([]);
   const [loading, setLoading] = useState(true);
   const [monthKey, setMonthKey] = useState(null);
+  const [entriesScope, setEntriesScope] = useState('month'); // 'month' | 'all'
 
   useEffect(() => {
     if (!user) return;
@@ -49,6 +51,19 @@ export default function MonthlyReport() {
     monthKey: activeKey,
     profile: { ...(userProfile || {}), __activeExitRules: activeStrategy?.exitRules || null },
   }), [trades, activeKey, userProfile, activeStrategy]);
+
+  // Статистика по входам: за выбранный месяц или за всё время. За один месяц выборка почти
+  // всегда мала для выводов, поэтому «за всё время» — рядом, одним нажатием.
+  const entryStats = useMemo(() => {
+    const realized = trades.filter((t) => (t.status === 'closed' || t.status === 'partial') && t.pnl != null);
+    const scoped = entriesScope === 'all'
+      ? realized
+      : realized.filter((t) => {
+        const c = resolveClosedAt(t);
+        return c && monthKeyOf(c) === activeKey;
+      });
+    return buildEntryStats(scoped);
+  }, [trades, entriesScope, activeKey]);
 
   if (loading) {
     return <div className="page"><div className="card">Загружаю сделки…</div></div>;
@@ -233,6 +248,44 @@ export default function MonthlyReport() {
             {report.fixedHabits.length > 0 && (
               <div className="mr-fixed">
                 <b>Ушло с прошлого месяца:</b> {report.fixedHabits.join(', ').toLowerCase()}
+              </div>
+            )}
+          </div>
+
+          <div className="card mr-block">
+            <div className="flex justify-between items-center" style={{ flexWrap: 'wrap', gap: 8 }}>
+              <div className="section-title" style={{ marginBottom: 0 }}><div className="section-title-icon">🧭</div>Мои входы</div>
+              <div className="tabs" style={{ width: 'auto' }}>
+                <button className={`tab ${entriesScope === 'month' ? 'active' : ''}`} onClick={() => setEntriesScope('month')}>За месяц</button>
+                <button className={`tab ${entriesScope === 'all' ? 'active' : ''}`} onClick={() => setEntriesScope('all')}>За всё время</button>
+              </div>
+            </div>
+            <p className="mr-note">
+              Как отработали ваши входы в разрезе направления, дня недели, времени суток (по Москве) и срока удержания.
+              {entryStats.total < MIN_SAMPLE ? ` Сделок всего ${entryStats.total} — для уверенных выводов нужно от ${MIN_SAMPLE}, читайте как наблюдение.` : ''}
+            </p>
+            {entryStats.groups.length === 0 ? (
+              <p className="mr-note">Нет закрытых сделок с результатом.</p>
+            ) : (
+              <div className="mr-entry-grid">
+                {entryStats.groups.map((g) => (
+                  <div key={g.id} className="mr-entry-group">
+                    <div className="mr-entry-title">{g.title}</div>
+                    <table className="table table-compact">
+                      <thead><tr><th></th><th>Сделок</th><th>Прибыльных</th><th style={{ textAlign: 'right' }}>Итог</th></tr></thead>
+                      <tbody>
+                        {g.rows.map((r) => (
+                          <tr key={r.label} style={r.count < 3 ? { opacity: 0.6 } : undefined}>
+                            <td style={{ fontWeight: 600 }}>{r.label.replace(/^\d\) /, '')}</td>
+                            <td>{r.count}</td>
+                            <td>{Math.round(r.winrate)}%</td>
+                            <td style={{ textAlign: 'right', color: r.pnl >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>{money(r.pnl)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
               </div>
             )}
           </div>
