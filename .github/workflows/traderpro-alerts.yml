@@ -144,3 +144,23 @@ jobs:
           else
             node scripts/radar/cleanupRadar.mjs
           fi
+
+      # Шестой шаг: переносит в Журнал сделки, исполненные кнопками в Telegram (закрытие и открытие
+      # по бумажной). Воркер бота оставляет записи fill:… в хранилище — здесь они превращаются в
+      # записи Журнала тем же расчётом, что и в приложении. Повторный запуск безопасен.
+      - name: Перенос сделок из Telegram в Журнал
+        continue-on-error: true
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ALERT_UIDS: ${{ secrets.ALERT_UIDS }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
+        run: |
+          if [ "${{ github.event.inputs.paper_dry }}" = "true" ]; then
+            node scripts/telegram/applyFills.mjs --dry
+          else
+            node scripts/telegram/applyFills.mjs
+          fi

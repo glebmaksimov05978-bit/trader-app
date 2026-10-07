@@ -43,7 +43,7 @@ function corsHeaders(env) {
   };
 }
 
-async function tinkoff(env, method, body) {
+export async function tinkoff(env, method, body) {
   const res = await fetch(`${TINKOFF}/tinkoff.public.invest.api.contract.v1.${method}`, {
     method: 'POST',
     headers: {
@@ -70,7 +70,7 @@ function toQuotation(price) {
   return { units: String(units), nano };
 }
 
-function quotationToFloat(q) {
+export function quotationToFloat(q) {
   if (!q) return null;
   return (Number(q.units) || 0) + (Number(q.nano) || 0) / 1e9;
 }
@@ -141,7 +141,7 @@ export function checkOrderGates(env, body) {
 // несколько (обычный брокерский, ИИС...) — поэтому счёт нельзя зашивать в настройках
 // одним значением, его выбирают в самой заявке, а здесь только проверяют, что выбранный
 // счёт действительно принадлежит этому токену (а не подставлен произвольно из браузера).
-async function listAccounts(env) {
+export async function listAccounts(env) {
   const data = await tinkoff(env, 'UsersService/GetAccounts', {});
   return (data?.accounts || [])
     .filter((a) => a.status === 'ACCOUNT_STATUS_OPEN')
@@ -152,7 +152,7 @@ async function listAccounts(env) {
     }));
 }
 
-async function resolveInstrument(env, ticker, instrumentType) {
+export async function resolveInstrument(env, ticker, instrumentType) {
   const kind = instrumentType === 'future' ? 'INSTRUMENT_TYPE_FUTURES'
     : instrumentType === 'currency' ? 'INSTRUMENT_TYPE_CURRENCY'
       : 'INSTRUMENT_TYPE_SHARE';

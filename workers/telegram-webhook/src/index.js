@@ -21,7 +21,9 @@
 // ничего, кроме адреса.
 import { buildReasonKeyboard, describeDecision, escapeHtml } from '../../../src/services/alerts.js';
 import { handleOrder, handleOrderConfig } from './orders.js';
-import { MENU_KEYBOARD, renderMenuReply, commandOf } from './menu.js';
+import { MENU_KEYBOARD, renderMenuReply, commandOf, menuButtons } from './menu.js';
+import { tinkoff, resolveInstrument, listAccounts } from './orders.js';
+import { prepare, execute, cancel, parseCallback } from './tgTrade.js';
 
 // Репозиторий с роботом уведомлений/бумажных сделок — тот же, что и у этого воркера.
 // Не секрет (это просто адрес открытого репозитория), поэтому можно хранить прямо тут.
@@ -89,6 +91,75 @@ async function handleMenuMessage(message, env) {
     chat_id: message.chat.id, text, parse_mode: 'HTML', disable_web_page_preview: true,
     reply_markup: MENU_KEYBOARD,
   });
+  // Кнопки действий — отдельным сообщением: обычная клавиатура меню остаётся внизу экрана, а
+  // инлайн-кнопки привязываются к конкретному списку.
+  const buttons = menuButtons(command, snap);
+  if (buttons) {
+    await tg(env.BOT_TOKEN, 'sendMessage', {
+      chat_id: message.chat.id, text: 'Действия по сделкам (нужно будет подтвердить):', reply_markup: buttons,
+    });
+  }
+  return new Response('ok');
+}
+
+// Нажатия кнопок торговли (x|…). Только чат владельца из снимка. Первое нажатие («Закрыть»,
+// «Открыть реально») ничего не отправляет брокеру — показывает подтверждение; заявка уходит
+// после «Да». Вся логика и защиты — в tgTrade.js.
+async function handleTradeCallback(cq, env) {
+  const token = env.BOT_TOKEN;
+  const raw = await env.DECISIONS.get('snap:main');
+  const snap = raw ? JSON.parse(raw) : null;
+  const chatId = cq.message?.chat?.id;
+  if (!snap?.chatId || String(chatId) !== String(snap.chatId) || String(cq.from?.id) !== String(snap.chatId)) {
+    return new Response('ok'); // чужой — молчим
+  }
+  const cb = parseCallback(cq.data);
+  if (!cb) return new Response('ok');
+
+  const deps = {
+    env,
+    tinkoff: (m, b) => tinkoff(env, m, b),
+    resolveInstrument: (t, ty) => resolveInstrument(env, t, ty),
+    listAccounts: () => listAccounts(env),
+    kvPut: (k, v, ttl) => env.DECISIONS.put(k, v, { expirationTtl: ttl }),
+    kvGet: (k) => env.DECISIONS.get(k),
+    kvDelete: (k) => env.DECISIONS.delete(k),
+    newId: () => crypto.randomUUID(),
+  };
+
+  if (cb.action === 'c' || cb.action === 'o') {
+    await tg(token, 'answerCallbackQuery', { callback_query_id: cq.id, text: 'Проверяю у брокера…' });
+    let args;
+    if (cb.action === 'c') {
+      const t = (snap.real || []).find((p) => p.id === cb.id);
+      if (!t) { await tg(token, 'sendMessage', { chat_id: chatId, text: 'Сделки нет в последнем снимке — откройте «📈 Сделки» заново.' }); return new Response('ok'); }
+      args = { kind: 'close', ticker: t.ticker, instrumentType: t.type, tradeId: t.id, tradeDirection: t.dir };
+    } else {
+      const t = (snap.paper || []).find((p) => p.id === cb.id);
+      if (!t) { await tg(token, 'sendMessage', { chat_id: chatId, text: 'Бумажной сделки нет в последнем снимке — откройте «📄 Бумажные» заново.' }); return new Response('ok'); }
+      args = { kind: 'open', ticker: t.ticker, instrumentType: t.type, paperId: t.id, direction: t.dir === 'short' ? 'sell' : 'buy', lots: t.vol, tradeDirection: t.dir };
+    }
+    const r = await prepare(deps, args);
+    await tg(token, 'sendMessage', {
+      chat_id: chatId, text: r.text, parse_mode: 'HTML',
+      ...(r.keyboard ? { reply_markup: r.keyboard } : {}),
+    });
+    return new Response('ok');
+  }
+
+  // go / no — второе нажатие: исполнить или отменить.
+  const msg = { chat_id: chatId, message_id: cq.message.message_id, parse_mode: 'HTML', reply_markup: { inline_keyboard: [] } };
+  if (cb.action === 'no') {
+    const r = await cancel(deps, cb.id);
+    await tg(token, 'editMessageText', { ...msg, text: r.text });
+    await tg(token, 'answerCallbackQuery', { callback_query_id: cq.id, text: 'Отменено' });
+    return new Response('ok');
+  }
+  // Сначала убираем кнопки (защита от двойного нажатия), потом исполняем.
+  await tg(token, 'editMessageReplyMarkup', { chat_id: chatId, message_id: cq.message.message_id, reply_markup: { inline_keyboard: [] } });
+  await tg(token, 'answerCallbackQuery', { callback_query_id: cq.id, text: 'Отправляю заявку…' });
+  const r = await execute(deps, cb.id);
+  await tg(token, 'editMessageText', { ...msg, text: r.text });
   return new Response('ok');
 }
 
@@ -172,6 +243,7 @@ export default {
     if (update?.message?.text) return handleMenuMessage(update.message, env);
 
     const cq = update?.callback_query;
+    if (cq?.data?.startsWith('x|')) return handleTradeCallback(cq, env);
     if (!cq?.data?.startsWith('d|')) return new Response('ok'); // не наша кнопка — молча выходим
 
     const [, tradeId, code] = cq.data.split('|');

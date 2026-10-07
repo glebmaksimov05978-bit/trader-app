@@ -132,7 +132,9 @@ async function applyPendingDecisions(db, uid, runState) {
   for (const { name } of keys) {
     // `snap:` — снимок состояния для меню в Telegram (scripts/telegram/writeSnapshot.mjs),
     // это не решение по кнопке: разбирать и удалять его здесь нельзя.
-    if (name.startsWith('snap:')) continue;
+    // fill: — исполненная кнопкой в Telegram заявка (её переносит в Журнал scripts/telegram/applyFills.mjs);
+    // x: — ожидающее подтверждение торговой кнопки. Ни то, ни другое не решение по уведомлению.
+    if (/^(snap|fill|x):/.test(name)) continue;
     try {
       const valueRes = await cfKv(`/values/${encodeURIComponent(name)}`);
       const entry = JSON.parse(await valueRes.text());

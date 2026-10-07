@@ -51,6 +51,26 @@ function positionsText(title, list, at) {
   return `<b>${title}</b>\n${lines.join('\n')}\n\nИтого плавающий результат: <b>${money(total)}</b>\n<i>Данные на ${fmtTime(at)} (${ago(at)})</i>`;
 }
 
+/**
+ * Кнопки под списком: «Закрыть X» под открытыми сделками и «Открыть реально: X» под бумажными.
+ * Сами по себе ничего не отправляют — открывают шаг подтверждения (см. tgTrade.js). Данные кнопки
+ * несут id записи, а не цифры: объём и сторону бот берёт из позиции у брокера.
+ */
+export function menuButtons(command, snap) {
+  const MAX = 8;
+  if (command === 'real') {
+    const rows = (snap.real || []).filter((p) => p.id).slice(0, MAX)
+      .map((p) => [{ text: `📉 Закрыть ${p.ticker}`, callback_data: `x|c|${p.id}` }]);
+    return rows.length ? { inline_keyboard: rows } : null;
+  }
+  if (command === 'paper') {
+    const rows = (snap.paper || []).filter((p) => p.id).slice(0, MAX)
+      .map((p) => [{ text: `🔁 Открыть реально: ${p.ticker}`, callback_data: `x|o|${p.id}` }]);
+    return rows.length ? { inline_keyboard: rows } : null;
+  }
+  return null;
+}
+
 export function renderMenuReply(command, snap) {
   switch (command) {
     case 'real':

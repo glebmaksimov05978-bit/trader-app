@@ -24,7 +24,7 @@ fixedDb.settings({ ignoreUndefinedProperties: true });
 ok('с ignoreUndefinedProperties документ проходит проверку', (await tryAdd(fixedDb)) === 'accepted');
 // Все четыре робота обязаны включать настройку.
 import fs from 'fs';
-for (const f of ['scripts/paper/runPaperTrades.mjs', 'scripts/paper/managePaperTrades.mjs', 'scripts/alerts/runAlerts.mjs', 'scripts/telegram/writeSnapshot.mjs']) {
+for (const f of ['scripts/paper/runPaperTrades.mjs', 'scripts/paper/managePaperTrades.mjs', 'scripts/alerts/runAlerts.mjs', 'scripts/telegram/writeSnapshot.mjs', 'scripts/telegram/applyFills.mjs', 'scripts/radar/cleanupRadar.mjs']) {
   ok(`${f}: настройка включена`, fs.readFileSync(f, 'utf8').includes('ignoreUndefinedProperties: true'));
 }
 if (fails) { console.log(`\nПровалено: ${fails}`); process.exit(1); }
