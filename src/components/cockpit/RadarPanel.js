@@ -216,7 +216,7 @@ export default function RadarPanel() {
                         : 'ждёт проверки'}
                   </div>
                   {it.robotCheck?.text && (
-                    <div className="ck-radar-sub" title={`Робот, ${new Date(it.robotCheck.at).toLocaleString('ru-RU')}: ${it.robotCheck.text}`}>
+                    <div className="ck-radar-sub ck-radar-robot" title={`Робот, ${new Date(it.robotCheck.at).toLocaleString('ru-RU')}: ${it.robotCheck.text}`}>
                       🤖 {new Date(it.robotCheck.at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} · {it.robotCheck.text}
                     </div>
                   )}

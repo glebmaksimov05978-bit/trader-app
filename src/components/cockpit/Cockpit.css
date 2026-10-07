@@ -424,3 +424,6 @@
 .ck-score-off .ck-score-head { margin-bottom: 0; }
 .ck-off-text { font-size: 12px; color: var(--text-muted); line-height: 1.65; }
 .ck-score-off .ck-btn { align-self: flex-start; }
+
+/* Строка «🤖 робот» под тикером: причина может быть длинной (ошибка, условия) — переносим, а не обрезаем */
+.ck-radar-sub.ck-radar-robot { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.35; margin-top: 2px; word-break: break-word; }
