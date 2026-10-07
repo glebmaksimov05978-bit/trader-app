@@ -17,6 +17,29 @@ function workerUrlOf(userProfile) {
   return url.replace(/\/+$/, '');
 }
 
+/**
+ * Почему кнопка «Купить/Продать сразу» не показана — человеческим языком. Раньше она просто
+ * молча отсутствовала (реальная жалоба: «кнопки нет и пояснения тоже нет»), и было не понять,
+ * не настроен сервер, не отвечает он или тикер не разрешён. Возвращает null, если причин нет
+ * (кнопка должна быть показана).
+ */
+export function explainOrderUnavailable(cfg, userProfile, ticker) {
+  if (!workerUrlOf(userProfile)) {
+    return 'Заявки не подключены: адрес сервера не указан. Впишите его в Настройки → Заявки через сервер.';
+  }
+  if (!cfg) return 'Сервер заявок не ответил (выключен, неверный адрес или вы не вошли). Проверьте адрес в Настройках.';
+  if (cfg.killSwitch) return 'Отправка заявок выключена стоп-краном на сервере.';
+  if (!cfg.enabled) {
+    if (cfg.accountsError) return `Нет доступа к счетам брокера: ${cfg.accountsError}. Проверьте торговый токен.`;
+    if (cfg.reason) return `Сервер отказал: ${cfg.reason}`;
+    return 'Сервер заявок настроен не полностью (нет торгового токена, счетов или белого списка).';
+  }
+  if (ticker && !cfg.wildcard && !cfg.whitelist?.includes(String(ticker).toUpperCase())) {
+    return `${String(ticker).toUpperCase()} нет в белом списке разрешённых инструментов на сервере.`;
+  }
+  return null;
+}
+
 async function authHeader() {
   const user = auth.currentUser;
   if (!user) throw new Error('Нужно войти в приложение');

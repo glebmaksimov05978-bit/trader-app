@@ -998,7 +998,9 @@ export default function Cockpit() {
                   className={`ck-line ${showMe ? 'on' : 'off'}`}
                   onClick={() => (showMe && !showSys ? null : setShowMe(!showMe))}
                 >
-                  <span className="ck-k">Факт · ты</span>
+                  {/* У бумажной сделки нет трейдера: подпись «Факт · ты» врала бы, будто ты в ней торгуешь.
+                      Это просто движение цены от входа — «если ничего не делать». */}
+                  <span className="ck-k">{isPaper ? 'Цена от входа' : 'Факт · ты'}</span>
                   <span className={`ck-line-v ${(a?.currentPct ?? 0) >= 0 ? 'up' : 'down'}`}>
                     {fmtPct(a?.currentPct)}
                   </span>
@@ -1008,7 +1010,7 @@ export default function Cockpit() {
                   className={`ck-line ${showSys ? 'on' : 'off'}`}
                   onClick={() => (showSys && !showMe ? null : setShowSys(!showSys))}
                 >
-                  <span className="ck-k">Система</span>
+                  <span className="ck-k">{isPaper ? 'Система (ведёт сделку)' : 'Система'}</span>
                   {/* Итог линии, а не цена последнего бара: движок фиксировал по пути и,
                       возможно, уже вышел — по текущей цене обе линии всегда совпадали. */}
                   <span className={`ck-line-v ${(s?.resultPct ?? 0) >= 0 ? 'up' : 'down'}`}>

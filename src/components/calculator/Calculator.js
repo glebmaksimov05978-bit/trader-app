@@ -19,7 +19,7 @@ import { commissionRateFor, DEFAULT_TARIFF, TARIFFS } from '../../services/analy
 import { guessInstrumentType } from '../../services/import/instrumentResolver';
 import { cacheLogo, logoUrlFromName } from '../../services/marketData/instrumentLogos';
 import InstrumentIcon from '../shared/InstrumentIcon';
-import { fetchOrderConfig } from '../../services/broker';
+import { fetchOrderConfig, explainOrderUnavailable } from '../../services/broker';
 import OrderModal from './OrderModal';
 import { computeStopPrice, computeTakePrice, computeRiskStopPrice, exitTypeLabel } from '../../services/analytics/exitRules';
 import TechnicalAnalysisBlock, { PATTERN_LABELS, InfoTip } from '../shared/TechnicalAnalysisBlock';
@@ -127,6 +127,7 @@ export default function Calculator() {
   // если он не настроен, конфиг не приедет и кнопки просто не будет: показывать кнопку,
   // которая всегда отвечает ошибкой, хуже, чем не показывать её вовсе.
   const [orderCfg, setOrderCfg] = useState(null);
+  const [orderCfgLoaded, setOrderCfgLoaded] = useState(false); // ответ (или отказ) сервера получен — до этого причину не показываем
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [journalExtra, setJournalExtra] = useState({ setup: '', emotion: '', notes: '' });
   const [savingTrade, setSavingTrade] = useState(false);
@@ -228,7 +229,7 @@ export default function Calculator() {
 
   useEffect(() => {
     if (!user) { setOrderCfg(null); return; }
-    fetchOrderConfig(userProfile).then(setOrderCfg);
+    fetchOrderConfig(userProfile).then((c) => { setOrderCfg(c); setOrderCfgLoaded(true); });
   }, [user, userProfile]);
 
   // Ставка комиссии по умолчанию — из тарифа в Настройках. При первой загрузке страницы
@@ -1430,6 +1431,12 @@ export default function Calculator() {
                   }}
                 >📡 В радар</button>
               </div>
+              {/* Кнопка «Купить/Продать сразу» скрыта — говорим почему, а не молчим. */}
+              {form.ticker && orderCfgLoaded && explainOrderUnavailable(orderCfg, userProfile, form.ticker) && (
+                <div className="text-xs text-muted" style={{ marginTop: 8, lineHeight: 1.5 }}>
+                  ⚡ Купить сразу недоступно: {explainOrderUnavailable(orderCfg, userProfile, form.ticker)}
+                </div>
+              )}
 
               {/* Детализация */}
               <div className="card">
