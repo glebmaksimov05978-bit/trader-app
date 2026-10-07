@@ -75,3 +75,50 @@
 .mr-entry-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 28px; margin-top: 8px; }
 .mr-entry-title { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 4px; }
 @media (max-width: 760px) { .mr-entry-grid { grid-template-columns: 1fr; } }
+
+
+/* ---------- Отчёт за период: переключатели, показатели, график, сравнения ---------- */
+.mr-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
+.mr-seg { display: inline-flex; border: 1px solid var(--border-medium); border-radius: 10px; padding: 3px; background: var(--bg-surface); gap: 2px; }
+.mr-seg button {
+  border: none; background: transparent; color: var(--text-secondary); font-family: inherit; font-size: 13px; font-weight: 500;
+  padding: 7px 14px; border-radius: 7px; cursor: pointer; transition: background var(--transition), color var(--transition);
+}
+.mr-seg button:hover { color: var(--text-primary); }
+.mr-seg button.on { background: var(--accent-primary); color: #fff; font-weight: 600; }
+
+.mr-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
+@media (max-width: 760px) { .mr-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.mr-kpi { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 14px 16px; }
+.mr-kpi-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.7px; margin-bottom: 6px; }
+.mr-kpi-value { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.mr-kpi-sub { font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.45; }
+.mr-kpi-value.up, .mr-num.up, .mr-delta.up, .mr-chart-end b.up { color: var(--green); }
+.mr-kpi-value.down, .mr-num.down, .mr-delta.down, .mr-chart-end b.down { color: var(--red); }
+.mr-num { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+td.mr-num { text-align: right; }
+.mr-delta { font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* кривая */
+.mr-chart svg { width: 100%; height: auto; display: block; }
+.mr-chart .grid { stroke: var(--border-subtle); stroke-width: 1; }
+.mr-chart .zero { stroke: var(--border-medium); stroke-width: 1; }
+.mr-chart .axis { fill: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.mr-chart .prev { fill: none; stroke: var(--text-muted); stroke-width: 1.5; stroke-dasharray: 4 4; opacity: 0.7; }
+.mr-chart-end { font-size: 12.5px; color: var(--text-muted); margin-top: 6px; }
+
+/* я против системы */
+.mr-versus th.mr-v, .mr-versus td.mr-v { text-align: right; }
+.mr-versus td.mr-lbl { color: var(--text-secondary); }
+
+/* стратегии */
+.mr-strats { display: flex; flex-direction: column; gap: 14px; }
+.mr-strat-top { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.mr-strat-name { font-weight: 600; font-size: 14px; }
+.mr-strat-bar { height: 6px; background: var(--bg-surface-3); border-radius: 3px; margin: 7px 0 6px; overflow: hidden; }
+.mr-strat-bar i { display: block; height: 100%; border-radius: 3px; background: var(--text-muted); }
+.mr-strat-bar i.up { background: var(--green); }
+.mr-strat-bar i.down { background: var(--red); }
+.mr-strat-sub { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+.mr-two-col { display: flex; flex-direction: column; gap: 20px; }
+.mr-src { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); border: 1px solid var(--border-medium); border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
