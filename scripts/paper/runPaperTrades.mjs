@@ -143,8 +143,25 @@ async function loadSpecs(ticker, instrumentType) {
   return { lot: lot || 1, minStep: 1, minStepAmount: 0, initialMargin: 0, approx: lot == null };
 }
 
-async function checkItem({ db, uid, profile, item, openTickers, allTrades }) {
-  const strategy = strategyFor(item, profile);
+// Какими стратегиями проверять запись радара. По умолчанию — одной (своя у тикера или активная).
+// Если в Настройках выбраны несколько (alertPrefs.paperStrategyIds), КАЖДАЯ проверяется на каждом
+// тикере по своим правилам входа и ведёт свои бумажные сделки — так их можно сравнивать «в деле».
+// Тогда «не больше одной открытой» действует на пару тикер+стратегия, а не на тикер целиком.
+function strategiesFor(item, profile) {
+  const ids = profile.alertPrefs?.paperStrategyIds;
+  if (Array.isArray(ids) && ids.length) {
+    const all = profile.strategies || [];
+    const picked = ids.map((id) => all.find((s) => s.id === id)).filter(Boolean);
+    if (picked.length) return { list: picked, multi: true };
+  }
+  const one = strategyFor(item, profile);
+  return { list: one ? [one] : [], multi: false };
+}
+
+async function checkItem({ db, uid, profile, item, openTickers, allTrades, strategy: strategyOverride, multi = false }) {
+  const strategy = strategyOverride || strategyFor(item, profile);
+  // Ключ «уже открыта»: в одностратегийном режиме — тикер, в многостратегийном — тикер+стратегия.
+  const dedupeKey = (t) => (multi ? `${t}|${strategy?.id || ''}` : t);
   if (!strategy?.conditions?.length) return { skipped: 'у стратегии нет условий' };
 
   const instrumentType = item.instrumentType || 'stock';
@@ -153,7 +170,7 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades }) {
   }
   // Не больше одной открытой бумажной на тикер — иначе за месяц накопится свалка из
   // повторных входов по одному и тому же сигналу.
-  if (openTickers.has(item.ticker.toUpperCase())) return { skipped: 'бумажная сделка уже открыта' };
+  if (openTickers.has(dedupeKey(item.ticker.toUpperCase()))) return { skipped: 'бумажная сделка уже открыта' };
 
   // Фьючерсы с датой экспирации: в радаре может лежать «корень» (BR — нефть), тогда торгуем
   // ближайшим контрактом с запасом; конкретный контракт у самого конца не открываем вовсе
@@ -168,7 +185,7 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades }) {
     if (!guard.ok) return { skipped: guard.reason };
     tradeTicker = guard.ticker;
     rootTicker = guard.rootTicker || null;
-    if (openTickers.has(tradeTicker)) return { skipped: 'бумажная сделка уже открыта' };
+    if (openTickers.has(dedupeKey(tradeTicker))) return { skipped: 'бумажная сделка уже открыта' };
   }
 
   const tfKey = item.timeframe || profile.preferredTimeframe || DEFAULT_TIMEFRAME;
@@ -331,7 +348,7 @@ async function saveRobotCheck(db, item, text, opened) {
   if (DRY || !item?.id) return;
   try {
     await db.collection('radarItems').doc(item.id).update({
-      robotCheck: { at: new Date().toISOString(), text: String(text).slice(0, 300), opened },
+      robotCheck: { at: new Date().toISOString(), text: String(text).slice(0, 700), opened },
     });
   } catch (e) {
     console.error(`robotCheck ${item.ticker}: ${e.message}`);
@@ -359,7 +376,13 @@ async function main() {
       .where('uid', '==', uid)
       .where('status', 'in', ['open', 'partial'])
       .get();
-    const openTickers = new Set(paperSnap.docs.map((d) => String(d.data().ticker || '').toUpperCase()));
+    // Храним обе формы ключа: «ТИКЕР» (одностратегийный режим) и «ТИКЕР|стратегия» (многостратегийный).
+    const openTickers = new Set();
+    for (const d of paperSnap.docs) {
+      const t = String(d.data().ticker || '').toUpperCase();
+      openTickers.add(t);
+      openTickers.add(`${t}|${d.data().entryStrategyId || ''}`);
+    }
 
     // Настоящие сделки нужны только для корзин портфеля: капитал стратегии считается по
     // ним, и без них риск считался бы от всего депозита вместо доли корзины.
@@ -368,26 +391,36 @@ async function main() {
 
     console.log(`[${uid}] в радаре ${items.length}, открытых бумажных ${openTickers.size}`);
     for (const item of items) {
-      try {
-        const res = await checkItem({ db, uid, profile, item, openTickers, allTrades });
-        await saveRobotCheck(db, item, res.opened ? `открыл ${res.opened.direction === 'short' ? 'шорт' : 'лонг'}` : res.skipped, !!res.opened);
-        if (res.opened) {
-          const o = res.opened;
-          openTickers.add(o.ticker);
-          const stopLabel = o.stopLoss != null ? o.stopLoss : (o.sizingFromTrailAdverse ? 'нет — следящий выход' : '—');
-          console.log(
-            `[${uid}] ${res.dry ? 'ОТКРЫЛ БЫ' : 'открыл'} ${o.ticker} ${o.direction} `
-            + `${o.volume} по ${o.entryPrice} (стоп ${stopLabel}, цель ${o.takeProfit ?? '—'}, `
-            + `условия ${o.entryPassed}/${o.entryTotal})${o.sizingApprox ? ' [объём приблизительный]' : ''}`
-            + `${o.riskTooBig ? ' [денег на эту сделку не хватило бы — объём условный]' : ''}`,
-          );
-        } else {
-          console.log(`[${uid}] ${item.ticker}: ${res.skipped}`);
+      const { list: strategies, multi } = strategiesFor(item, profile);
+      const verdicts = [];
+      let anyOpened = false;
+      for (const strategy of (strategies.length ? strategies : [null])) {
+        const label = multi && strategy ? `«${strategy.name || 'без названия'}»: ` : '';
+        try {
+          const res = await checkItem({ db, uid, profile, item, openTickers, allTrades, strategy, multi });
+          if (res.opened) {
+            const o = res.opened;
+            anyOpened = true;
+            openTickers.add(o.ticker);
+            openTickers.add(`${o.ticker}|${strategy?.id || ''}`);
+            verdicts.push(`${label}открыл ${o.direction === 'short' ? 'шорт' : 'лонг'}`);
+            const stopLabel = o.stopLoss != null ? o.stopLoss : (o.sizingFromTrailAdverse ? 'нет — следящий выход' : '—');
+            console.log(
+              `[${uid}] ${res.dry ? 'ОТКРЫЛ БЫ' : 'открыл'} ${o.ticker} ${o.direction} `
+              + `${o.volume} по ${o.entryPrice} [${strategy?.name || '—'}] (стоп ${stopLabel}, цель ${o.takeProfit ?? '—'}, `
+              + `условия ${o.entryPassed}/${o.entryTotal})${o.sizingApprox ? ' [объём приблизительный]' : ''}`
+              + `${o.riskTooBig ? ' [денег на эту сделку не хватило бы — объём условный]' : ''}`,
+            );
+          } else {
+            verdicts.push(`${label}${res.skipped}`);
+            console.log(`[${uid}] ${item.ticker}${label ? ' ' + label : ': '}${res.skipped}`);
+          }
+        } catch (e) {
+          console.error(`[${uid}] ${item.ticker}: ${e.message}`);
+          verdicts.push(`${label}ошибка проверки: ${e.message}`);
         }
-      } catch (e) {
-        console.error(`[${uid}] ${item.ticker}: ${e.message}`);
-        await saveRobotCheck(db, item, `ошибка проверки: ${e.message}`, false);
       }
+      await saveRobotCheck(db, item, verdicts.join(' · '), anyOpened);
     }
   }
 }

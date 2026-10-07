@@ -5,6 +5,7 @@ import { availableTimeframes } from '../../services/marketData/candles';
 import { TARIFF_OPTIONS, TARIFFS, DEFAULT_TARIFF, commissionRateFor } from '../../services/analytics/commission';
 import { describeSchedule } from '../../services/marketData/tradingSchedule';
 import { getUserTrades } from '../../services/trades';
+import { getStrategies } from '../../services/analytics/strategy';
 import { futuresTurnoverRub, turnoverStatus } from '../../services/analytics/dayTurnover';
 import toast from 'react-hot-toast';
 
@@ -34,6 +35,7 @@ export default function Settings() {
     sessionWeekend: true,
     paperIgnoreRiskSizing: false,
     paperTelegram: true,
+    paperStrategyIds: [], // пусто = как раньше (одна стратегия на тикер); иначе — каждая отмеченная торгует бумажно
   });
   const [saving, setSaving] = useState(false);
   const [showToken, setShowToken] = useState(false);
@@ -56,6 +58,7 @@ export default function Settings() {
         sessionWeekend: userProfile.alertPrefs?.sessionWeekend !== false,
         paperIgnoreRiskSizing: userProfile.alertPrefs?.paperIgnoreRiskSizing === true,
         paperTelegram: userProfile.alertPrefs?.paperTelegram !== false,
+        paperStrategyIds: Array.isArray(userProfile.alertPrefs?.paperStrategyIds) ? userProfile.alertPrefs.paperStrategyIds : [],
       }));
       // askExtra инициализируем только один раз
       if (askExtra === null) {
@@ -88,6 +91,7 @@ export default function Settings() {
           sessionWeekend: form.sessionWeekend,
           paperIgnoreRiskSizing: form.paperIgnoreRiskSizing,
           paperTelegram: form.paperTelegram,
+          paperStrategyIds: form.paperStrategyIds || [],
         },
       });
       toast.success('Настройки сохранены');
@@ -283,6 +287,33 @@ export default function Settings() {
             />
             <span style={{fontWeight:600}}>Присылать их в Telegram</span>
           </label>
+
+          {/* Несколько стратегий торгуют бумажно одновременно: каждая — по своим правилам входа и
+              выхода, на каждом тикере радара своя бумажная сделка. Так видно, чем они отличаются в
+              деле, а не на одной и той же сделке. Ничего не отмечено — работает как раньше. */}
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ fontWeight: 600, marginBottom: 6 }}>Какими стратегиями торговать бумажно</div>
+            <div className="text-xs text-muted" style={{ lineHeight: 1.6, marginBottom: 8 }}>
+              Отметьте одну или несколько — каждая будет открывать и вести свои бумажные сделки по своим
+              правилам, и их можно сравнивать в отчёте. Ничего не отмечено — как раньше: у каждого тикера
+              радара своя стратегия, по одной бумажной сделке на тикер.
+            </div>
+            {getStrategies(userProfile).map((st) => {
+              const on = (form.paperStrategyIds || []).includes(st.id);
+              return (
+                <label key={st.id} className="flex items-center gap-2" style={{ cursor: 'pointer', marginBottom: 6 }}>
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={(e) => set('paperStrategyIds', e.target.checked
+                      ? [...(form.paperStrategyIds || []), st.id]
+                      : (form.paperStrategyIds || []).filter((x) => x !== st.id))}
+                  />
+                  <span>{st.name || 'Без названия'}</span>
+                </label>
+              );
+            })}
+          </div>
 
           <div className="text-xs text-muted" style={{lineHeight:1.7, marginBottom:12}}>
             Бумажные сообщения помечены значком 📄 и словом «бумажная» в первой строке —
