@@ -28,6 +28,7 @@
     "test:schedule": "node scripts/scheduleTests.mjs",
     "test:telegram": "node scripts/telegramMenuTests.mjs",
     "test:undefined": "node scripts/firestoreUndefinedTest.mjs",
+    "test:radarclean": "node scripts/radarCleanupTests.mjs",
     "test:turnover": "node scripts/dayTurnoverTests.mjs",
     "test:roll": "node scripts/futuresRollTests.mjs",
     "test:entrystats": "node scripts/entryStatsTests.mjs",

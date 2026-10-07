@@ -36,7 +36,31 @@ export const FUTURES_ROOTS = {
   LK: { name: 'Лукойл (фьючерс)', prefix: 'LK', asset: 'LKOH', cycle: 'quarterly' },
   RN: { name: 'Роснефть (фьючерс)', prefix: 'RN', asset: 'ROSN', cycle: 'quarterly' },
   VB: { name: 'ВТБ (фьючерс)', prefix: 'VB', asset: 'VTBR', cycle: 'quarterly' },
+  // Классические контракты на индексы, валюту, золото, нефть WTI — торгуются кварталами (WTI — помесячно).
+  MX: { name: 'Индекс МосБиржи (MIX)', prefix: 'MX', asset: 'MIX', cycle: 'quarterly' },
+  MM: { name: 'Мини-индекс МосБиржи (MXI)', prefix: 'MM', asset: 'MXI', cycle: 'quarterly' },
+  RI: { name: 'Индекс РТС', prefix: 'RI', asset: 'RTS', cycle: 'quarterly' },
+  SR: { name: 'Сбербанк (фьючерс)', prefix: 'SR', asset: 'SBRF', cycle: 'quarterly' },
+  GZ: { name: 'Газпром (фьючерс)', prefix: 'GZ', asset: 'GAZR', cycle: 'quarterly' },
+  GD: { name: 'Золото', prefix: 'GD', asset: 'GOLD', cycle: 'quarterly' },
+  SV: { name: 'Серебро', prefix: 'SV', asset: 'SILV', cycle: 'quarterly' },
+  SI: { name: 'Доллар/рубль', prefix: 'Si', asset: 'Si', cycle: 'quarterly' },
+  EU: { name: 'Евро/рубль', prefix: 'Eu', asset: 'Eu', cycle: 'quarterly' },
+  CR: { name: 'Юань/рубль', prefix: 'CR', asset: 'CNY', cycle: 'quarterly' },
+  WT: { name: 'Нефть WTI', prefix: 'WT', asset: 'WTI', cycle: 'monthly' },
 };
+
+/**
+ * Какому корню принадлежит конкретный контракт: 'MMU5' → 'MM'. null — не наш контракт или это
+ * вечный фьючерс (у него нет буквы месяца и цифры года в конце).
+ */
+export function rootTickerOfContract(secid) {
+  const code = String(secid || '');
+  for (const [key, root] of Object.entries(FUTURES_ROOTS)) {
+    if (new RegExp(`^${root.prefix}[${MONTH_LETTERS}]\\d$`).test(code)) return key;
+  }
+  return null;
+}
 
 export const isFuturesRoot = (ticker) => Object.prototype.hasOwnProperty.call(FUTURES_ROOTS, String(ticker || '').toUpperCase());
 

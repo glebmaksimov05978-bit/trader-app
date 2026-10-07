@@ -127,3 +127,20 @@ jobs:
           CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
           CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
         run: node scripts/telegram/writeSnapshot.mjs
+
+      # Пятый шаг: автоочистка радара — истёкший фьючерс заменяется на «корень» (он сам переходит
+      # на новый контракт), несуществующие инструменты убираются, об этом приходит сообщение.
+      # Отключается в профиле (alertPrefs.radarAutoCleanup = false). Любой сбой безвреден.
+      - name: Автоочистка радара
+        continue-on-error: true
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ALERT_UIDS: ${{ secrets.ALERT_UIDS }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ "${{ github.event.inputs.paper_dry }}" = "true" ]; then
+            node scripts/radar/cleanupRadar.mjs --dry
+          else
+            node scripts/radar/cleanupRadar.mjs
+          fi
