@@ -22,7 +22,15 @@
 // ровно то, что трейдер видит на экране.
 import { verifyFirebaseToken } from './verifyFirebaseToken.js';
 
-const TINKOFF = 'https://invest-public-api.tinkoff.ru/rest';
+// Адрес REST API брокера. Менять через env.TINKOFF_BASE (например, на новый домен tbank.ru) без правки кода.
+const TINKOFF_DEFAULT_BASE = 'https://invest-public-api.tinkoff.ru/rest';
+const CONTRACT = 'tinkoff.public.invest.api.contract.v1';
+
+// Есть ли у этого экземпляра способ говорить с брокером: торговый токен здесь ИЛИ посредник
+// (RELAY_URL), у которого токен лежит. Токен в этом случае на воркере не нужен и не хранится.
+export function hasBrokerAccess(env) {
+  return !!(env.TINKOFF_TRADE_TOKEN || env.RELAY_URL);
+}
 
 function json(env, body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -43,8 +51,24 @@ function corsHeaders(env) {
   };
 }
 
+/**
+ * Один вызов REST API брокера.
+ *
+ * Два пути:
+ *   • напрямую (есть TINKOFF_TRADE_TOKEN) — как раньше. С зарубежных серверов, включая
+ *     Cloudflare, сейчас не работает: сертификат API выдан российским центром, которому они не
+ *     доверяют (ошибка 526);
+ *   • через российского посредника (RELAY_URL + RELAY_KEY, см. relay/) — посредник стоит в
+ *     России, доверяет сертификату и хранит торговый токен. Сюда токен уже не попадает.
+ */
 export async function tinkoff(env, method, body) {
-  const res = await fetch(`${TINKOFF}/tinkoff.public.invest.api.contract.v1.${method}`, {
+  if (env.RELAY_URL) return tinkoffViaRelay(env, method, body);
+  return tinkoffDirect(env, method, body);
+}
+
+export async function tinkoffDirect(env, method, body) {
+  const base = String(env.TINKOFF_BASE || TINKOFF_DEFAULT_BASE).replace(/\/+$/, '');
+  const res = await fetch(`${base}/${CONTRACT}.${method}`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${env.TINKOFF_TRADE_TOKEN}`,
@@ -52,11 +76,25 @@ export async function tinkoff(env, method, body) {
     },
     body: JSON.stringify(body),
   });
+  return parseBrokerResponse(res, method);
+}
+
+async function tinkoffViaRelay(env, method, body) {
+  if (!env.RELAY_KEY) throw new Error('Для посредника не задан RELAY_KEY');
+  const res = await fetch(`${String(env.RELAY_URL).replace(/\/+$/, '')}/broker/${method}`, {
+    method: 'POST',
+    headers: { 'X-Relay-Key': env.RELAY_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return parseBrokerResponse(res, method);
+}
+
+async function parseBrokerResponse(res, method) {
   const text = await res.text();
   let parsed = null;
   try { parsed = JSON.parse(text); } catch { /* пусто */ }
   if (!res.ok) {
-    const msg = parsed?.message || parsed?.description || text.slice(0, 300);
+    const msg = parsed?.message || parsed?.error || parsed?.description || text.slice(0, 300);
     throw new Error(`${method}: ${res.status} ${msg}`);
   }
   return parsed;
@@ -94,8 +132,8 @@ export function checkOrderGates(env, body) {
   if (String(env.TRADING_DISABLED || '').toLowerCase() === 'true') {
     return { ok: false, status: 503, error: 'Отправка заявок выключена стоп-краном на сервере.' };
   }
-  if (!env.TINKOFF_TRADE_TOKEN) {
-    return { ok: false, status: 503, error: 'На сервере не задан торговый токен — отправка заявок не настроена.' };
+  if (!hasBrokerAccess(env)) {
+    return { ok: false, status: 503, error: 'На сервере не задан торговый токен или посредник — отправка заявок не настроена.' };
   }
   // Номер счёта здесь НЕ проверяется: один торговый токен может открывать доступ сразу
   // к нескольким счетам (обычный/ИИС и т.д.), поэтому счёт выбирается в самой заявке
@@ -340,7 +378,7 @@ export async function handleOrderConfig(request, env) {
   // не повод ломать весь ответ: кнопка просто останется недоступной с понятной причиной.
   let accounts = [];
   let accountsError = null;
-  if (env.TINKOFF_TRADE_TOKEN && !disabled) {
+  if (hasBrokerAccess(env) && !disabled) {
     try {
       accounts = await listAccounts(env);
       if (!accounts.length) accountsError = 'у токена нет открытых счетов';
@@ -350,7 +388,7 @@ export async function handleOrderConfig(request, env) {
   }
 
   return json(env, {
-    enabled: !disabled && !!env.TINKOFF_TRADE_TOKEN && (wildcard || whitelist.length > 0) && accounts.length > 0,
+    enabled: !disabled && hasBrokerAccess(env) && (wildcard || whitelist.length > 0) && accounts.length > 0,
     killSwitch: disabled,
     whitelist,
     // Явный флаг для интерфейса: "*" значит «любой тикер», а не «список из одного

@@ -74,3 +74,5 @@ src/services/import/__fixtures__/
 
 # CRA production build output
 /build
+relay/dist/
+relay/certs/

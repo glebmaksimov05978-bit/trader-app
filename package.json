@@ -29,6 +29,7 @@
     "test:telegram": "node scripts/telegramMenuTests.mjs",
     "test:undefined": "node scripts/firestoreUndefinedTest.mjs",
     "test:tgtrade": "node scripts/tgTradeTests.mjs",
+    "test:relay": "node scripts/relayTests.mjs",
     "test:fillsclose": "node scripts/fillsCloseTest.mjs",
     "test:period": "node scripts/periodReportTests.mjs",
     "test:radarclean": "node scripts/radarCleanupTests.mjs",
