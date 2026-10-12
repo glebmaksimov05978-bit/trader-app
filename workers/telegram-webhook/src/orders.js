@@ -81,12 +81,32 @@ export async function tinkoffDirect(env, method, body) {
 
 async function tinkoffViaRelay(env, method, body) {
   if (!env.RELAY_KEY) throw new Error('Для посредника не задан RELAY_KEY');
-  const res = await fetch(`${String(env.RELAY_URL).replace(/\/+$/, '')}/broker/${method}`, {
-    method: 'POST',
-    headers: { 'X-Relay-Key': env.RELAY_KEY, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  return parseBrokerResponse(res, method);
+  // Основной адрес и (необязательно) запасной RELAY_URL_BACKUP — второй экземпляр на другом
+  // хостинге. К запасному переходим, только если основной не отвечает вовсе или вернул ошибку
+  // сервера (5xx). Ошибки брокера (4xx) переходом не лечатся — они придут и с запасного.
+  // Повторная отправка заявки безопасна: PostOrder идёт с одним и тем же orderId, брокер сам
+  // отсекает дубль.
+  const urls = [env.RELAY_URL, env.RELAY_URL_BACKUP].filter(Boolean).map((u) => String(u).replace(/\/+$/, ''));
+  let lastError = null;
+  for (const base of urls) {
+    try {
+      const res = await fetch(`${base}/broker/${method}`, {
+        method: 'POST',
+        headers: { 'X-Relay-Key': env.RELAY_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (res.status >= 500 && base !== urls[urls.length - 1]) {
+        lastError = new Error(`${method}: посредник ответил ${res.status}`);
+        continue;
+      }
+      return await parseBrokerResponse(res, method);
+    } catch (e) {
+      lastError = e;
+      // Ответ получен и разобран (ошибка брокера) — это уже не «посредник недоступен».
+      if (/^\S+: \d{3} /.test(e.message) && !/: 5\d\d /.test(e.message)) throw e;
+    }
+  }
+  throw lastError || new Error('Посредник недоступен');
 }
 
 async function parseBrokerResponse(res, method) {

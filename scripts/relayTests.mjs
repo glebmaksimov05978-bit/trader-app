@@ -17,9 +17,14 @@ let upstreamReply = () => ({ status: 200, body: { accounts: [{ id: 'A1', status:
 let currentRelayEnv = relayEnv;
 
 // Один fetch на всех: запросы на relay.test идут в handle(), остальные — «брокеру».
+let primaryDown = false;
 globalThis.fetch = async (url, init = {}) => {
   const u = String(url);
   if (u.startsWith('https://relay.test')) {
+    if (primaryDown) throw new TypeError('fetch failed');
+    return handle(new Request(u, init), currentRelayEnv);
+  }
+  if (u.startsWith('https://relay2.test')) {
     return handle(new Request(u, init), currentRelayEnv);
   }
   upstream.push({ url: u, headers: init.headers || {}, body: init.body ? JSON.parse(init.body) : null });
@@ -104,6 +109,22 @@ ok('а без токена и посредника — отказ', checkOrderGa
 let failed = false;
 try { await tinkoff({ RELAY_URL: 'https://relay.test', RELAY_KEY: 'bad' }, 'UsersService/GetAccounts', {}); } catch (e) { failed = /403/.test(e.message); }
 ok('неверный RELAY_KEY у воркера → понятная ошибка 403', failed);
+
+// --- запасной посредник ---
+upstream = [];
+primaryDown = true;
+const dr = await tinkoff({ RELAY_URL: 'https://relay.test', RELAY_URL_BACKUP: 'https://relay2.test', RELAY_KEY: KEY }, 'UsersService/GetAccounts', {});
+ok('основной посредник недоступен → ответ пришёл с запасного', dr.accounts?.[0]?.id === 'A1' && upstream.length === 1);
+let noBackup = false;
+try { await tinkoff({ RELAY_URL: 'https://relay.test', RELAY_KEY: KEY }, 'UsersService/GetAccounts', {}); } catch (e) { noBackup = true; }
+ok('запасного нет и основной лёг → понятная ошибка, а не тишина', noBackup);
+primaryDown = false;
+upstream = [];
+upstreamReply = () => ({ status: 400, body: { message: 'bad request' } });
+let e400 = null;
+try { await tinkoff({ RELAY_URL: 'https://relay.test', RELAY_URL_BACKUP: 'https://relay2.test', RELAY_KEY: KEY }, 'UsersService/GetAccounts', {}); } catch (e) { e400 = e; }
+ok('ошибка брокера (400) на запасной не переводится: пришла сразу, один вызов к брокеру', e400 && /400/.test(e400.message) && upstream.length === 1);
+upstreamReply = () => ({ status: 200, body: { accounts: [{ id: 'A1', status: 'ACCOUNT_STATUS_OPEN' }] } });
 
 // --- обёртка Яндекс Облака ---
 currentRelayEnv = relayEnv;
