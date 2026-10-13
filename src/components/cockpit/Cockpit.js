@@ -13,7 +13,8 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { addTrade, getUserTrades, resolveOpenedAt } from '../../services/trades';
-import { getOpenPaperTrades, updatePaperTrade } from '../../services/paperTrades';
+import { getOpenPaperTrades, getPaperTrades, updatePaperTrade } from '../../services/paperTrades';
+import { groupPaperByStrategy, paperStrategyKey } from '../../services/analytics/paperGroups';
 import { fetchDailyCandles, availableTimeframes } from '../../services/marketData/candles';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
@@ -120,6 +121,11 @@ export default function Cockpit() {
   // Бумажные сделки лежат в своей коллекции и в статистику не попадают — см. шапку
   // services/paperTrades.js. Здесь они нужны только чтобы их можно было вести и смотреть.
   const [paperTrades, setPaperTrades] = useState([]);
+  // Все бумажные (и закрытые) — только для сводки по стратегиям над списком: сколько каждая
+  // уже закрыла и с каким итогом. Ведутся по-прежнему только открытые (paperTrades).
+  const [allPaper, setAllPaper] = useState([]);
+  // Какую стратегию показывать в списке бумажных: 'all' или ключ стратегии.
+  const [paperFilter, setPaperFilter] = useState('all');
   // Переход из Радара может указывать конкретную сделку (обычно бумажную, которую уже
   // ведёт система) — ?activeId=... в ссылке. Читается один раз при заходе на вкладку;
   // эффекты ниже, загружающие настоящие/бумажные сделки, не перезатирают уже заданный
@@ -199,6 +205,15 @@ export default function Cockpit() {
     () => strategies.find((s) => s.id === strategyId) || getActiveStrategy(userProfile),
     [strategies, strategyId, userProfile],
   );
+  // Выбрали сделку — вкладка сразу ведёт её по ТОЙ стратегии, которой она открыта. Раньше
+  // оставалась последняя выбранная вручную, и сделка краткосрочной стратегии считалась по
+  // правилам долгосрочной (одинаковые цифры при «переключении» — именно отсюда). Переключить
+  // на другую стратегию для примерки по-прежнему можно — эффект срабатывает только при смене сделки.
+  const activeEntryStrategyId = (trades.find((t) => t.id === activeId) || paperTrades.find((t) => t.id === activeId))?.entryStrategyId;
+  useEffect(() => {
+    if (activeEntryStrategyId && strategies.some((x) => x.id === activeEntryStrategyId)) setStrategyId(activeEntryStrategyId);
+  }, [activeId, activeEntryStrategyId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Через useMemo, а не инлайном: у стратегии без правил выражение `|| {}` создавало НОВЫЙ
   // объект на каждый рендер, а от него зависит recompute → эффект перезапускался бесконечно
   // и вкладка молотила запросы свечей по кругу.
@@ -242,7 +257,15 @@ export default function Cockpit() {
   useEffect(() => {
     if (!user) { setPaperTrades([]); return; }
     getOpenPaperTrades(user.uid).then(setPaperTrades).catch(() => setPaperTrades([]));
+    getPaperTrades(user.uid).then(setAllPaper).catch(() => setAllPaper([]));
   }, [user]);
+
+  // Бумажные по стратегиям: у каждой стратегии свой горизонт (краткосрок, среднесрок…), их не
+  // сравнивают друг с другом, а смотрят по отдельности — отсюда вкладки и сводка над списком.
+  const paperGroups = useMemo(() => groupPaperByStrategy(allPaper.length ? allPaper : paperTrades), [allPaper, paperTrades]);
+  const visiblePaper = paperFilter === 'all' ? paperTrades
+    : paperTrades.filter((t) => paperStrategyKey(t) === paperFilter);
+  const filterGroup = paperFilter === 'all' ? paperGroups.total : paperGroups.groups.find((g) => g.key === paperFilter);
 
   // Активной может быть и бумажная сделка: движок ведёт её тем же кодом, что и настоящую,
   // — в этом и смысл, иначе сравнивать было бы не с чем.
@@ -794,36 +817,84 @@ export default function Cockpit() {
           <CollapsibleSection title="Бумажные сделки" badge={paperTrades.length || null} defaultOpen={false}>
             <div className="ck-basket-note">
               Их ведёт робот по списку радара: реальных денег не касаются и в Журнал,
-              депозит и отчёты не попадают. Нужны, чтобы увидеть, как стратегия торгует
-              сама, без твоего вмешательства.
+              депозит и отчёты не попадают. У каждой стратегии своя лента — их не сравнивают
+              между собой, а смотрят по отдельности.
             </div>
-            <div className="ck-pos-list">
-              {paperTrades.map((t) => (
-                <div key={t.id} className={`ck-pos ${t.id === activeId ? 'on' : ''}`}>
-                  <button className="ck-pos-main" onClick={() => selectTrade(t.id)}>
-                    <div className="ck-pos-row">
-                      <span className="ck-ticker">{t.ticker}</span>
-                      <span className={`ck-dir ${t.direction}`}>
-                        {t.direction === 'short' ? 'ШОРТ' : 'ЛОНГ'}
-                      </span>
-                    </div>
-                    {/* «объём условный» — по правилам риска денег на такую позицию не
-                        хватает, робот открыл её одним контрактом только ради наблюдения.
-                        Помечено неброско, как и просил трейдер: это не ошибка, просто
-                        результат такой сделки нельзя считать достижимым. */}
-                    <div className="ck-pos-sub">
-                      {fmtNum(parseFloat(t.volume) || 0, 0)} конт. · бумажная
-                      {t.riskTooBig ? ' · объём условный' : ''}
-                      {t.repeatedAt ? ' · повторена' : ''}
-                    </div>
-                    <div className="ck-pos-sub">вход {fmtNum(t.entryPrice)}</div>
+            {/* Вкладки по стратегиям — только когда стратегий больше одной. */}
+            {paperGroups.groups.length > 1 && (
+              <div className="ck-paper-tabs">
+                <button className={paperFilter === 'all' ? 'on' : ''} onClick={() => setPaperFilter('all')}>
+                  Все <span>{paperTrades.length}</span>
+                </button>
+                {paperGroups.groups.map((g) => (
+                  <button key={g.key} className={paperFilter === g.key ? 'on' : ''} onClick={() => setPaperFilter(g.key)} title={g.label}>
+                    {g.label} <span>{g.open}</span>
                   </button>
-                </div>
-              ))}
-              {!paperTrades.length && (
+                ))}
+              </div>
+            )}
+            {filterGroup && (filterGroup.closed > 0 || filterGroup.open > 0) && (
+              <div className="ck-paper-sum">
+                <span>открыто <b>{filterGroup.open}</b></span>
+                <span>закрыто <b>{filterGroup.closed}</b></span>
+                {filterGroup.closed > 0 && (
+                  <>
+                    <span>итог <b className={filterGroup.pnl >= 0 ? 'up' : 'down'}>{filterGroup.pnl >= 0 ? '+' : '−'}{fmtNum(Math.abs(filterGroup.pnl), 0)} ₽</b></span>
+                    <span>прибыльных <b>{Math.round(filterGroup.winrate)}%</b></span>
+                    {filterGroup.avgHoldDays != null && <span>держит в среднем <b>{filterGroup.avgHoldDays < 1 ? `${Math.max(1, Math.round(filterGroup.avgHoldDays * 24))} ч` : `${fmtNum(filterGroup.avgHoldDays, 1)} дн`}</b></span>}
+                  </>
+                )}
+              </div>
+            )}
+            <div className="ck-pos-list">
+              {visiblePaper.map((t) => {
+                // Кнопка «Повторить» прямо в строке — тем же окном подтверждения, что и в панели
+                // сделки. Видна только когда сервер заявок готов и тикер разрешён.
+                const orderable = !!(orderCfg?.enabled && (orderCfg.wildcard || orderCfg.whitelist?.includes(String(t.ticker).toUpperCase())));
+                return (
+                  <div key={t.id} className={`ck-pos ${t.id === activeId ? 'on' : ''}`}>
+                    <button className="ck-pos-main" onClick={() => selectTrade(t.id)}>
+                      <div className="ck-pos-row">
+                        <span className="ck-ticker">{t.ticker}</span>
+                        <span className={`ck-dir ${t.direction}`}>
+                          {t.direction === 'short' ? 'ШОРТ' : 'ЛОНГ'}
+                        </span>
+                      </div>
+                      {/* Стратегия, которая открыла сделку, и её таймфрейм — чтобы ленты разных
+                          горизонтов не путались в общем списке. */}
+                      {(t.entryStrategyName || t.entryTimeframe) && (
+                        <div className="ck-pos-strat">
+                          {t.entryStrategyName || 'Без стратегии'}{t.entryTimeframe ? ` · ${t.entryTimeframe}` : ''}
+                        </div>
+                      )}
+                      {/* «объём условный» — по правилам риска денег на такую позицию не
+                          хватает, робот открыл её одним контрактом только ради наблюдения. */}
+                      <div className="ck-pos-sub">
+                        {fmtNum(parseFloat(t.volume) || 0, 0)} конт. · вход {fmtNum(t.entryPrice)}
+                        {t.riskTooBig ? ' · объём условный' : ''}
+                        {t.repeatedAt ? ' · повторена' : ''}
+                      </div>
+                    </button>
+                    {orderable && !t.repeatedAt && (
+                      <button
+                        className="ck-pos-close"
+                        title="Открыть такую же настоящую позицию (будет окно подтверждения)"
+                        onClick={() => {
+                          selectTrade(t.id);
+                          setRepeatOrder({ lots: Math.max(1, Math.round(parseFloat(t.volume) || 1)) });
+                        }}
+                      >
+                        Повторить
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              {!visiblePaper.length && (
                 <div className="ck-radar-empty">
-                  Пока ни одной. Робот проверяет список радара каждые 15 минут в торговые
-                  часы и откроет сделку сам, когда по инструменту сойдутся условия стратегии.
+                  {paperFilter === 'all'
+                    ? 'Пока ни одной. Робот проверяет список радара каждые 15 минут в торговые часы и откроет сделку сам, когда по инструменту сойдутся условия стратегии.'
+                    : 'У этой стратегии сейчас нет открытых бумажных сделок.'}
                 </div>
               )}
             </div>

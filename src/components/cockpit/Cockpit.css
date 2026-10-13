@@ -427,3 +427,18 @@
 
 /* Строка «🤖 робот» под тикером: причина может быть длинной (ошибка, условия) — переносим, а не обрезаем */
 .ck-radar-sub.ck-radar-robot { white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.35; margin-top: 2px; word-break: break-word; }
+
+/* Бумажные по стратегиям: вкладки, сводка, метка стратегии в строке */
+.ck-paper-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 7px 8px; }
+.ck-paper-tabs button {
+  border: 1px solid var(--border-subtle); background: transparent; color: var(--text-secondary);
+  font-family: inherit; font-size: 11px; font-weight: 500; padding: 4px 8px; border-radius: 6px; cursor: pointer;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ck-paper-tabs button span { color: var(--text-muted); margin-left: 3px; font-variant-numeric: tabular-nums; }
+.ck-paper-tabs button.on { border-color: var(--accent-primary); color: var(--text-primary); background: var(--bg-surface-2); }
+.ck-paper-sum { display: flex; flex-wrap: wrap; gap: 4px 10px; padding: 0 7px 8px; font-size: 10.5px; color: var(--text-muted); }
+.ck-paper-sum b { color: var(--text-secondary); font-weight: 600; font-variant-numeric: tabular-nums; }
+.ck-paper-sum b.up { color: var(--green); }
+.ck-paper-sum b.down { color: var(--red); }
+.ck-pos-strat { font-size: 10.5px; color: var(--accent-primary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
