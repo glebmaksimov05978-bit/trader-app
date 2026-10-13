@@ -228,7 +228,12 @@ export function formatForTelegram(alert) {
  * должно быть видно с одного взгляда, где реальные деньги, а где наблюдение.
  */
 export function formatPaperForTelegram({ title, lines = [], trade = null }) {
-  const head = `📄 <b>Бумажная — ${escapeHtml(title)}</b>`;
+  // Стратегия и её таймфрейм — в самом заголовке: когда бумажно торгуют несколько стратегий
+  // (краткосрок, среднесрок…), по одному взгляду должно быть видно, чья это лента.
+  const strat = trade?.entryStrategyName
+    ? ` · ${escapeHtml(trade.entryStrategyName)}${trade.entryTimeframe ? ` (${escapeHtml(trade.entryTimeframe)})` : ''}`
+    : '';
+  const head = `📄 <b>Бумажная${strat} — ${escapeHtml(title)}</b>`;
   const body = lines.filter(Boolean).map((l) => escapeHtml(l)).join('\n');
   // Ненавязчиво, отдельной строкой курсивом, а не отдельной тревогой: объём такой сделки
   // условный, и её результат нельзя принимать за достижимый на текущем депозите.
@@ -259,8 +264,33 @@ export function buildKeyboard(alert, trade) {
         { text: '➡️ Ничего не делал', callback_data: `d|${trade.id}|sk` },
         { text: '🔕 Тихо 4 часа', callback_data: `d|${trade.id}|sn4` },
       ],
+      // Закрыть по-настоящему, не уходя из Telegram. Нажатие ничего не отправляет брокеру:
+      // бот проверит позицию у брокера и попросит подтвердить (tgTrade.js).
+      [{ text: '📉 Закрыть у брокера', callback_data: `x|c|${trade.id}` }],
     ],
   };
+}
+
+/**
+ * Слать ли в Telegram сообщение о бумажной сделке этой стратегии. Общий выключатель
+ * paperTelegram + список заглушённых стратегий paperTelegramMuted (Настройки → Бумажные сделки):
+ * когда торгуют сразу несколько стратегий, шумную можно приглушить, не трогая остальные.
+ */
+export function paperTelegramAllowed(prefs = {}, strategyId = null) {
+  if (prefs.paperTelegram === false) return false;
+  const muted = Array.isArray(prefs.paperTelegramMuted) ? prefs.paperTelegramMuted : [];
+  return !(strategyId && muted.includes(strategyId));
+}
+
+/**
+ * Кнопка под сообщением «бумажная открыта»: повторить реальной заявкой. Это не «решение по
+ * сигналу» (такие кнопки бумажным не нужны — их ведёт робот), а ДЕЙСТВИЕ трейдера: открыть
+ * свою позицию. Само нажатие ничего не отправляет — бот сначала покажет подтверждение
+ * (workers/telegram-webhook/src/tgTrade.js).
+ */
+export function paperRepeatKeyboard(paperId) {
+  if (!paperId) return null;
+  return { inline_keyboard: [[{ text: '🔁 Повторить реально', callback_data: `x|o|${paperId}` }]] };
 }
 
 /** Второй экран: выбор причины после нажатия «Пропустил». */

@@ -36,6 +36,7 @@ export default function Settings() {
     paperIgnoreRiskSizing: false,
     paperTelegram: true,
     paperStrategyIds: [], // пусто = как раньше (одна стратегия на тикер); иначе — каждая отмеченная торгует бумажно
+    paperTelegramMuted: [], // стратегии, чьи бумажные сделки НЕ присылать в Telegram
   });
   const [saving, setSaving] = useState(false);
   const [showToken, setShowToken] = useState(false);
@@ -59,6 +60,7 @@ export default function Settings() {
         paperIgnoreRiskSizing: userProfile.alertPrefs?.paperIgnoreRiskSizing === true,
         paperTelegram: userProfile.alertPrefs?.paperTelegram !== false,
         paperStrategyIds: Array.isArray(userProfile.alertPrefs?.paperStrategyIds) ? userProfile.alertPrefs.paperStrategyIds : [],
+        paperTelegramMuted: Array.isArray(userProfile.alertPrefs?.paperTelegramMuted) ? userProfile.alertPrefs.paperTelegramMuted : [],
       }));
       // askExtra инициализируем только один раз
       if (askExtra === null) {
@@ -92,6 +94,7 @@ export default function Settings() {
           paperIgnoreRiskSizing: form.paperIgnoreRiskSizing,
           paperTelegram: form.paperTelegram,
           paperStrategyIds: form.paperStrategyIds || [],
+          paperTelegramMuted: form.paperTelegramMuted || [],
         },
       });
       toast.success('Настройки сохранены');
@@ -300,17 +303,31 @@ export default function Settings() {
             </div>
             {getStrategies(userProfile).map((st) => {
               const on = (form.paperStrategyIds || []).includes(st.id);
+              const muted = (form.paperTelegramMuted || []).includes(st.id);
               return (
-                <label key={st.id} className="flex items-center gap-2" style={{ cursor: 'pointer', marginBottom: 6 }}>
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    onChange={(e) => set('paperStrategyIds', e.target.checked
-                      ? [...(form.paperStrategyIds || []), st.id]
-                      : (form.paperStrategyIds || []).filter((x) => x !== st.id))}
-                  />
-                  <span>{st.name || 'Без названия'}</span>
-                </label>
+                <div key={st.id} className="flex items-center gap-3" style={{ marginBottom: 6, flexWrap: 'wrap' }}>
+                  <label className="flex items-center gap-2" style={{ cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={(e) => set('paperStrategyIds', e.target.checked
+                        ? [...(form.paperStrategyIds || []), st.id]
+                        : (form.paperStrategyIds || []).filter((x) => x !== st.id))}
+                    />
+                    <span>{st.name || 'Без названия'}</span>
+                  </label>
+                  {/* Своя галочка Telegram у каждой стратегии: шумную можно приглушить, не трогая остальные. */}
+                  <label className="flex items-center gap-1 text-xs text-muted" style={{ cursor: 'pointer' }} title="Присылать бумажные сделки этой стратегии в Telegram">
+                    <input
+                      type="checkbox"
+                      checked={!muted}
+                      onChange={(e) => set('paperTelegramMuted', e.target.checked
+                        ? (form.paperTelegramMuted || []).filter((x) => x !== st.id)
+                        : [...(form.paperTelegramMuted || []), st.id])}
+                    />
+                    в Telegram
+                  </label>
+                </div>
               );
             })}
           </div>

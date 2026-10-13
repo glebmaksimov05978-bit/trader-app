@@ -73,7 +73,7 @@ const { fetchDailyCandles, TIMEFRAMES, DEFAULT_TIMEFRAME } = await import(candle
 const { shouldWatchNow, marketPhase, anyMarketOpen } = await import(scheduleUrl);
 const { fetchActiveFutureCard, fetchStockLot } = await import(specsUrl);
 const { entryGuard, DEFAULT_MIN_DAYS_TO_EXPIRY } = await import(rollUrl);
-const { formatPaperForTelegram } = await import(alertsUrl);
+const { formatPaperForTelegram, paperTelegramAllowed, paperRepeatKeyboard } = await import(alertsUrl);
 
 const DRY = process.argv.includes('--dry');
 const FORCE = process.argv.includes('--force') || process.env.FORCE_CHECK === 'true';
@@ -95,8 +95,9 @@ function initFirebase() {
 // Отправка в Telegram — намеренно «тихая». К моменту вызова бумажная сделка уже записана
 // в базу, и сообщение это только уведомление: если токена нет или Telegram недоступен,
 // робот должен продолжить работу, а не потерять сделку из-за недоставленного сообщения.
-// Кнопок под сообщением нет сознательно — см. formatPaperForTelegram в alerts.js.
-async function notifyPaper(text) {
+// Под сообщением «открыта» есть одна кнопка — «Повторить реально» (действие трейдера, а не
+// решение по сигналу; бумажную сделку по-прежнему ведёт только робот), см. paperRepeatKeyboard.
+async function notifyPaper(text, keyboard = null) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
   if (!token || !chatId) return;
@@ -104,7 +105,10 @@ async function notifyPaper(text) {
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML', disable_web_page_preview: true }),
+      body: JSON.stringify({
+        chat_id: chatId, text, parse_mode: 'HTML', disable_web_page_preview: true,
+        ...(keyboard ? { reply_markup: keyboard } : {}),
+      }),
     });
     const data = await res.json();
     if (!data.ok) console.error(`Telegram: ${data.description || res.status}`);
@@ -318,14 +322,14 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades, strat
   };
 
   if (DRY) return { opened: paper, dry: true };
-  await db.collection('paperTrades').add({
+  const ref = await db.collection('paperTrades').add({
     ...paper,
     uid,
     paper: true,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   });
-  if (profile.alertPrefs?.paperTelegram !== false) {
+  if (paperTelegramAllowed(profile.alertPrefs, paper.entryStrategyId)) {
     await notifyPaper(formatPaperForTelegram({
       title: `${paper.ticker} ${paper.direction === 'short' ? 'шорт' : 'лонг'} — открыта`,
       lines: [
@@ -335,7 +339,7 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades, strat
         `Условия стратегии «${paper.entryStrategyName || 'без названия'}»: ${paper.entryPassed} из ${paper.entryTotal}.`,
       ],
       trade: paper,
-    }));
+    }), paperRepeatKeyboard(ref.id));
   }
   return { opened: paper };
 }

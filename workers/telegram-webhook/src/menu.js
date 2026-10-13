@@ -13,7 +13,8 @@ import { escapeHtml } from '../../../src/services/alerts.js';
 export const MENU_KEYBOARD = {
   keyboard: [
     [{ text: '📈 Сделки' }, { text: '📄 Бумажные' }],
-    [{ text: '🎯 Радар' }, { text: '🤖 Робот' }],
+    [{ text: '🧪 Стратегии' }, { text: '🎯 Радар' }],
+    [{ text: '🤖 Робот' }],
   ],
   resize_keyboard: true,
   is_persistent: true,
@@ -76,11 +77,40 @@ export function renderMenuReply(command, snap) {
     case 'real':
       return positionsText('📈 Открытые сделки', snap.real || [], snap.at);
     case 'paper': {
-      const base = positionsText('📄 Бумажные сделки (открытые)', snap.paper || [], snap.at);
+      // Открытые бумажные — по стратегиям: у каждой своя лента, общий итог по ним не считаем.
+      const list = snap.paper || [];
+      const byStrat = new Map();
+      for (const p of list) {
+        const k = p.strategy || 'Без стратегии';
+        if (!byStrat.has(k)) byStrat.set(k, []);
+        byStrat.get(k).push(p);
+      }
+      let text;
+      if (byStrat.size <= 1) {
+        text = positionsText('📄 Бумажные сделки (открытые)', list, snap.at);
+      } else {
+        const blocks = [...byStrat.entries()].map(([name, arr]) => {
+          const total = arr.reduce((s2, p) => s2 + (p.pnl || 0), 0);
+          return `<b>${escapeHtml(name)}</b> — плавающий ${money(total)}\n${arr.slice(0, 12).map(positionLine).join('\n')}`;
+        });
+        text = `<b>📄 Бумажные сделки (открытые)</b>\n\n${blocks.join('\n\n')}\n\n<i>Данные на ${fmtTime(snap.at)} (${ago(snap.at)})</i>`;
+      }
       const c = snap.paperClosed;
-      if (!c?.count) return base;
+      if (!c?.count) return text;
       const last = (c.last || []).map((x) => `${escapeHtml(x.ticker)} ${money(x.pnl)}`).join(', ');
-      return `${base}\n\nЗакрыто всего: ${c.count}, итог ${money(c.pnl)}${last ? `\nПоследние: ${last}` : ''}`;
+      return `${text}\n\nЗакрыто всего: ${c.count}${last ? `\nПоследние: ${last}` : ''}\nИтоги по каждой стратегии — кнопка «🧪 Стратегии».`;
+    }
+    case 'strategies': {
+      // Каждая стратегия отдельно, без «победителя»: краткосрок и долгосрок про разные вещи.
+      const rows = snap.paperByStrategy || [];
+      if (!rows.length) return '<b>🧪 Стратегии</b>\nБумажных сделок пока нет.';
+      const blocks = rows.map((g) => {
+        const hold = g.avgHoldDays == null ? '' : g.avgHoldDays < 1 ? ` · держит ~${Math.max(1, Math.round(g.avgHoldDays * 24))} ч` : ` · держит ~${g.avgHoldDays} дн`;
+        const tf = g.timeframes?.length ? ` (${g.timeframes.join(', ')})` : '';
+        const closed = g.closed ? `закрыто ${g.closed}, итог ${money(g.pnl)}, прибыльных ${g.winrate}%${hold}` : 'закрытых пока нет';
+        return `<b>${escapeHtml(g.label)}</b>${escapeHtml(tf)}\nоткрыто ${g.open} · ${closed}`;
+      });
+      return `<b>🧪 Стратегии (бумажные)</b>\n\n${blocks.join('\n\n')}\n\n<i>Стратегии с разным горизонтом не сравниваются между собой — у каждой своя лента. Данные на ${fmtTime(snap.at)}.</i>`;
     }
     case 'radar': {
       const rows = (snap.radar || []);
@@ -110,6 +140,7 @@ export function commandOf(text) {
   const t = String(text || '').toLowerCase();
   if (t.includes('бумажн') || t.startsWith('/paper')) return 'paper';
   if (t.includes('сделки') || t.startsWith('/trades') || t.startsWith('/real')) return 'real';
+  if (t.includes('стратег') || t.startsWith('/strategies')) return 'strategies';
   if (t.includes('радар') || t.startsWith('/radar')) return 'radar';
   if (t.includes('робот') || t.startsWith('/robot') || t.startsWith('/status')) return 'robot';
   if (t.startsWith('/start') || t.startsWith('/menu') || t.includes('меню')) return 'start';

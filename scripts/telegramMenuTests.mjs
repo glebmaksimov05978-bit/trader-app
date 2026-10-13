@@ -22,5 +22,23 @@ ok('робот: старые данные — предупреждение', ren
 ok('команды', commandOf('📈 Сделки') === 'real' && commandOf('📄 Бумажные') === 'paper' && commandOf('🎯 Радар') === 'radar' && commandOf('🤖 Робот') === 'robot' && commandOf('/start') === 'start' && commandOf('привет') === null);
 const many = { ...snap, real: Array.from({ length: 80 }, (_, i) => ({ ticker: 'T' + i, dir: 'long', vol: 1, entry: 100, price: 101, pnl: 1, pct: 1 })) };
 ok('длинный список влезает в лимит Telegram', renderMenuReply('real', many).length < 4096);
+const multi = { ...snap,
+  paper: [
+    { id: 'p1', ticker: 'SBER', dir: 'long', vol: 1, entry: 100, price: 101, pnl: 10, pct: 1, strategy: 'Краткосрок', tf: 'H1' },
+    { id: 'p2', ticker: 'GAZP', dir: 'long', vol: 1, entry: 100, price: 99, pnl: -5, pct: -1, strategy: 'Долгосрок', tf: 'D1' },
+  ],
+  paperByStrategy: [
+    { label: 'Краткосрок', open: 1, closed: 4, pnl: 1200, winrate: 50, avgHoldDays: 0.4, timeframes: ['H1'] },
+    { label: 'Долгосрок', open: 1, closed: 0, pnl: 0, winrate: null, avgHoldDays: null, timeframes: ['D1'] },
+  ],
+};
+const pm = renderMenuReply('paper', multi);
+ok('бумажные: разложены по стратегиям', pm.includes('<b>Краткосрок</b>') && pm.includes('<b>Долгосрок</b>'));
+const sm = renderMenuReply('strategies', multi);
+ok('стратегии: у каждой своя строка и итог', sm.includes('Краткосрок') && /\+1\s200/.test(sm) && sm.includes('закрытых пока нет'));
+ok('стратегии: срок удержания в часах для краткосрока', /держит ~10 ч/.test(sm));
+ok('команда «Стратегии»', commandOf('🧪 Стратегии') === 'strategies');
+ok('стратегии без данных не падают', renderMenuReply('strategies', { ...snap, paperByStrategy: [] }).includes('пока нет'));
+
 if (fails) { console.log(`\nПровалено: ${fails}`); process.exit(1); }
 console.log('\nВсе проверки меню Telegram прошли ✓');

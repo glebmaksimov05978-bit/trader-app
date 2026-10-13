@@ -47,10 +47,12 @@ const closeUrl = esmify(path.join(repoRoot, 'src/services/tradeClose.js'), [
 ]);
 const candlesUrl = esmify(path.join(repoRoot, 'src/services/marketData/candles.js'), [["from '../tinkoff.js'", "from './tinkoff.js'"]]);
 const scheduleUrl = esmify(path.join(repoRoot, 'src/services/marketData/tradingSchedule.js'));
+const groupsUrl = esmify(path.join(repoRoot, 'src/services/analytics/paperGroups.js'));
 
 const { computeClosePnl } = await import(closeUrl);
 const { fetchDailyCandles } = await import(candlesUrl);
 const { marketPhase } = await import(scheduleUrl);
+const { groupPaperByStrategy } = await import(groupsUrl);
 
 function initFirebase() {
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT;
@@ -107,6 +109,8 @@ async function position(t) {
     stop: t.stopLoss ?? null, take: t.takeProfit ?? null,
     openedAt: toIso(t.openedAt || t.openDate || t.date),
     phase: marketPhase(type).label,
+    strategy: t.entryStrategyName || null,
+    tf: t.entryTimeframe || null,
   };
 }
 
@@ -154,6 +158,11 @@ async function main() {
     chatId: String(process.env.TELEGRAM_CHAT_ID || ''),
     real, paper,
     paperClosed: { count: closed.length, pnl: Math.round(closedPnl * 100) / 100, last: last5 },
+    // Сводка по каждой стратегии отдельно — для кнопки «🧪 Стратегии» в боте.
+    paperByStrategy: groupPaperByStrategy(paperAllSnap.docs.map((d) => d.data())).groups.map((g) => ({
+      label: g.label, open: g.open, closed: g.closed, pnl: Math.round(g.pnl), winrate: g.winrate == null ? null : Math.round(g.winrate),
+      avgHoldDays: g.avgHoldDays == null ? null : Math.round(g.avgHoldDays * 10) / 10, timeframes: g.timeframes,
+    })),
     radar,
     robot: { lastCheckAt: lastRobot, radarCount: radar.length },
   };

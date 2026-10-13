@@ -179,6 +179,7 @@ async function handleSetup(request, env) {
       { command: 'menu', description: 'Показать меню' },
       { command: 'trades', description: 'Открытые сделки' },
       { command: 'paper', description: 'Бумажные сделки' },
+      { command: 'strategies', description: 'Итоги по каждой стратегии' },
       { command: 'radar', description: 'Что решил робот по радару' },
       { command: 'robot', description: 'Статус робота' },
     ],
