@@ -7,6 +7,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { formatNumber } from '../../utils/calculator';
 import RangeGauge from './RangeGauge';
+import Icon from './Icon';
+import './TechnicalAnalysisBlock.css';
 import { markStrongestLevel, PATTERN_LABELS, STATUS_LABELS, PATTERN_DIRECTIONS } from '../../services/analytics/patterns';
 
 // Re-exported for existing callers (Calculator.js, Capital.js) that import these from
@@ -94,75 +96,81 @@ function confidenceColor(pct) {
   return 'var(--red)';
 }
 
-// Label (bold, bright — easy to spot among the surrounding text) then value on the same
-// line with a small fixed gap. Not the shared .stat-row's space-between, which in a
-// narrow grid cell shoved the value hard against the right edge, away from its label
-// (real user report) — but the trader also didn't want the label/value fully stacked
-// either, just closer together than the original. This is the middle ground.
-function MiniStat({ label, value, tip }) {
+// Блок разбит на секции с одинаковым устройством: заголовок-подпись, под ним сетка плиток
+// «название — значение». Раньше всё шло сплошным потоком, где подписи и значения лепились
+// друг к другу (жалоба: «глаза теряются»). Состав данных и пояснения не менялись.
+function Section({ title, tip, hint, children }) {
   return (
-    <div style={{display:'flex', alignItems:'baseline', gap:10, flexWrap:'wrap'}}>
-      <span style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', display:'inline-flex', alignItems:'center', gap:4, flexShrink:0}}>
-        {label}
+    <section className="ta-section">
+      <header className="ta-section-head">
+        <h4>{title}</h4>
         {tip && <InfoTip text={tip} />}
-      </span>
-      <span style={{fontSize:14, fontWeight:600, color:'var(--text-secondary)'}}>{value}</span>
+        {hint && <span className="ta-hint">{hint}</span>}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+function Tile({ label, value, tone, sub, tip }) {
+  return (
+    <div className="ta-tile">
+      <div className="ta-tile-label">{label}{tip && <InfoTip text={tip} />}</div>
+      <div className={`ta-tile-value ${tone || ''}`}>{value}</div>
+      {sub && <div className="ta-tile-sub">{sub}</div>}
     </div>
   );
 }
 
-// Used to also render →SL/→TP quick-fill buttons in the Calculator — removed (real
-// user report: too many small buttons on an already dense panel, hard on the eyes).
-// The trader still types stop/take by hand; this level list is read-only everywhere now.
-function LevelBadge({ price, children, className, style }) {
-  return <span className={className} style={{fontSize:11, ...style}}>{children}</span>;
+function Chip({ tone, children, strong }) {
+  return <span className={`ta-chip ${tone || ''} ${strong ? 'strong' : ''}`}>{children}</span>;
 }
 
 export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
   return (
-    <>
-      <div style={{display:'flex', alignItems:'center', gap:8, marginBottom:8}}>
-        <div style={{fontSize:12, color:'var(--text-muted)'}}>{title}</div>
+    <div className="ta-block">
+      <div className="ta-top">
+        <div className="ta-title">{title}</div>
         {state?.data && !state?.loading && (
-          <button className="btn btn-ghost btn-sm" style={{fontSize:11, padding:'2px 6px'}} onClick={onRefresh}>🔄 Обновить</button>
+          <button className="ta-refresh" onClick={onRefresh} title="Обновить данные">
+            <Icon name="refresh" size={13} /> Обновить
+          </button>
         )}
       </div>
       {state?.loading && (
-        <div className="flex gap-2" style={{alignItems:'center', color:'var(--text-muted)', fontSize:13}}>
-          <div className="spinner" style={{width:14,height:14}}/> Загружаем свечи...
-        </div>
+        <div className="ta-loading"><div className="spinner" style={{width:14,height:14}} /> Загружаем свечи…</div>
       )}
       {state?.error && (
-        <div style={{fontSize:13, color:'var(--red)'}}>⚠️ {state.error}</div>
+        <div className="ta-error"><Icon name="warning" size={14} /> {state.error}</div>
       )}
       {state?.data && !state?.loading && (() => {
         const { indicators, patterns, marketContext } = state.data;
         return (
           <>
-            {/* "До SMA200" dropped — it duplicated the EMA200 row below closely enough
-                (both "distance to a long-term 200-period average") that the trader read
-                them as the same number shown twice, not two different indicators. */}
-            <div className="flex flex-col gap-2" style={{maxWidth:420, marginBottom:14}}>
-              <MiniStat label="RSI" value={indicators?.rsi14 != null ? formatNumber(indicators.rsi14, 1) : 'нет данных'} />
-              <MiniStat label="MACD" value={indicators?.macdHistogram != null ? formatNumber(indicators.macdHistogram, 2) : 'нет данных'} />
-              <MiniStat label="Объём"
-                tip="Сравнение объёма сделок в этой свече со средним объёмом за 20 предыдущих свечей того же таймфрейма (на дневном графике — 20 дней, на часовом — 20 часовых баров)."
-                value={indicators?.volumeRatio != null
-                  ? (indicators.volumeRatio >= 1
-                    ? `в ${formatNumber(indicators.volumeRatio, 1)} раза выше обычного`
-                    : `на ${Math.round((1 - indicators.volumeRatio) * 100)}% ниже обычного`)
-                  : 'нет данных'} />
-            </div>
+            {/* «До SMA200» убрано: дублировало строку EMA200 ниже (оба — расстояние до
+                200-периодной средней), и трейдер читал это как одно число дважды. */}
+            <Section title="Индикаторы">
+              <div className="ta-grid">
+                <Tile label="RSI" value={indicators?.rsi14 != null ? formatNumber(indicators.rsi14, 1) : 'нет данных'} />
+                <Tile label="MACD" value={indicators?.macdHistogram != null ? formatNumber(indicators.macdHistogram, 2) : 'нет данных'} />
+                <Tile label="Объём"
+                  tip="Сравнение объёма сделок в этой свече со средним объёмом за 20 предыдущих свечей того же таймфрейма (на дневном графике — 20 дней, на часовом — 20 часовых баров)."
+                  value={indicators?.volumeRatio != null
+                    ? (indicators.volumeRatio >= 1
+                      ? `в ${formatNumber(indicators.volumeRatio, 1)} раза выше обычного`
+                      : `на ${Math.round((1 - indicators.volumeRatio) * 100)}% ниже обычного`)
+                    : 'нет данных'} />
+              </div>
+            </Section>
 
             {marketContext && (marketContext.trend || marketContext.volatility) && (
-              <>
-                <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:8}}>Рыночный контекст (автоопределение)</div>
-                <div className="grid-2" style={{gap:16, maxWidth:640, marginBottom:14}}>
+              <Section title="Рыночный контекст" hint="определяется автоматически">
+                <div className="ta-grid ta-grid-2">
                   {marketContext.trend && (
-                    <div>
-                      <div style={{fontSize:12, marginBottom:4}}>
+                    <div className="ta-gauge">
+                      <div className="ta-gauge-line">
                         Тренд: <strong>{marketContext.trend.label === 'up' ? 'восходящий' : marketContext.trend.label === 'down' ? 'нисходящий' : 'боковик'}</strong>
-                        <span style={{color:'var(--text-muted)'}}> ({marketContext.trend.slopePct >= 0 ? '+' : ''}{formatNumber(marketContext.trend.slopePct, 1)}%)</span>
+                        <span className="ta-muted"> ({marketContext.trend.slopePct >= 0 ? '+' : ''}{formatNumber(marketContext.trend.slopePct, 1)}%)</span>
                       </div>
                       <RangeGauge percent={marketContext.trend.gaugePercent}
                         leftLabel="Даунтренд" midLabel="Боковик" rightLabel="Аптренд"
@@ -170,10 +178,10 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
                     </div>
                   )}
                   {marketContext.volatility && (
-                    <div>
-                      <div style={{fontSize:12, marginBottom:4}}>
+                    <div className="ta-gauge">
+                      <div className="ta-gauge-line">
                         Волатильность: <strong>{marketContext.volatility.label === 'high' ? 'выше обычной' : marketContext.volatility.label === 'low' ? 'ниже обычной' : 'обычная'}</strong>
-                        <span style={{color:'var(--text-muted)'}}> ({formatNumber(marketContext.volatility.ratio, 2)}× от среднего)</span>
+                        <span className="ta-muted"> ({formatNumber(marketContext.volatility.ratio, 2)}× от среднего)</span>
                       </div>
                       <RangeGauge percent={marketContext.volatility.gaugePercent}
                         leftLabel="Низкая" midLabel="Средняя" rightLabel="Высокая"
@@ -181,48 +189,36 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
                     </div>
                   )}
                 </div>
-              </>
+              </Section>
             )}
 
             {indicators?.bollinger && (
-              <>
-                <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:6, display:'flex', alignItems:'center', gap:6}}>
-                  Полосы Боллинджера — цена {indicators.bollinger.position === 'above_upper' ? 'выше верхней полосы' : indicators.bollinger.position === 'below_lower' ? 'ниже нижней полосы' : 'внутри полос'}
-                  <InfoTip text="Коридор обычного разброса цены. Верхняя и нижняя линии — на 2 стандартных отклонения от средней. Цена у верхней границы — рынок разогнан вверх сильнее обычного; у нижней — вниз." />
+              <Section
+                title={`Полосы Боллинджера — цена ${indicators.bollinger.position === 'above_upper' ? 'выше верхней полосы' : indicators.bollinger.position === 'below_lower' ? 'ниже нижней полосы' : 'внутри полос'}`}
+                tip="Коридор обычного разброса цены. Верхняя и нижняя линии — на 2 стандартных отклонения от средней. Цена у верхней границы — рынок разогнан вверх сильнее обычного; у нижней — вниз.">
+                <div className="ta-grid">
+                  <Tile label="Верхняя" tone="neg" value={formatNumber(indicators.bollinger.upper, 2)} />
+                  <Tile label="Средняя" value={formatNumber(indicators.bollinger.mid, 2)} />
+                  <Tile label="Нижняя" tone="pos" value={formatNumber(indicators.bollinger.lower, 2)} />
                 </div>
-                <div style={{display:'flex', flexWrap:'wrap', gap:8, marginBottom:14}}>
-                  <LevelBadge price={indicators.bollinger.upper} className="badge badge-red">
-                    ▲ верхняя {formatNumber(indicators.bollinger.upper, 2)}
-                  </LevelBadge>
-                  <LevelBadge price={indicators.bollinger.mid} className="badge">
-                    ─ средняя {formatNumber(indicators.bollinger.mid, 2)}
-                  </LevelBadge>
-                  <LevelBadge price={indicators.bollinger.lower} className="badge badge-green">
-                    ▼ нижняя {formatNumber(indicators.bollinger.lower, 2)}
-                  </LevelBadge>
-                </div>
-              </>
+              </Section>
             )}
 
             {patterns && (
               <>
-                <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:6}}>EMA-уровни (плавающие поддержка/сопротивление)</div>
-                <div className="grid-3" style={{gap:8, maxWidth:640, marginBottom:14}}>
-                  {[9, 100, 200].map((p) => {
-                    const e = patterns.emaLevels?.[`ema${p}`];
-                    return (
-                      <div key={p}>
-                        <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:2}}>EMA{p}</div>
-                        <div style={{fontSize:13, fontWeight:600, color: e ? (e.position === 'above' ? 'var(--green)' : 'var(--red)') : undefined}}>
-                          {/* EMA{p} already named in the label right above — repeating it
-                              in the value too was the "текст прилип, больше чем сама
-                              надпись" clutter (real user report). */}
-                          {e ? `Цена ${e.position === 'above' ? 'выше' : 'ниже'} на ${Math.abs(e.distancePct).toFixed(1)}% (${e.slope === 'rising' ? '↑ растёт' : e.slope === 'falling' ? '↓ падает' : '→ плоская'})` : 'нет данных'}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                <Section title="EMA-уровни" hint="плавающие поддержка и сопротивление">
+                  <div className="ta-grid">
+                    {[9, 100, 200].map((p) => {
+                      const e = patterns.emaLevels?.[`ema${p}`];
+                      return (
+                        <Tile key={p} label={`EMA${p}`}
+                          tone={e ? (e.position === 'above' ? 'pos' : 'neg') : ''}
+                          value={e ? `${e.position === 'above' ? 'выше' : 'ниже'} на ${Math.abs(e.distancePct).toFixed(1)}%` : 'нет данных'}
+                          sub={e ? (e.slope === 'rising' ? 'наклон: растёт' : e.slope === 'falling' ? 'наклон: падает' : 'наклон: плоская') : null} />
+                      );
+                    })}
+                  </div>
+                </Section>
 
                 {patterns.supportResistance?.length > 0 && (() => {
                   // Ranked here, not baked into computePatternsAtEntry — Боллинджер
@@ -232,74 +228,67 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
                   // Radar) that calls both compute functions independently.
                   const ranked = markStrongestLevel(patterns.supportResistance, patterns.emaLevels, patterns.fibonacci, indicators?.bollinger);
                   return (
-                    <>
-                      <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:6}}>
-                        Уровни поддержки/сопротивления (по свингам) — 🔴 сопротивление (цена упиралась сверху) · 🟢 поддержка (цена отталкивалась снизу)
-                      </div>
-                      <div style={{display:'flex', flexWrap:'wrap', gap:8, marginBottom:14}}>
+                    <Section title="Уровни поддержки и сопротивления" hint="по свингам: красные — цена упиралась сверху, зелёные — отталкивалась снизу">
+                      <div className="ta-chips">
                         {ranked.map((lvl, i) => (
-                          <LevelBadge key={i} price={lvl.price}
-                            className={`badge ${lvl.type === 'resistance' ? 'badge-red' : 'badge-green'}`}
-                            style={lvl.isStrongest ? {border:'1px solid var(--gold)', boxShadow:'0 0 0 1px var(--gold)'} : undefined}>
-                            {lvl.type === 'resistance' ? '🔴' : '🟢'} {formatNumber(lvl.price, 2)} ({lvl.touchCount} каc.)
+                          <Chip key={i} tone={lvl.type === 'resistance' ? 'neg' : 'pos'} strong={lvl.isStrongest}>
+                            <span className="ta-dot" />
+                            {formatNumber(lvl.price, 2)} <span className="ta-muted">· {lvl.touchCount} кас.</span>
                             {lvl.isStrongest && (
-                              <span style={{color:'var(--gold)', marginLeft:4, display:'inline-flex', alignItems:'center', gap:3}}>
-                                {lvl.type === 'resistance' ? '★ самое сильное сопротивление' : '★ самая сильная поддержка'}
+                              <span className="ta-star">
+                                {lvl.type === 'resistance' ? 'самое сильное сопротивление' : 'самая сильная поддержка'}
                                 <InfoTip text={`Почему именно этот уровень сильнее остальных: ${lvl.strengthReasons.join(', ')}. Совпадение с независимым методом расчёта (EMA/Фибоначчи/Боллинджер) весит больше, чем ещё одно касание тем же способом.`} />
                               </span>
                             )}
-                          </LevelBadge>
+                          </Chip>
                         ))}
                       </div>
-                    </>
+                    </Section>
                   );
                 })()}
 
                 {patterns.fibonacci && (
-                  <>
-                    <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:6}}>
-                      Уровни Фибоначчи (от {formatNumber(patterns.fibonacci.from.price, 2)} до {formatNumber(patterns.fibonacci.to.price, 2)})
-                    </div>
-                    <div style={{display:'flex', flexWrap:'wrap', gap:8, marginBottom:6}}>
+                  <Section title="Уровни Фибоначчи" hint={`от ${formatNumber(patterns.fibonacci.from.price, 2)} до ${formatNumber(patterns.fibonacci.to.price, 2)}`}>
+                    <div className="ta-chips">
                       {patterns.fibonacci.levels.map((lvl, i) => (
-                        <LevelBadge key={i} price={lvl.price}
-                          className={`badge ${lvl.isNearest ? 'badge-gold' : ''}`}>
-                          {(lvl.ratio * 100).toFixed(1)}% — {formatNumber(lvl.price, 2)}{lvl.isNearest ? ' ← цена здесь' : ''}
-                        </LevelBadge>
+                        <Chip key={i} tone={lvl.isNearest ? 'gold' : ''} strong={lvl.isNearest}>
+                          {(lvl.ratio * 100).toFixed(1)}% <span className="ta-muted">·</span> {formatNumber(lvl.price, 2)}{lvl.isNearest ? ' — цена здесь' : ''}
+                        </Chip>
                       ))}
                     </div>
                     {!patterns.fibonacci.levels.some(l => l.isNearest) && (
-                      <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:8}}>Цена сейчас не рядом ни с одним из уровней.</div>
+                      <div className="ta-note">Цена сейчас не рядом ни с одним из уровней.</div>
                     )}
-                  </>
+                  </Section>
                 )}
 
-                <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:6}}>Фигуры-кандидаты (алгоритмическая оценка, не мнение AI)</div>
-                {patterns.candidates?.length > 0 ? (
-                  <div className="flex flex-col gap-2" style={{maxWidth:640}}>
-                    {patterns.candidates.map((c, i) => (
-                      <div key={i} style={{padding:'8px 12px', background:'var(--bg-surface-3)', borderRadius:10, fontSize:13}}>
-                        <div className="flex justify-between items-center">
-                          <span style={{fontWeight:600}}>{PATTERN_LABELS[c.pattern] || c.pattern}</span>
-                          <div className="flex gap-2" style={{alignItems:'center'}}>
-                            <span className={`badge ${c.status === 'forming' ? 'badge-blue' : c.status === 'invalidated' ? 'badge-red' : 'badge-green'}`} style={{fontSize:11}}>
-                              {STATUS_LABELS[c.status] || c.status}
+                <Section title="Фигуры-кандидаты" hint="алгоритмическая оценка, не мнение AI">
+                  {patterns.candidates?.length > 0 ? (
+                    <div className="ta-list">
+                      {patterns.candidates.map((c, i) => (
+                        <div key={i} className="ta-row">
+                          <div className="ta-row-top">
+                            <span className="ta-row-name">{PATTERN_LABELS[c.pattern] || c.pattern}</span>
+                            <span className="ta-row-badges">
+                              <span className={`badge ${c.status === 'forming' ? 'badge-blue' : c.status === 'invalidated' ? 'badge-red' : 'badge-green'}`}>
+                                {STATUS_LABELS[c.status] || c.status}
+                              </span>
+                              <span className="ta-conf" style={{ color: confidenceColor(c.confidence) }}>~{c.confidence}%</span>
                             </span>
-                            <span className="badge" style={{fontSize:11, color: confidenceColor(c.confidence), fontWeight:700}}>~{c.confidence}%</span>
                           </div>
+                          <div className="ta-row-detail">{c.detail}</div>
                         </div>
-                        <div style={{color:'var(--text-muted)', marginTop:2}}>{c.detail}</div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{fontSize:13, color:'var(--text-muted)'}}>Формальных фигур не найдено.</div>
-                )}
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="ta-note">Формальных фигур не найдено.</div>
+                  )}
+                </Section>
               </>
             )}
           </>
         );
       })()}
-    </>
+    </div>
   );
 }

@@ -1,0 +1,56 @@
+/* src/components/shared/TechnicalAnalysisBlock.css
+   Секции с одинаковым устройством: подпись-заголовок, под ней сетка плиток или чипов. Отступы
+   между секциями одинаковые и заметные — глаз не должен «теряться» между группами данных. */
+.ta-block { display: flex; flex-direction: column; gap: 0; }
+.ta-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+.ta-title { font-size: 12px; color: var(--text-muted); }
+.ta-refresh {
+  display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border-subtle); background: transparent;
+  color: var(--text-secondary); font-family: inherit; font-size: 11.5px; padding: 4px 9px; border-radius: 7px; cursor: pointer;
+}
+.ta-refresh:hover { color: var(--text-primary); border-color: var(--border-medium); }
+.ta-loading { display: flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 13px; }
+.ta-error { display: flex; align-items: center; gap: 6px; color: var(--red); font-size: 13px; }
+
+.ta-section { padding: 14px 0; border-top: 1px solid var(--border-subtle); }
+.ta-section:first-of-type { border-top: none; padding-top: 0; }
+.ta-section-head { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin-bottom: 10px; }
+.ta-section-head h4 {
+  margin: 0; font-size: 11.5px; font-weight: 600; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: 0.6px;
+}
+.ta-hint { font-size: 11.5px; color: var(--text-muted); }
+
+.ta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.ta-grid-2 { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.ta-tile { background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 10px 12px; min-width: 0; }
+.ta-tile-label { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
+.ta-tile-value { font-size: 14px; font-weight: 600; color: var(--text-primary); line-height: 1.35; overflow-wrap: anywhere; }
+.ta-tile-value.pos { color: var(--green); }
+.ta-tile-value.neg { color: var(--red); }
+.ta-tile-sub { font-size: 11.5px; color: var(--text-muted); margin-top: 3px; }
+
+.ta-gauge { min-width: 0; }
+.ta-gauge-line { font-size: 13px; margin-bottom: 6px; color: var(--text-primary); }
+.ta-muted { color: var(--text-muted); font-weight: 400; }
+
+.ta-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.ta-chip {
+  display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 5px 10px; font-size: 12.5px; font-weight: 600;
+  border-radius: 7px; border: 1px solid var(--border-subtle); background: var(--bg-surface-2); color: var(--text-primary);
+}
+.ta-chip.strong { border-color: var(--gold); }
+.ta-chip.gold { border-color: color-mix(in srgb, var(--gold) 55%, transparent); }
+.ta-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; }
+.ta-chip.pos .ta-dot { background: var(--green); }
+.ta-chip.neg .ta-dot { background: var(--red); }
+.ta-star { display: inline-flex; align-items: center; gap: 4px; color: var(--gold); font-weight: 500; font-size: 11.5px; }
+
+.ta-list { display: flex; flex-direction: column; gap: 8px; }
+.ta-row { padding: 10px 12px; background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); }
+.ta-row-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.ta-row-name { font-size: 13.5px; font-weight: 600; }
+.ta-row-badges { display: inline-flex; align-items: center; gap: 8px; }
+.ta-conf { font-size: 12px; font-weight: 700; }
+.ta-row-detail { font-size: 12.5px; color: var(--text-muted); margin-top: 4px; line-height: 1.5; }
+.ta-note { font-size: 12.5px; color: var(--text-muted); margin-top: 8px; }
