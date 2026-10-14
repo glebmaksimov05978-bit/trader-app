@@ -89,7 +89,6 @@ export function relayEndpoint(base, path) {
   if (/functions\.yandexcloud\.net/.test(b) || b.includes('?')) {
     const [clean, query] = b.split('?');
     const params = new URLSearchParams(query || '');
-    params.set('integration', 'raw');
     params.set('route', path);
     return `${clean}?${params.toString()}`;
   }

@@ -49,7 +49,7 @@
 5. **Сделай функцию публичной** (иначе она не открывается по адресу) и скопируй её ссылку вида
    `https://functions.yandexcloud.net/…`. Публичность безопасна: без `RELAY_KEY` функция ничего
    не выполняет.
-6. **Проверка.** Открой в браузере `ссылка?integration=raw` (путь после идентификатора дописывать нельзя: Яндекс отвечает «invalid functionID», маршрут передаётся параметром, например `ссылка?integration=raw&route=/health`): должно быть `"brokerToken": true`,
+6. **Проверка.** Открой в браузере `ссылка?route=/health` (путь после идентификатора дописывать нельзя: Яндекс отвечает «invalid functionID», маршрут передаётся параметром `route`; параметр `integration=raw` добавлять НЕ нужно, с ним ответ приходит «завёрнутым»): должно быть `"brokerToken": true`,
    `"relayKey": true`, `"russianCa": true`. Если `russianCa` равно `false`, неверен путь в
    `NODE_EXTRA_CA_CERTS`.
 7. **Воркер в Cloudflare** (сайт dash.cloudflare.com): Workers & Pages → `traderpro-telegram-webhook`

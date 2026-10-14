@@ -139,7 +139,7 @@ ok('Яндекс-обёртка: /health доступен без ключа и �
 // --- адрес на Яндексе: маршрут в параметре, путь после идентификатора недопустим ---
 ok('relayEndpoint: обычный сервер — база + путь', relayEndpoint('https://relay.example.ru/', '/broker/UsersService/GetAccounts') === 'https://relay.example.ru/broker/UsersService/GetAccounts');
 const ye = relayEndpoint('https://functions.yandexcloud.net/abc123', '/broker/UsersService/GetAccounts');
-ok('relayEndpoint: Яндекс — маршрут параметром, без пути после id', ye.startsWith('https://functions.yandexcloud.net/abc123?') && /route=%2Fbroker%2FUsersService%2FGetAccounts/.test(ye) && /integration=raw/.test(ye));
+ok('relayEndpoint: Яндекс — маршрут параметром, без пути после id', ye.startsWith('https://functions.yandexcloud.net/abc123?') && /route=%2Fbroker%2FUsersService%2FGetAccounts/.test(ye) && !/integration/.test(ye));
 const yr = await yandexHandler({ httpMethod: 'GET', path: '/', headers: { Host: 'f.example' }, queryStringParameters: { integration: 'raw', route: '/health' }, body: null });
 ok('Яндекс-обёртка: ?route=/health открывает проверку здоровья', yr.statusCode === 200 && JSON.parse(yr.body).service === 'traderpro-relay');
 const yb2 = await yandexHandler({ httpMethod: 'POST', path: '/', headers: { Host: 'f.example', 'X-Relay-Key': KEY }, queryStringParameters: { integration: 'raw', route: '/broker/UsersService/GetAccounts' }, body: '{}' });
