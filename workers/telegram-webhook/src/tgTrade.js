@@ -19,7 +19,7 @@
 //
 // Все внешние действия (запросы к брокеру, хранилище, отправка сообщений) передаются снаружи
 // (`deps`) — это позволяет проверять весь поток тестом, без сети и без единой настоящей заявки.
-import { checkOrderGates, quotationToFloat } from './orders.js';
+import { checkOrderGates, quotationToFloat, translateBrokerError } from './orders.js';
 
 const CONFIRM_TTL_SEC = 180;
 
@@ -171,7 +171,7 @@ export async function execute(deps, nonce) {
       orderId: nonce,
     });
   } catch (e) {
-    return { text: `⛔ Брокер отклонил заявку: ${esc(e.message)}\nЕсли биржа сейчас закрыта, заявка в очередь не встаёт — повторите, когда торги идут.` };
+    return { text: `⛔ Брокер отклонил заявку: ${esc(translateBrokerError(e.message))}` };
   }
 
   const lotsExecuted = res?.lotsExecuted != null ? Number(res.lotsExecuted) : 0;

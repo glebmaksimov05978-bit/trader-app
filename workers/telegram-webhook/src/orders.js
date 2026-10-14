@@ -371,25 +371,49 @@ export async function handleOrder(request, env) {
       },
     });
   } catch (e) {
-    return json(env, { error: `Брокер отклонил заявку: ${explainBrokerError(e.message)}` }, 502);
+    let hint = '';
+    if (/outside the limits/i.test(e.message)) {
+      try {
+        const lp = await tinkoff(env, 'MarketDataService/GetLastPrices', { figi: [instrument.figi] });
+        const last = quotationToFloat(lp?.lastPrices?.[0]?.price);
+        if (last) hint = ` Сейчас цена около ${last}.`;
+      } catch { /* подсказка необязательна */ }
+    }
+    return json(env, { error: `Брокер отклонил заявку: ${explainBrokerError(e.message)}${hint}` }, 502);
   }
 }
 
-// Т-Банк возвращает техническое сообщение (иногда на английском, кодом ошибки) — трейдер
-// должен понимать по-русски, ПОЧЕМУ не ушла заявка, а не гадать. Самая частая причина —
-// биржа сейчас не торгует этим инструментом (вне сессии, клиринг, выходной): заявка в
-// этот момент никуда не встаёт "в очередь" и не исполнится потом сама — её нужно будет
-// отправить заново, когда торги возобновятся. Дописываем понятное объяснение, НЕ пряча
-// исходный текст брокера — если формулировка окажется другой, трейдер всё равно её увидит.
-function explainBrokerError(message) {
-  const m = String(message || '');
-  const closed = /not.?trading|trading.?not.?available|instrument.?status|market.?closed|session|клиринг|торги.*не\s*ведутся|недоступ.*торг/i.test(m);
-  if (closed) {
-    return `${m} — похоже, биржа сейчас не торгует этим инструментом (вне часов сессии, клиринг или выходной). `
-      + 'Заявка не встаёт "в очередь" на потом — когда торги откроются, нужно будет нажать ещё раз.';
+/**
+ * Ошибка брокера человеческим языком. Т-Банк присылает технический английский текст с
+ * названием метода и кодом («OrdersService/PostOrder: 400 The price is outside the limits…») —
+ * трейдеру нужно по-русски понимать, ПОЧЕМУ не ушла заявка и что делать. Известные причины
+ * переводятся; неизвестные показываются как есть, но без служебных приставок.
+ */
+export function translateBrokerError(message) {
+  const raw = String(message || '');
+  // Приставки «Сервис/Метод: 400» (иногда задвоенные посредником) — служебные, трейдеру не нужны.
+  const clean = raw.replace(/\b[A-Za-z]+Service\/\w+:\s*\d{3}\s*/g, '').replace(/\s+/g, ' ').trim();
+  const t = clean.toLowerCase();
+  const rules = [
+    [/insufficient privileges|permission denied|forbidden/, 'У токена нет права выставлять заявки. Выпустите токен с доступом «Полный доступ» (не «только чтение») и замените его на сервере.'],
+    [/price is outside the limits|outside the limits/, 'Цена вне допустимого диапазона: биржа принимает лимитные заявки только недалеко от текущей цены. Поставьте цену ближе к рыночной или выберите рыночную заявку.'],
+    [/not enough|insufficient (balance|funds|assets)|недостаточно/, 'Недостаточно средств или бумаг на счёте для этой заявки.'],
+    [/not available for trading|trading is not available|instrument.*(unavailable|forbidden|not allowed)|api trade/, 'Этот инструмент нельзя торговать через API (или торги им сейчас закрыты). Откройте заявку в приложении брокера.'],
+    [/not.?trading|trading.?not.?available|instrument.?status|market.?closed|session|клиринг|торги.*не\s*ведутся|недоступ.*торг/, 'Сейчас биржа не торгует этим инструментом (вне сессии, клиринг или выходной). Заявка в очередь «на потом» не встаёт — отправьте её, когда торги откроются.'],
+    [/invalid (quantity|lot)|quantity.*(must|invalid|less)|lot/, 'Количество лотов не подходит для этого инструмента.'],
+    [/token|unauthenticated|authentication/, 'Брокер не принял токен. Проверьте, что токен действителен и вставлен без лишних пробелов.'],
+    [/too many requests|rate limit|resource.?exhausted/, 'Слишком много запросов к брокеру подряд. Подождите минуту и повторите.'],
+    [/duplicate|already|idempotenc/, 'Такая заявка уже была отправлена (повторное нажатие не создаёт вторую).'],
+    [/short|margin|маржин/, 'Недостаточно обеспечения для такой позиции (проверьте маржинальные требования и разрешение на шорт).'],
+  ];
+  for (const [re, ru] of rules) {
+    if (re.test(t)) return `${ru}${clean ? ` (ответ брокера: ${clean})` : ''}`;
   }
-  return m;
+  return clean || 'Брокер отклонил заявку без пояснения.';
 }
+
+// Совместимость: прежнее имя.
+function explainBrokerError(message) { return translateBrokerError(message); }
 
 /**
  * GET /order/config — что разрешено на сервере. Нужен интерфейсу, чтобы не предлагать

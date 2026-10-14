@@ -1,7 +1,7 @@
 // src/services/firebase.js
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore } from 'firebase/firestore';
 
 // Replace with your Firebase project config
 const firebaseConfig = {
@@ -15,5 +15,9 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
+// ignoreUndefinedProperties: поле со значением undefined просто не записывается. Без этого любое
+// необязательное поле, оставшееся undefined (например stopIsSizingOnly у сделки без стопа),
+// роняло сохранение целиком: «Function addDoc() called with invalid data. Unsupported field value:
+// undefined» (реальная жалоба при «В журнал» из Калькулятора).
+export const db = initializeFirestore(app, { ignoreUndefinedProperties: true });
 export default app;

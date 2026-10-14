@@ -147,5 +147,12 @@ ok('Яндекс-обёртка: ?route=/broker/… проходит с ключ
 const yi = await yandexHandler({ httpMethod: 'GET', path: '/', headers: { Host: 'f.example' }, queryStringParameters: { integration: 'raw' }, body: null });
 ok('Яндекс-обёртка: без route — тоже здоровье (корень)', yi.statusCode === 200);
 
+// --- ошибки брокера по-русски ---
+const { translateBrokerError } = await import('../workers/telegram-webhook/src/orders.js');
+const tr1 = translateBrokerError('OrdersService/PostOrder: 400 OrdersService/PostOrder: 400 The price is outside the limits for this instrument');
+ok('ошибка цены переведена, служебных приставок нет', /Цена вне допустимого диапазона/.test(tr1) && !/Service\//.test(tr1.split('(ответ брокера')[0]));
+ok('нет прав — понятная инструкция про токен', /Полный доступ/.test(translateBrokerError('OrdersService/PostOrder: 403 Insufficient privileges')));
+ok('неизвестная ошибка не теряется', translateBrokerError('OrdersService/PostOrder: 400 Strange thing') === 'Strange thing');
+
 if (fails) { console.log(`\nПровалено: ${fails}`); process.exit(1); }
 console.log('\nВсе проверки посредника прошли ✓');
