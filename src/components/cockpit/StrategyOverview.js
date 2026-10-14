@@ -23,7 +23,7 @@ function holdText(days) {
  * @param {Object} radar — { [strategyId]: { total, hot } }
  * @param {(id: string) => void} onPick
  */
-export default function StrategyOverview({ strategies, groups, radar, onPick }) {
+export default function StrategyOverview({ strategies, groups, radar, onPick, single = false }) {
   const byId = new Map(groups.map((g) => [g.key, g]));
   // Стратегии из профиля — всегда, даже без сделок; плюс «осиротевшие» группы (стратегия удалена).
   const rows = strategies.map((s) => ({ id: s.id, name: s.name || 'Без названия', strategy: s, group: byId.get(s.id) || null }));
@@ -35,8 +35,8 @@ export default function StrategyOverview({ strategies, groups, radar, onPick }) 
   return (
     <section className="ck-panel so-wrap">
       <header className="so-head">
-        <h2>Стратегии</h2>
-        <span className="so-hint">у каждой своя лента — друг с другом не сравниваются</span>
+        <h2>{single ? 'Стратегия' : 'Стратегии'}</h2>
+        {!single && <span className="so-hint">у каждой своя лента — друг с другом не сравниваются</span>}
       </header>
       <div className="so-grid">
         {rows.map((r) => {

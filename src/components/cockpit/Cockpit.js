@@ -1131,24 +1131,23 @@ export default function Cockpit() {
             </section>
           )}
 
-          {/* Обзор: что происходит у каждой стратегии. Показывается, пока ничего не выбрано. */}
-          {!trade && !previewTicker && scopeId === 'all' && (
-            <StrategyOverview strategies={strategies} groups={paperGroups.groups} radar={radarByStrategy} onPick={chooseScope} />
-          )}
-
-          {/* Инструмент не выбран вообще — та же вёрстка, но вместо графика подсказка. */}
+          {/* Пока ничего не выбрано: обзор стратегий (или карточка одной, если выбрана) и одна строка
+              подсказки. Отдельной большой панели «Выберите инструмент» больше нет — она висела
+              пустым окном под обзором. */}
           {!trade && !previewTicker && (
-            <section className="ck-panel ck-blank">
-              <h2>Выберите инструмент</h2>
-              <p>
-                Нажмите на любой инструмент в радаре слева — здесь откроется его график, технический
-                анализ и готовность к входу. Когда появится сделка (твоя или бумажная), эта же
-                вкладка покажет её изнутри: что видят профит- и лосс-системы и что сделал бы движок.
-              </p>
-              <p className="ck-muted">
-                Открыть сделку самому: <Link to="/journal">Журнал</Link> или <Link to="/calculator">Калькулятор</Link>.
-              </p>
-            </section>
+            <>
+              <StrategyOverview
+                strategies={scopeId === 'all' ? strategies : strategies.filter((x) => x.id === scopeId)}
+                groups={scopeId === 'all' ? paperGroups.groups : paperGroups.groups.filter((g) => g.key === scopeId)}
+                radar={radarByStrategy}
+                onPick={chooseScope}
+                single={scopeId !== 'all'}
+              />
+              <div className="ck-hint-line">
+                Нажмите инструмент в радаре слева, чтобы открыть график, технический анализ и готовность к входу.
+                Своя сделка — в <Link to="/journal">Журнале</Link> или <Link to="/calculator">Калькуляторе</Link>.
+              </div>
+            </>
           )}
 
           {trade && (
@@ -1169,10 +1168,15 @@ export default function Cockpit() {
                   {/* У бумажной сделки нет трейдера: подпись «Факт · ты» врала бы, будто ты в ней торгуешь.
                       Это просто движение цены от входа — «если ничего не делать». */}
                   <span className="ck-k">{isPaper ? 'Цена от входа' : 'Факт · ты'}</span>
-                  <span className={`ck-line-v ${(a?.currentPct ?? 0) >= 0 ? 'up' : 'down'}`}>
-                    {fmtPct(a?.currentPct)}
+                  {/* Итог линии, а не просто движение цены: у сделки с частичными фиксациями
+                      часть прибыли уже получена по своим ценам (resultPct её учитывает). */}
+                  <span className={`ck-line-v ${((a?.resultPct ?? a?.currentPct) ?? 0) >= 0 ? 'up' : 'down'}`}>
+                    {fmtPct(a?.resultPct ?? a?.currentPct)}
                   </span>
-                  <span className="ck-line-sub">{fmtNum(trade.entryPrice)} → {fmtNum(money?.price)}</span>
+                  <span className="ck-line-sub">
+                    {fmtNum(trade.entryPrice)} → {fmtNum(money?.price)}
+                    {money && money.realized !== 0 && <> · зафиксировано {fmtRub(money.realized)}</>}
+                  </span>
                 </button>
                 <button
                   className={`ck-line ${showSys ? 'on' : 'off'}`}

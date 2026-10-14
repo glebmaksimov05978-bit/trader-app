@@ -31,6 +31,7 @@
     "test:tgtrade": "node scripts/tgTradeTests.mjs",
     "test:relay": "node scripts/relayTests.mjs",
     "test:pending": "node scripts/pendingOrdersTests.mjs",
+    "test:realized": "node scripts/realizedTests.mjs",
     "test:papergroups": "node scripts/paperGroupsTests.mjs",
     "test:fillsclose": "node scripts/fillsCloseTest.mjs",
     "test:period": "node scripts/periodReportTests.mjs",

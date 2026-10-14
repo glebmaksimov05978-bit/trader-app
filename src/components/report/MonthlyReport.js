@@ -15,8 +15,13 @@ import { buildMonthlyReport, reportVerdict } from '../../services/analytics/mont
 import { buildPeriodReport, listPeriods, SCOPES } from '../../services/analytics/periodReport';
 import { buildEntryStats } from '../../services/analytics/entryStats';
 import { formatCurrency } from '../../utils/calculator';
+import { computeClosePnl } from '../../services/tradeClose';
 import { MIN_SAMPLE } from '../../services/analytics/insightsEngine';
 import './MonthlyReport.css';
+
+// Результат одной закрывающей ступени — тем же расчётом, что и при закрытии (tradeClose.js): нужен,
+// чтобы зафиксированная часть частично закрытых сделок попала в свой день и месяц.
+const legPnl = (trade, leg) => computeClosePnl({ trade, exitPrice: Number(leg.price), qty: Number(leg.quantity) })?.pnl ?? NaN;
 
 const money = (v) => `${v >= 0 ? '+' : '−'}${formatCurrency(Math.abs(Math.round(v)))}`;
 const pfText = (v) => (v == null ? '—' : Number.isFinite(v) ? v.toFixed(2) : '∞');
@@ -43,12 +48,12 @@ export default function MonthlyReport() {
     })();
   }, [user]);
 
-  const periods = useMemo(() => listPeriods(real, paper, type), [real, paper, type]);
+  const periods = useMemo(() => listPeriods(real, paper, type, legPnl), [real, paper, type]);
   // По умолчанию — самый свежий период, где что-то закрывалось: пустая страница в первые дни
   // нового месяца — плохой первый экран.
   const key = pickedKey && periods.some((p) => p.key === pickedKey) ? pickedKey : periods[0]?.key;
 
-  const rep = useMemo(() => (key ? buildPeriodReport({ realTrades: real, paperTrades: paper, scope, type, key }) : null),
+  const rep = useMemo(() => (key ? buildPeriodReport({ realTrades: real, paperTrades: paper, scope, type, key, legPnl }) : null),
     [real, paper, scope, type, key]);
 
   // Классический месячный отчёт (итог словами, дисциплина, привычки) — только по реальным сделкам.
@@ -224,7 +229,17 @@ function Delta({ value, suffix = '', invert = false }) {
 function KpiRow({ rep }) {
   const s = rep.stats, d = rep.delta;
   const cards = [
-    { label: 'Результат', value: money(s.pnl), cls: sgn(s.pnl), sub: d.hasPrev ? <><Delta value={d.pnl} /> к {rep.prevLabel.toLowerCase()}</> : 'прошлый период без сделок' },
+    { label: 'Результат', value: money(s.pnl), cls: sgn(s.pnl),
+      sub: (
+        <>
+          {d.hasPrev ? <><Delta value={d.pnl} /> к {rep.prevLabel.toLowerCase()}</> : 'прошлый период без сделок'}
+          {s.realizedOpen !== 0 && (
+            <div title="Часть прибыли, зафиксированная по сделкам, которые ещё открыты. Входит в результат, но не в число сделок.">
+              в т.ч. зафиксировано по открытым: <b className={sgn(s.realizedOpen)}>{money(s.realizedOpen)}</b>
+            </div>
+          )}
+        </>
+      ) },
     { label: 'Сделок', value: s.total, sub: d.hasPrev ? `в ${rep.prevLabelIn} — ${rep.prevStats.total}` : '—' },
     { label: 'Прибыльных', value: `${Math.round(s.winrate)}%`, sub: d.winrate != null ? `${d.winrate >= 0 ? '+' : '−'}${Math.abs(d.winrate).toFixed(0)} п.п. к прошлому` : `${s.wins} из ${s.total}` },
     { label: 'Профит-фактор', value: pfText(s.profitFactor), sub: 'заработано на рубль потерь' },

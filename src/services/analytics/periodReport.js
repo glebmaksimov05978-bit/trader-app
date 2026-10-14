@@ -9,6 +9,8 @@
 //
 // Бумажные считаются только закрытые: у открытой бумажной в поле pnl лежит уже зафиксированная
 // часть, и смешивать её с итогом закрытых значит выдавать недосчитанное за результат.
+import { partialEvents } from './realized.js';
+
 const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
 const MONTHS_GEN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 const MONTHS_PREP = ['январе', 'феврале', 'марте', 'апреле', 'мае', 'июне', 'июле', 'августе', 'сентябре', 'октябре', 'ноябре', 'декабре'];
@@ -33,15 +35,27 @@ const pad = (n) => String(n).padStart(2, '0');
 export const monthKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
 export const yearKey = (d) => String(d.getFullYear());
 
-/** Привести сделки обоих источников к одной форме; фильтр «закрыта и есть результат». */
-export function normalize(realTrades, paperTrades, scope) {
+/**
+ * Привести сделки обоих источников к одной форме; фильтр «закрыта и есть результат».
+ * @param {Function} [legPnl] — (сделка, ступень) → ₽: расчёт результата одной закрывающей ступени.
+ *   Нужен, чтобы зафиксированная часть ЧАСТИЧНО закрытых сделок попала в нужный день; без него
+ *   такая сделка берётся одной суммой на дату последней фиксации.
+ */
+export function normalize(realTrades, paperTrades, scope, legPnl = null) {
   const out = [];
   if (scope === 'real' || scope === 'all') {
     for (const t of realTrades || []) {
-      if (!(t.status === 'closed' || t.status === 'partial') || t.pnl == null) continue;
-      const closed = closedAtOf(t);
-      if (!closed || !Number.isFinite(Number(t.pnl))) continue;
-      out.push({ src: 'real', pnl: Number(t.pnl), closed, ticker: String(t.ticker || '—').toUpperCase(), direction: t.direction, strategy: t.entryStrategyName || t.strategyName || 'Вручную', raw: t });
+      if (t.pnl == null || !Number.isFinite(Number(t.pnl))) continue;
+      const base = { src: 'real', ticker: String(t.ticker || '—').toUpperCase(), direction: t.direction, strategy: t.entryStrategyName || t.strategyName || 'Вручную', raw: t };
+      if (t.status === 'closed') {
+        const closed = closedAtOf(t);
+        if (!closed) continue;
+        out.push({ ...base, pnl: Number(t.pnl), closed });
+      } else if (t.status === 'partial') {
+        // Позиция ещё открыта, но часть прибыли уже зафиксирована: каждая фиксация — отдельное
+        // событие на своей дате. В число сделок и процент прибыльных они не входят (partial: true).
+        for (const e of partialEvents(t, legPnl)) out.push({ ...base, pnl: e.pnl, closed: e.at, partial: true });
+      }
     }
   }
   if (scope === 'paper' || scope === 'all') {
@@ -83,31 +97,38 @@ export function periodLabelIn(type, key) {
 }
 
 /** Периоды, в которых что-то закрывалось (по любому из источников), от свежего к старому. */
-export function listPeriods(realTrades, paperTrades, type) {
+export function listPeriods(realTrades, paperTrades, type, legPnl = null) {
   const keys = new Set();
-  for (const x of normalize(realTrades, paperTrades, 'all')) keys.add(type === 'year' ? yearKey(x.closed) : monthKey(x.closed));
+  for (const x of normalize(realTrades, paperTrades, 'all', legPnl)) keys.add(type === 'year' ? yearKey(x.closed) : monthKey(x.closed));
   return [...keys].sort().reverse().map((key) => ({ key, label: periodLabel(type, key) }));
 }
 
 export function statsOf(items) {
-  const n = items.length;
-  if (!n) return { total: 0, wins: 0, winrate: 0, pnl: 0, avg: 0, profitFactor: null, avgWin: 0, avgLoss: 0, maxDrawdown: 0, best: null, worst: null };
-  const wins = items.filter((x) => x.pnl > 0);
-  const losses = items.filter((x) => x.pnl < 0);
+  const done = items.filter((x) => !x.partial);        // полностью закрытые сделки
+  const partials = items.filter((x) => x.partial);      // зафиксированное по ещё открытым
+  const realizedOpen = partials.reduce((s, x) => s + x.pnl, 0);
+  const n = done.length;
+  const wins = done.filter((x) => x.pnl > 0);
+  const losses = done.filter((x) => x.pnl < 0);
   const gross = wins.reduce((s, x) => s + x.pnl, 0);
   const lossSum = Math.abs(losses.reduce((s, x) => s + x.pnl, 0));
-  // Просадка по накопленному результату в порядке закрытия.
+  const pnlDone = done.reduce((s, x) => s + x.pnl, 0);
+  // Просадка по накопленному результату в порядке реализации — включая зафиксированное по открытым.
   let cum = 0, peak = 0, dd = 0;
   for (const x of [...items].sort((a, b) => a.closed - b.closed)) {
     cum += x.pnl; peak = Math.max(peak, cum); dd = Math.max(dd, peak - cum);
   }
-  const sorted = [...items].sort((a, b) => b.pnl - a.pnl);
+  const sorted = [...done].sort((a, b) => b.pnl - a.pnl);
   return {
-    total: n, wins: wins.length, winrate: (wins.length / n) * 100,
-    pnl: items.reduce((s, x) => s + x.pnl, 0), avg: items.reduce((s, x) => s + x.pnl, 0) / n,
-    profitFactor: lossSum > 0 ? gross / lossSum : (gross > 0 ? Infinity : null),
+    total: n, wins: wins.length, winrate: n ? (wins.length / n) * 100 : 0,
+    pnl: pnlDone + realizedOpen,           // всё реально зафиксированное за период
+    pnlClosed: pnlDone,                    // только по полностью закрытым
+    realizedOpen,                          // зафиксировано по сделкам, которые ещё открыты
+    partialEvents: partials.length,
+    avg: n ? pnlDone / n : 0,
+    profitFactor: n ? (lossSum > 0 ? gross / lossSum : (gross > 0 ? Infinity : null)) : null,
     avgWin: wins.length ? gross / wins.length : 0, avgLoss: losses.length ? -lossSum / losses.length : 0,
-    maxDrawdown: dd, best: sorted[0], worst: n > 1 ? sorted[n - 1] : null,
+    maxDrawdown: dd, best: sorted[0] || null, worst: n > 1 ? sorted[n - 1] : null,
   };
 }
 
@@ -147,8 +168,8 @@ function groupBy(items, keyFn) {
  * @param {'month'|'year'} a.type
  * @param {string} a.key — 'YYYY-MM' или 'YYYY'
  */
-export function buildPeriodReport({ realTrades, paperTrades, scope = 'real', type = 'month', key }) {
-  const all = normalize(realTrades, paperTrades, scope);
+export function buildPeriodReport({ realTrades, paperTrades, scope = 'real', type = 'month', key, legPnl = null }) {
+  const all = normalize(realTrades, paperTrades, scope, legPnl);
   const cur = all.filter(inPeriod(type, key));
   const prevKey = prevPeriodKey(type, key);
   const prev = all.filter(inPeriod(type, prevKey));
@@ -156,8 +177,8 @@ export function buildPeriodReport({ realTrades, paperTrades, scope = 'real', typ
   const prevStats = statsOf(prev);
 
   // «Я против системы»: реальные и бумажные того же периода рядом, независимо от выбранного среза.
-  const realCur = normalize(realTrades, paperTrades, 'real').filter(inPeriod(type, key));
-  const paperCur = normalize(realTrades, paperTrades, 'paper').filter(inPeriod(type, key));
+  const realCur = normalize(realTrades, paperTrades, 'real', legPnl).filter(inPeriod(type, key));
+  const paperCur = normalize(realTrades, paperTrades, 'paper', legPnl).filter(inPeriod(type, key));
   const versus = { real: statsOf(realCur), paper: statsOf(paperCur) };
 
   return {

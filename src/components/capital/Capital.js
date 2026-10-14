@@ -2,6 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, calcStats, computeLiveBalance } from '../../services/trades';
+import { computeClosePnl } from '../../services/tradeClose';
+import { realizedOnDay, openedOnDay } from '../../services/analytics/realized';
 import { formatCurrency, formatNumber } from '../../utils/calculator';
 import { CONDITION_CATALOG, defaultStrategy, getStrategies, STRATEGY_TEMPLATES, CUSTOM_CONDITION_PRESETS } from '../../services/analytics/strategy';
 import { classifyStrategy, kindBadge, strategyPerformance } from '../../services/analytics/strategyKind';
@@ -281,13 +283,14 @@ export default function Capital() {
   const maxDailyLoss = parseFloat(settings.dailyLossLimit) || 3;
   const maxTradesPerRisk = Math.floor(maxDailyLoss / riskPct);
 
-  // Current day PnL from journal
-  const today = new Date().toDateString();
-  const todayTrades = trades.filter(t => {
-    const d = t.date?.seconds ? new Date(t.date.seconds * 1000) : new Date(t.date);
-    return d.toDateString() === today && t.status === 'closed';
-  });
-  const todayPnl = todayTrades.reduce((s, t) => s + (t.pnl || 0), 0);
+  // Результат дня — по РЕАЛЬНО зафиксированному сегодня: закрытые сегодня сделки (по дате закрытия,
+  // а не входа) и фиксации частями по ещё открытым. Раньше брался только status === 'closed' по дате
+  // входа — зафиксированная часть не попадала ни в «P&L сегодня», ни в дневной лимит убытка.
+  const legPnl = (t, leg) => computeClosePnl({ trade: t, exitPrice: Number(leg.price), qty: Number(leg.quantity) })?.pnl ?? NaN;
+  const todayRealized = realizedOnDay(trades, new Date(), legPnl);
+  const todayPnl = todayRealized.pnl;
+  // Для лимита «сделок в день» — сколько сделок ОТКРЫТО сегодня (любого статуса).
+  const todayTrades = { length: openedOnDay(trades, new Date()) };
   const todayLossUsed = Math.abs(Math.min(todayPnl, 0));
   const todayLimitUsedPct = Math.min((todayLossUsed / dailyLossRub) * 100, 100);
 
@@ -327,7 +330,7 @@ export default function Capital() {
           <div className="kpi-value" style={{color: todayPnl >= 0 ? 'var(--green)' : 'var(--red)', fontSize:22}}>
             {todayPnl >= 0 ? '+' : ''}{formatCurrency(Math.round(todayPnl))}
           </div>
-          <div className="kpi-sub">{todayTrades.length} сделок сегодня</div>
+          <div className="kpi-sub">{todayTrades.length} открыто сегодня{todayRealized.partialPnl !== 0 ? ` · из них фиксация частями ${todayRealized.partialPnl > 0 ? "+" : ""}${formatCurrency(Math.round(todayRealized.partialPnl))}` : ""}</div>
         </div>
 
         <div className={`kpi-card ${currentDdPct >= ddStopPct ? 'red' : currentDdPct >= ddStopPct * 0.7 ? 'gold' : 'blue'}`}>
