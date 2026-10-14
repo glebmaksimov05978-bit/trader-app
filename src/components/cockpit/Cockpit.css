@@ -34,7 +34,7 @@
   padding: 8px 14px; border-radius: var(--radius-xs); border: 1px solid var(--border-medium);
   background: transparent; color: var(--text-secondary); font-size: 12.5px; font-weight: 600;
   cursor: pointer; transition: var(--transition); font-family: inherit; text-decoration: none;
-  display: inline-flex; align-items: center;
+  display: inline-flex; align-items: center; white-space: nowrap;
 }
 .ck-btn:hover { color: var(--text-primary); border-color: var(--accent-primary); }
 .ck-btn-primary { background: var(--accent-primary); border-color: transparent; color: #fff; }
@@ -442,3 +442,20 @@
 .ck-paper-sum b.up { color: var(--green); }
 .ck-paper-sum b.down { color: var(--red); }
 .ck-pos-strat { font-size: 10.5px; color: var(--accent-primary); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+
+/* ---------- Мобильная шапка Сопровождения ----------
+   Правая часть шапки (выбор стратегии + «Обновить») была в одну строку с margin-left:auto и на
+   узком экране выталкивала кнопку за край. Теперь она переносится и занимает всю ширину. */
+.ck-top { min-width: 0; }
+.ck-top > div { min-width: 0; }
+.ck-top-right { flex-wrap: wrap; min-width: 0; max-width: 100%; }
+.ck-strategy-pick { min-width: 0; flex: 1 1 200px; }
+.ck-strategy-pick select { min-width: 0; width: 100%; }
+.ck-layout > * { min-width: 0; }
+@media (max-width: 640px) {
+  .ck-top-right { margin-left: 0; width: 100%; }
+  .ck-top-right .ck-btn { flex: 0 0 auto; }
+  .ck-title { font-size: 21px; }
+  .ck-wrap { max-width: 100%; overflow-x: hidden; }
+}

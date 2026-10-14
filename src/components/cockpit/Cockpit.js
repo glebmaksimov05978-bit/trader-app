@@ -15,6 +15,7 @@ import { useAuth } from '../../context/AuthContext';
 import { addTrade, getUserTrades, resolveOpenedAt } from '../../services/trades';
 import { getOpenPaperTrades, getPaperTrades, updatePaperTrade } from '../../services/paperTrades';
 import { groupPaperByStrategy, paperStrategyKey } from '../../services/analytics/paperGroups';
+import Icon from '../shared/Icon';
 import { fetchDailyCandles, availableTimeframes } from '../../services/marketData/candles';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
@@ -756,7 +757,7 @@ export default function Cockpit() {
             </select>
           </label>
           <button className="ck-btn" onClick={recompute} disabled={computing}>
-            {computing ? 'Считаю…' : '⟳ Обновить'}
+            <Icon name="refresh" size={14} style={{ marginRight: 6 }} />{computing ? 'Считаю…' : 'Обновить'}
           </button>
         </div>
       </div>

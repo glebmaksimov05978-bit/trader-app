@@ -838,3 +838,21 @@ input[type=number] { -moz-appearance: textfield; }
     border-radius: 20px;
   }
 }
+
+
+/* ---------- Мобильная вёрстка: страница не двигается вбок ----------
+   Жалоба: на телефоне экраны «плавали» в стороны, а кнопки уезжали за край. Причины — широкие
+   дочерние элементы без права сжиматься (flex/grid-ячейки по умолчанию не уже своего содержимого)
+   и отсутствие запрета горизонтальной прокрутки на самой странице. Широкое содержимое
+   (таблицы, графики) должно прокручиваться ВНУТРИ своего блока (.table-wrapper), а не двигать страницу. */
+html, body { max-width: 100%; overflow-x: hidden; overscroll-behavior-x: none; }
+.main-content, .page { max-width: 100%; min-width: 0; }
+.main-content { overflow-x: hidden; }
+.page > *, .card, .grid-2 > *, .grid-3 > *, .grid-4 > * { min-width: 0; }
+img, svg, canvas, video { max-width: 100%; }
+.table-wrapper { max-width: 100%; -webkit-overflow-scrolling: touch; }
+select, input, textarea { max-width: 100%; }
+@media (max-width: 640px) {
+  .page-header-actions { flex-wrap: wrap; }
+  .card { padding: 16px; }
+}
