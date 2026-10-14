@@ -10,6 +10,7 @@ import { classifyStrategy, kindBadge, strategyPerformance } from '../../services
 import { PRIVATE_STRATEGY_PRESETS } from '../../services/analytics/privateStrategyPresets';
 import { TRUSTED_UIDS } from '../../constants/trustedUids';
 import PortfolioCard from './PortfolioCard';
+import MyStrategies from './MyStrategies';
 import { PATTERN_LABELS, PATTERN_DIRECTIONS } from '../shared/TechnicalAnalysisBlock';
 import ExitRulesEditor from '../shared/ExitRulesEditor';
 import toast from 'react-hot-toast';
@@ -249,6 +250,26 @@ export default function Capital() {
     setSavingStrategy(false);
   };
 
+  // «Мои стратегии»: постановка на сопровождение, горизонт, таймфрейм, наблюдение сохраняются сразу,
+  // отдельной кнопкой «Сохранить стратегии» не нужно — как переключатель, а не как форма.
+  const persistStrategies = async (next, message) => {
+    setSavingStrategy(true);
+    try {
+      await updateUserProfile({ strategies: next, activeStrategyId });
+      setStrategies(next);
+      toast.success(message || 'Сохранено');
+    } catch (e) {
+      toast.error('Ошибка сохранения: ' + (e.message || 'неизвестная ошибка'));
+    }
+    setSavingStrategy(false);
+  };
+  const editStrategyConditions = (id) => {
+    setEditingId(id);
+    setTimeout(() => {
+      try { document.getElementById('cap-strategy-editor')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch { /* не критично */ }
+    }, 30);
+  };
+
   const saveSettings = async () => {
     setSaving(true);
     try {
@@ -470,9 +491,19 @@ export default function Capital() {
           hint="Условия входа, порог готовности и правила выхода. Работает в Калькуляторе, радаре, Сопровождении и у робота. Здесь стратегия только описывается: деньги и лимиты — в разделе 1." />
       </div>
 
+      <MyStrategies
+        strategies={strategies}
+        activeStrategyId={activeStrategyId}
+        editingId={editingId}
+        onPersist={persistStrategies}
+        onSetActive={(id) => setActiveStrategyId(id)}
+        onEdit={editStrategyConditions}
+        saving={savingStrategy}
+      />
+
       {/* Моя стратегия — конструктор чек-листа. Считает движок из module 4/3, здесь
           только выбор условий и порогов, никакой отдельной логики оценки. */}
-      <div className="card">
+      <div className="card" id="cap-strategy-editor">
         <div className="section-title">
           <div className="section-title-icon"><Icon name="target" size={15} /></div>
           Моя стратегия

@@ -25,6 +25,8 @@ import TechnicalAnalysisBlock from '../shared/TechnicalAnalysisBlock';
 import StrategyChecklist from '../shared/StrategyChecklist';
 import { getActiveStrategy, getStrategies, evaluateStrategy } from '../../services/analytics/strategy';
 import { classifyStrategy, kindBadge } from '../../services/analytics/strategyKind';
+import { followedStrategies, setObserve, isObserved } from '../../services/analytics/strategyMeta';
+import { resolveTaView, chartLayersFor } from '../../services/analytics/taView';
 import { commissionRateFor, DEFAULT_TARIFF } from '../../services/analytics/commission';
 import { computeBaskets, getPortfolio } from '../../services/analytics/portfolio';
 import { formatCurrency } from '../../utils/calculator';
@@ -117,6 +119,18 @@ export default function Cockpit() {
   // Режим Сопровождения: 'all' — общий обзор, иначе id стратегии. Режим стратегии сужает всё сразу:
   // радар, бумажные и открытые позиции показывают только её, а вкладка ведёт сделки по её правилам.
   const [scopeId, setScopeId] = useState('all');
+  // Левую панель (позиции, бумажные, корзины, радар) можно убрать, чтобы график и анализ заняли
+  // всю ширину. Выбор запоминается в браузере; если хранилище недоступно — просто не помнит.
+  const [sideHidden, setSideHidden] = useState(() => {
+    try { return localStorage.getItem('ck_side_hidden') === '1'; } catch { return false; }
+  });
+  const toggleSide = () => {
+    setSideHidden((v) => {
+      const nv = !v;
+      try { localStorage.setItem('ck_side_hidden', nv ? '1' : '0'); } catch { /* не критично */ }
+      return nv;
+    });
+  };
   const [radarItems, setRadarItems] = useState([]);
   const radarLive = useRadarLive();
   // Переход из Радара может указывать конкретную сделку (обычно бумажную, которую уже
@@ -148,6 +162,10 @@ export default function Cockpit() {
   // Технический анализ: одна кнопка и одна панель на оба режима — и когда сделка открыта,
   // и когда просто смотришь инструмент из радара. Сами данные грузятся по нажатию.
   const [taOpen, setTaOpen] = useState(false);
+  // «Призма»: смотреть график и анализ через стратегию. '' — без стратегии (стандартные данные,
+  // набор блоков — личные настройки). С призмой остаются только индикаторы и уровни, которыми
+  // стратегия реально пользуется, и рядом видны её пороги.
+  const [taLensId, setTaLensId] = useState('');
   const [taTf, setTaTf] = useState(null);
   const [taState, setTaState] = useState({ loading: false, data: null, error: null });
   const [previewDir, setPreviewDir] = useState(null); // 'long' | 'short' | null = какая ближе
@@ -193,6 +211,9 @@ export default function Cockpit() {
   // сам. Сама сделка при этом помнит стратегию, по которой была открыта, — если она
   // другая, вкладка честно об этом пишет, а не подменяет молча.
   const strategies = useMemo(() => getStrategies(userProfile), [userProfile]);
+  // Что показывают обзор и вкладки режима: стратегии «на сопровождении» (Капитал → Мои стратегии).
+  // Пока ни одна не отмечена — все, как раньше.
+  const scopeStrategies = useMemo(() => followedStrategies(strategies), [strategies]);
   const [strategyId, setStrategyId] = useState(null);
   const strategy = useMemo(
     () => strategies.find((s) => s.id === strategyId) || getActiveStrategy(userProfile),
@@ -282,10 +303,13 @@ export default function Cockpit() {
     for (const it of radarItems) {
       const st = (it.strategyId && strategies.find((x) => x.id === it.strategyId)) || active;
       if (!st) continue;
-      const row = out[st.id] || (out[st.id] = { total: 0, hot: 0 });
+      const row = out[st.id] || (out[st.id] = { total: 0, hot: 0, hotItems: [] });
       row.total += 1;
       const r = radarLive?.radarResults?.[it.id]?.result;
-      if (r?.total && (r.passed / r.total) * 100 >= (st.readinessThreshold ?? 100)) row.hot += 1;
+      if (r?.total && (r.passed / r.total) * 100 >= (st.readinessThreshold ?? 100)) {
+        row.hot += 1;
+        row.hotItems.push({ ticker: it.ticker, instrumentType: it.instrumentType || 'stock' });
+      }
     }
     return out;
   }, [radarItems, strategies, radarLive?.radarResults, userProfile]);
@@ -746,6 +770,29 @@ export default function Cockpit() {
     }
   };
 
+  // Режим наблюдения стратегии прямо с плашки обзора: бумажные сделки идут, уведомлений нет.
+  const taLensStrategy = useMemo(() => strategies.find((x) => x.id === taLensId) || null, [strategies, taLensId]);
+  const taView = useMemo(
+    () => resolveTaView({ prefs: userProfile?.taPrefs, strategy: taLensStrategy }),
+    [userProfile?.taPrefs, taLensStrategy],
+  );
+  const taLayerPreset = useMemo(
+    () => (taLensStrategy ? chartLayersFor(taView.visible) : null),
+    [taLensStrategy, taView],
+  );
+
+  const toggleObserveFor = async (id) => {
+    const cur = strategies.find((x) => x.id === id);
+    if (!cur) return;
+    const next = strategies.map((x) => (x.id === id ? setObserve(x, !isObserved(x)) : x));
+    try {
+      await updateUserProfile({ strategies: next });
+      toast.success(isObserved(cur) ? 'Наблюдение выключено — уведомления вернутся' : 'Режим наблюдения: сделки идут, уведомлений нет');
+    } catch {
+      toast.error('Не удалось сохранить');
+    }
+  };
+
   // Плюсик добавляет стратегию в портфель и спрашивает её долю. Первая же добавленная
   // корзина включает режим — отдельная галочка «включить» здесь была бы лишним шагом.
   const addBasket = async () => {
@@ -833,6 +880,9 @@ export default function Cockpit() {
               ))}
             </select>
           </label>
+          <button className="ck-btn" onClick={toggleSide} title={sideHidden ? 'Показать левую панель: позиции, бумажные сделки, радар' : 'Убрать левую панель — график займёт всю ширину'}>
+            <Icon name={sideHidden ? 'menu' : 'expand'} size={14} style={{ marginRight: 6 }} />{sideHidden ? 'Показать панель' : 'Скрыть панель'}
+          </button>
           <button className="ck-btn" onClick={recompute} disabled={computing}>
             <Icon name="refresh" size={14} style={{ marginRight: 6 }} />{computing ? 'Считаю…' : 'Обновить'}
           </button>
@@ -854,7 +904,7 @@ export default function Cockpit() {
           <button className={scopeId === 'all' ? 'on' : ''} onClick={() => chooseScope('all')}>
             <Icon name="dashboard" size={14} /> Обзор
           </button>
-          {strategies.map((st) => (
+          {scopeStrategies.map((st) => (
             <button key={st.id} className={scopeId === st.id ? 'on' : ''} onClick={() => chooseScope(st.id)} title={st.name}>
               {st.name || 'Без названия'}
             </button>
@@ -871,10 +921,10 @@ export default function Cockpit() {
         </div>
       )}
 
-      <div className="ck-layout">
+      <div className={`ck-layout ${sideHidden ? 'side-hidden' : ''}`}>
         {/* ---------- сайдбар: позиции, лесенка, радар — одна колонка, каждая секция
             сворачивается сама по себе, без пустых мест на месте свёрнутого блока ---------- */}
-        <aside className="ck-side scroll-box">
+        {!sideHidden && <aside className="ck-side scroll-box">
           <CollapsibleSection title="Открытые позиции" badge={trades.length}>
             <div className="ck-pos-list">
               {trades.filter((t) => scopeId === 'all' || !t.entryStrategyId || t.entryStrategyId === scopeId).map((t) => {
@@ -1108,7 +1158,10 @@ export default function Cockpit() {
           </CollapsibleSection>
 
           <RadarPanel filterId={scopeId} onFilterChange={(v) => { if (v !== scopeId) chooseScope(v); }} onItems={setRadarItems} />
-        </aside>
+        </aside>}
+        {/* Радар нужен обзору (плашки считают «готово к входу»), даже когда панель скрыта: монтируем
+            его невидимо, чтобы данные продолжали загружаться. */}
+        {sideHidden && <div className="ck-hidden-radar" aria-hidden="true"><RadarPanel filterId={scopeId} onFilterChange={() => {}} onItems={setRadarItems} /></div>}
 
         {/* ---------- кабина ---------- */}
         <main className="ck-main">
@@ -1137,10 +1190,13 @@ export default function Cockpit() {
           {!trade && !previewTicker && (
             <>
               <StrategyOverview
-                strategies={scopeId === 'all' ? strategies : strategies.filter((x) => x.id === scopeId)}
+                strategies={scopeId === 'all' ? scopeStrategies : strategies.filter((x) => x.id === scopeId)}
+                knownIds={strategies.map((x) => x.id)}
                 groups={scopeId === 'all' ? paperGroups.groups : paperGroups.groups.filter((g) => g.key === scopeId)}
                 radar={radarByStrategy}
                 onPick={chooseScope}
+                onOpenTicker={(c) => navigate(`/cockpit?previewTicker=${encodeURIComponent(c.ticker)}&previewType=${encodeURIComponent(c.instrumentType || 'stock')}`)}
+                onToggleObserve={toggleObserveFor}
                 single={scopeId !== 'all'}
               />
               <div className="ck-hint-line">
@@ -1298,6 +1354,8 @@ export default function Cockpit() {
                 state={taState}
                 onRefresh={() => loadTa(null)}
                 title="Технический анализ сейчас"
+                view={taView}
+                lensName={taLensStrategy?.name || null}
               />
             </section>
           )}
@@ -1405,6 +1463,18 @@ export default function Cockpit() {
           {/* ---------- график ---------- */}
           {(trade || previewTicker) && (
           <section className="ck-panel ck-chart">
+            <div className="ck-lens">
+              <span className="ck-k">Смотреть график и анализ</span>
+              <select className="ck-lens-sel" value={taLensId} onChange={(e) => setTaLensId(e.target.value)}>
+                <option value="">без стратегии — стандартные данные</option>
+                {strategies.map((x) => <option key={x.id} value={x.id}>по стратегии «{x.name || 'без названия'}»</option>)}
+              </select>
+              {taLensStrategy && (
+                <span className="ck-lens-note">
+                  {taView.empty ? 'у стратегии нет рыночных условий' : 'остались только индикаторы и уровни стратегии'}
+                </span>
+              )}
+            </div>
             {(trade ? candles : taState.data?.candles)?.length ? (
               <CandleChart
                 candles={trade ? candles : taState.data.candles}
@@ -1416,6 +1486,7 @@ export default function Cockpit() {
                 onTimeframeChange={trade ? setTfOverride : (tf) => { setTaTf(tf); loadTa(tf); }}
                 legs={trade?.legs}
                 systemMarkers={systemMarkers}
+                layerPreset={taLayerPreset}
                 direction={trade?.direction}
                 entryPrice={trade?.entryPrice ? parseFloat(trade.entryPrice) : null}
                 planLines={{

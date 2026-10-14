@@ -261,6 +261,7 @@ export default function CandleChart({
   planLines,   // { entry, stop, take } — Calculator plan
   trades,      // Бэктест: [{ direction, entryDate, exitDate, status, pnlPct }, ...] — ALL trades on one chart, overrides legs/entryMarker/exitMarker
   systemMarkers, // [{ date, text }] — где система (движок) закрыла бы позицию; только у открытых сделок в Сопровождении
+  layerPreset, // ['sr','rsi',…] | null — «призма» стратегии: ровно эти индикаторные слои включены; null — как выбрал трейдер
   height,      // px, необязательный — переопределяет высоту графика вне полноэкранного режима (по умолчанию 300 + панели RSI/MACD)
 }) {
   const containerRef = useRef(null);
@@ -279,6 +280,26 @@ export default function CandleChart({
   // это её состояние. На широком экране CSS-медиазапрос саму кнопку прячет, а ряд
   // всегда открыт, так что состояние там ни на что не влияет.
   const [indicatorsOpen, setIndicatorsOpen] = useState(false);
+
+  // Призма стратегии: пока задан layerPreset, индикаторные слои равны ему; при возврате к null —
+  // слои возвращаются к значениям по умолчанию. Слои сделки («Вход/выход», цифры справа) не трогаем.
+  const presetKey = Array.isArray(layerPreset) ? [...layerPreset].sort().join(',') : null;
+  const prevPresetKey = useRef(null);
+  useEffect(() => {
+    if (presetKey === prevPresetKey.current) return;
+    const wasActive = prevPresetKey.current !== null;
+    prevPresetKey.current = presetKey;
+    if (presetKey === null && !wasActive) return;
+    const indicatorKeys = ['sr', 'ema9', 'ema13', 'ema21', 'ema100', 'ema200', 'bollinger', 'fibonacci', 'rsi', 'macd', 'volume'];
+    const set = new Set(presetKey ? presetKey.split(',').filter(Boolean) : []);
+    setLayers((cur) => {
+      const next = { ...cur };
+      for (const k of indicatorKeys) {
+        next[k] = presetKey === null ? LAYER_DEFS.find((l) => l.key === k)?.defaultOn === true : set.has(k);
+      }
+      return next;
+    });
+  }, [presetKey]);
 
   const toggleLayer = (key) => setLayers((s) => ({ ...s, [key]: !s[key] }));
   const setColor = (key, value) => setColors((s) => {

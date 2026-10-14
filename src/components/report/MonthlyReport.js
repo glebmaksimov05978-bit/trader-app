@@ -8,9 +8,11 @@
 // относятся только к реальным сделкам и показываются в срезах «Реальные» и «Всё вместе».
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { getUserTrades } from '../../services/trades';
+import { getUserTrades, computeLiveBalance } from '../../services/trades';
 import { getPaperTrades } from '../../services/paperTrades';
-import { getActiveStrategy } from '../../services/analytics/strategy';
+import { getActiveStrategy, getStrategies } from '../../services/analytics/strategy';
+import { buildStrategyComparison, comparisonNote } from '../../services/analytics/strategyCompare';
+import { buildOpenRisk } from '../../services/analytics/openRisk';
 import { buildMonthlyReport, reportVerdict } from '../../services/analytics/monthlyReport';
 import { buildPeriodReport, listPeriods, SCOPES } from '../../services/analytics/periodReport';
 import { buildEntryStats } from '../../services/analytics/entryStats';
@@ -63,6 +65,24 @@ export default function MonthlyReport() {
     return buildMonthlyReport({ trades: real, monthKey: key, profile: { ...(userProfile || {}), __activeExitRules: activeStrategy?.exitRules || null } });
   }, [real, type, scope, key, userProfile, activeStrategy]);
 
+  // Сравнение стратегий: строится по сделкам выбранного среза за период. Бумажные и реальные сделки
+  // каждой стратегии считаются вместе — это одна стратегия, а источник виден в срезе «Всё вместе».
+  const strategies = useMemo(() => getStrategies(userProfile), [userProfile]);
+  const comparison = useMemo(() => {
+    if (!rep || rep.empty) return null;
+    return buildStrategyComparison({
+      items: rep.items, paperTrades: paper, realTrades: real, strategies, type, key,
+    });
+  }, [rep, paper, real, strategies, type, key]);
+
+  // Общий риск открытых позиций — на сейчас, а не за период: он про то, что в рынке прямо сейчас.
+  const openRisk = useMemo(() => buildOpenRisk({
+    trades: real, paper,
+    deposit: computeLiveBalance(real, userProfile?.depositSize, userProfile?.depositSetAt),
+    dailyLossLimitPct: Number(userProfile?.dailyLossLimit) || null,
+    maxRiskPerTradePct: Number(userProfile?.maxRiskPerTrade) || null,
+  }), [real, paper, userProfile]);
+
   const entryStats = useMemo(() => {
     if (!rep || scope === 'paper') return null;
     return buildEntryStats(rep.items.filter((x) => x.src === 'real').map((x) => x.raw));
@@ -97,6 +117,8 @@ export default function MonthlyReport() {
         </select>
       </div>
 
+      <OpenRiskCard risk={openRisk} />
+
       {!rep || rep.empty ? (
         <div className="card">
           <div className="empty-state" style={{ padding: '40px 20px' }}>
@@ -126,6 +148,8 @@ export default function MonthlyReport() {
             <VersusCard rep={rep} />
             <StrategyCard rep={rep} />
           </div>
+
+          <ComparisonCard cmp={comparison} label={rep.label} />
 
           <div className="mr-two">
             <div className="card mr-block">
@@ -202,6 +226,139 @@ export default function MonthlyReport() {
             </>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+// ---------- общий риск открытых позиций ----------
+function OpenRiskCard({ risk }) {
+  const t = risk.total;
+  if (!t.count && !risk.paper.count) return null;
+  const pct = (v) => (v == null ? '—' : `${v.toFixed(1)}%`);
+  return (
+    <div className="card mr-block mr-risk">
+      <div className="section-title">Риск открытых позиций сейчас</div>
+      {t.count > 0 ? (
+        <>
+          <div className="mr-risk-top">
+            <div>
+              <div className="mr-kpi-label">Если сработают все стопы</div>
+              <div className="mr-kpi-value down">−{formatCurrency(Math.round(t.riskRub))}</div>
+              <div className="mr-kpi-sub">{pct(t.riskPct)} депозита · позиций {t.count}</div>
+            </div>
+            <div>
+              <div className="mr-kpi-label">В рынке на сумму</div>
+              <div className="mr-kpi-value">{formatCurrency(Math.round(t.notional))}</div>
+              <div className="mr-kpi-sub">{pct(t.exposurePct)} депозита (с плечом может быть больше 100%)</div>
+            </div>
+          </div>
+          {risk.byTicker.length > 0 && (
+            <table className="table table-compact" style={{ marginTop: 10 }}>
+              <thead><tr><th>Инструмент</th><th>Позиций</th><th>Стратегии</th><th style={{ textAlign: 'right' }}>Риск</th></tr></thead>
+              <tbody>
+                {risk.byTicker.map((r) => (
+                  <tr key={r.key}>
+                    <td style={{ fontWeight: 600 }}>{r.ticker}</td><td>{r.count}</td>
+                    <td>{r.strategies.join(', ')}</td>
+                    <td className="mr-num down">−{formatCurrency(Math.round(r.riskRub))}{r.riskPct != null ? ` · ${r.riskPct.toFixed(1)}%` : ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {risk.warnings.map((w) => <div key={w.code + w.text} className="mr-risk-warn">{w.text}</div>)}
+        </>
+      ) : (
+        <p className="mr-note" style={{ marginTop: 0 }}>Реальных открытых позиций нет.</p>
+      )}
+      {risk.paper.count > 0 && (
+        <p className="mr-note">Бумажных открыто {risk.paper.count}: условный риск {formatCurrency(Math.round(risk.paper.riskRub))} — в реальный риск не входит.</p>
+      )}
+    </div>
+  );
+}
+
+// ---------- сравнение стратегий ----------
+const fmtPct1 = (v) => (v == null ? '—' : `${Math.round(v * 100)}%`);
+
+function ComparisonCard({ cmp, label }) {
+  if (!cmp || !cmp.hasAny) return null;
+  const holdText = (d) => (d == null ? '—' : d < 1 ? `${Math.max(1, Math.round(d * 24))} ч` : `${Math.round(d * 10) / 10} дн`);
+  const table = (rows, best = null) => {
+    const b = (metric, key) => (best && best[metric] === key ? 'mr-best' : '');
+    return (
+      <div className="table-wrapper">
+        <table className="table table-compact mr-cmp">
+          <thead>
+            <tr>
+              <th>Стратегия</th><th>Сигналов</th><th>Сделок</th><th>Прибыльных</th>
+              <th style={{ textAlign: 'right' }}>Итог</th><th>Профит-фактор</th><th>Срок</th>
+              {best && <th>Забрано хода</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.key}>
+                <td>
+                  <div style={{ fontWeight: 600 }}>{r.name}</div>
+                  <div className="mr-cmp-cap">{r.caption || 'горизонт не задан'}{r.openNow ? ` · в рынке ${r.openNow}` : ''}</div>
+                </td>
+                <td>{r.signals}</td>
+                <td>{r.stats.total}</td>
+                <td className={b('winrate', r.key)}>{r.stats.total ? `${Math.round(r.stats.winrate)}%` : '—'}</td>
+                <td className={`mr-num ${sgn(r.stats.pnl)} ${b('pnl', r.key)}`}>{money(r.stats.pnl)}</td>
+                <td className={b('profitFactor', r.key)}>{pfText(r.stats.profitFactor)}</td>
+                <td>{holdText(r.avgHoldDays)}</td>
+                {best && <td className={b('capture', r.key)}>{r.capture ? `${fmtPct1(r.capture.ratio)} (${r.capture.n})` : 'мало данных'}</td>}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  };
+  const rest = cmp.clusters.filter((c) => !c.comparable);
+  return (
+    <div className="card mr-block">
+      <div className="section-title">Сравнение стратегий</div>
+      <p className="mr-note" style={{ marginTop: 0 }}>{comparisonNote(cmp)}</p>
+
+      {cmp.comparableClusters.map((c) => (
+        <div key={c.classKey} className="mr-cmp-cluster">
+          <div className="mr-cmp-head">Одного класса: {c.caption} <span>— сравниваются напрямую</span></div>
+          {table(c.rows, c.best)}
+          <p className="mr-note">
+            «Забрано хода» — какую долю максимального движения цены за время сделки стратегия превратила в результат;
+            в скобках — по скольким сделкам посчитано (нужно от 3). Лучшее значение в строке выделено.
+          </p>
+          {c.shared.length > 0 && (
+            <>
+              <div className="mr-cmp-sub">Общие инструменты</div>
+              <table className="table table-compact">
+                <thead><tr><th>Инструмент</th>{c.rows.map((r) => <th key={r.key} style={{ textAlign: 'right' }}>{r.name}</th>)}</tr></thead>
+                <tbody>
+                  {c.shared.map((sh) => (
+                    <tr key={sh.ticker}>
+                      <td style={{ fontWeight: 600 }}>{sh.ticker}</td>
+                      {c.rows.map((r) => {
+                        const cell = sh.rows.find((x) => x.key === r.key);
+                        return <td key={r.key} className={`mr-num ${cell ? sgn(cell.pnl) : ''}`}>{cell ? `${money(cell.pnl)} (${cell.count})` : '—'}</td>;
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+        </div>
+      ))}
+
+      {rest.length > 0 && (
+        <div className="mr-cmp-cluster">
+          <div className="mr-cmp-head">{cmp.comparableClusters.length ? 'Остальные' : 'Стратегии'} — только факты за {label.toLowerCase()}</div>
+          {table(rest.flatMap((c) => c.rows))}
+        </div>
       )}
     </div>
   );

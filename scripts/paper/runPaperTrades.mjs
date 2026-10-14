@@ -74,6 +74,9 @@ const { shouldWatchNow, marketPhase, anyMarketOpen } = await import(scheduleUrl)
 const { fetchActiveFutureCard, fetchStockLot } = await import(specsUrl);
 const { entryGuard, DEFAULT_MIN_DAYS_TO_EXPIRY } = await import(rollUrl);
 const { formatPaperForTelegram, paperTelegramAllowed, paperRepeatKeyboard } = await import(alertsUrl);
+// Паспорт стратегии (горизонт, рабочий таймфрейм, «на сопровождении», наблюдение) — без зависимостей.
+const metaUrl = esmify(path.join(repoRoot, 'src/services/analytics/strategyMeta.js'));
+const { paperStrategyIdsFor, timeframeFor } = await import(metaUrl);
 
 const DRY = process.argv.includes('--dry');
 const FORCE = process.argv.includes('--force') || process.env.FORCE_CHECK === 'true';
@@ -152,8 +155,9 @@ async function loadSpecs(ticker, instrumentType) {
 // тикере по своим правилам входа и ведёт свои бумажные сделки — так их можно сравнивать «в деле».
 // Тогда «не больше одной открытой» действует на пару тикер+стратегия, а не на тикер целиком.
 function strategiesFor(item, profile) {
-  const ids = profile.alertPrefs?.paperStrategyIds;
-  if (Array.isArray(ids) && ids.length) {
+  // Явный список из Настроек + стратегии, поставленные «на сопровождение» в Капитале.
+  const ids = paperStrategyIdsFor(profile);
+  if (ids.length) {
     const all = profile.strategies || [];
     const picked = ids.map((id) => all.find((s) => s.id === id)).filter(Boolean);
     if (picked.length) return { list: picked, multi: true };
@@ -192,7 +196,8 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades, strat
     if (openTickers.has(dedupeKey(tradeTicker))) return { skipped: 'бумажная сделка уже открыта' };
   }
 
-  const tfKey = item.timeframe || profile.preferredTimeframe || DEFAULT_TIMEFRAME;
+  // Рабочий таймфрейм стратегии (если задан при постановке на сопровождение) важнее таймфрейма записи радара.
+  const tfKey = timeframeFor(strategy, item, profile, DEFAULT_TIMEFRAME);
   const tf = TIMEFRAMES[tfKey] || TIMEFRAMES[DEFAULT_TIMEFRAME];
   const candles = await fetchDailyCandles({
     ticker: item.ticker,
@@ -329,7 +334,7 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades, strat
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   });
-  if (paperTelegramAllowed(profile.alertPrefs, paper.entryStrategyId)) {
+  if (paperTelegramAllowed(profile.alertPrefs, paper.entryStrategyId, profile.strategies)) {
     await notifyPaper(formatPaperForTelegram({
       title: `${paper.ticker} ${paper.direction === 'short' ? 'шорт' : 'лонг'} — открыта`,
       lines: [

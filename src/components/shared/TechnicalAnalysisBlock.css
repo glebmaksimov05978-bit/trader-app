@@ -54,3 +54,12 @@
 .ta-conf { font-size: 12px; font-weight: 700; }
 .ta-row-detail { font-size: 12.5px; color: var(--text-muted); margin-top: 4px; line-height: 1.5; }
 .ta-note { font-size: 12.5px; color: var(--text-muted); margin-top: 8px; }
+
+.ta-lens { color: var(--accent-primary); font-weight: 600; }
+
+/* ---------- Настройки: технический анализ ---------- */
+.ta-set-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px 20px; }
+.ta-set-gname { font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); margin-bottom: 6px; }
+.ta-set-row { display: flex; align-items: center; gap: 8px; font-size: 13.5px; padding: 4px 0; cursor: pointer; }
+.ta-set-preview { border: 1px solid var(--border-subtle); border-radius: 12px; padding: 14px; background: var(--bg-surface-2); max-height: 520px; overflow-y: auto; }
+.ta-set-preview-head { font-size: 11.5px; color: var(--text-muted); margin-bottom: 10px; }

@@ -10,6 +10,8 @@ import RangeGauge from './RangeGauge';
 import Icon from './Icon';
 import './TechnicalAnalysisBlock.css';
 import { markStrongestLevel, PATTERN_LABELS, STATUS_LABELS, PATTERN_DIRECTIONS } from '../../services/analytics/patterns';
+import { useAuth } from '../../context/AuthContext';
+import { resolveTaView } from '../../services/analytics/taView';
 
 // Re-exported for existing callers (Calculator.js, Capital.js) that import these from
 // here — the definitions themselves moved to patterns.js so strategy.js (a service
@@ -126,11 +128,23 @@ function Chip({ tone, children, strong }) {
   return <span className={`ta-chip ${tone || ''} ${strong ? 'strong' : ''}`}>{children}</span>;
 }
 
-export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
+// `view` — что показывать (см. services/analytics/taView.js): блоки, подписи порогов стратегии и
+// признак «призмы». Не передан — берутся личные настройки из профиля (Настройки → Технический
+// анализ). Передаётся явно в окне настроек (живой пример) и в Сопровождении (призма стратегии).
+export default function TechnicalAnalysisBlock({ state, onRefresh, title, view: viewProp = null, lensName = null }) {
+  let profileView = null;
+  const auth = useAuth();
+  if (!viewProp) profileView = resolveTaView({ prefs: auth?.userProfile?.taPrefs });
+  const view = viewProp || profileView;
+  const show = view.visible;
+  const note = (id) => (view.lens && view.notes?.[id] ? `стратегия: ${view.notes[id]}` : null);
   return (
     <div className="ta-block">
       <div className="ta-top">
-        <div className="ta-title">{title}</div>
+        <div className="ta-title">
+          {title}
+          {view.lens && <span className="ta-lens"> · по стратегии{lensName ? ` «${lensName}»` : ''}</span>}
+        </div>
         {state?.data && !state?.loading && (
           <button className="ta-refresh" onClick={onRefresh} title="Обновить данные">
             <Icon name="refresh" size={13} /> Обновить
@@ -143,28 +157,44 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
       {state?.error && (
         <div className="ta-error"><Icon name="warning" size={14} /> {state.error}</div>
       )}
-      {state?.data && !state?.loading && (() => {
+      {state?.data && !state?.loading && view.empty && (
+        <div className="ta-note">
+          {view.lens
+            ? 'У этой стратегии нет рыночных условий — по ним нечего показывать. Включите условия в Капитале.'
+            : 'Все блоки выключены. Включите нужные в Настройках → Технический анализ.'}
+        </div>
+      )}
+      {state?.data && !state?.loading && !view.empty && (() => {
         const { indicators, patterns, marketContext } = state.data;
         return (
           <>
             {/* «До SMA200» убрано: дублировало строку EMA200 ниже (оба — расстояние до
                 200-периодной средней), и трейдер читал это как одно число дважды. */}
-            <Section title="Индикаторы">
-              <div className="ta-grid">
-                <Tile label="RSI" value={indicators?.rsi14 != null ? formatNumber(indicators.rsi14, 1) : 'нет данных'} />
-                <Tile label="MACD" value={indicators?.macdHistogram != null ? formatNumber(indicators.macdHistogram, 2) : 'нет данных'} />
-                <Tile label="Объём"
-                  tip="Сравнение объёма сделок в этой свече со средним объёмом за 20 предыдущих свечей того же таймфрейма (на дневном графике — 20 дней, на часовом — 20 часовых баров)."
-                  value={indicators?.volumeRatio != null
-                    ? (indicators.volumeRatio >= 1
-                      ? `в ${formatNumber(indicators.volumeRatio, 1)} раза выше обычного`
-                      : `на ${Math.round((1 - indicators.volumeRatio) * 100)}% ниже обычного`)
-                    : 'нет данных'} />
-              </div>
-            </Section>
+            {(show.rsi || show.macd || show.volume) && (
+              <Section title="Индикаторы">
+                <div className="ta-grid">
+                  {show.rsi && (
+                    <Tile label="RSI" value={indicators?.rsi14 != null ? formatNumber(indicators.rsi14, 1) : 'нет данных'} sub={note('rsi')} />
+                  )}
+                  {show.macd && (
+                    <Tile label="MACD" value={indicators?.macdHistogram != null ? formatNumber(indicators.macdHistogram, 2) : 'нет данных'} sub={note('macd')} />
+                  )}
+                  {show.volume && (
+                    <Tile label="Объём"
+                      tip="Сравнение объёма сделок в этой свече со средним объёмом за 20 предыдущих свечей того же таймфрейма (на дневном графике — 20 дней, на часовом — 20 часовых баров)."
+                      sub={note('volume')}
+                      value={indicators?.volumeRatio != null
+                        ? (indicators.volumeRatio >= 1
+                          ? `в ${formatNumber(indicators.volumeRatio, 1)} раза выше обычного`
+                          : `на ${Math.round((1 - indicators.volumeRatio) * 100)}% ниже обычного`)
+                        : 'нет данных'} />
+                  )}
+                </div>
+              </Section>
+            )}
 
-            {marketContext && (marketContext.trend || marketContext.volatility) && (
-              <Section title="Рыночный контекст" hint="определяется автоматически">
+            {show.context && marketContext && (marketContext.trend || marketContext.volatility) && (
+              <Section title="Рыночный контекст" hint={note('context') || 'определяется автоматически'}>
                 <div className="ta-grid ta-grid-2">
                   {marketContext.trend && (
                     <div className="ta-gauge">
@@ -192,8 +222,9 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
               </Section>
             )}
 
-            {indicators?.bollinger && (
+            {show.bollinger && indicators?.bollinger && (
               <Section
+                hint={note('bollinger')}
                 title={`Полосы Боллинджера — цена ${indicators.bollinger.position === 'above_upper' ? 'выше верхней полосы' : indicators.bollinger.position === 'below_lower' ? 'ниже нижней полосы' : 'внутри полос'}`}
                 tip="Коридор обычного разброса цены. Верхняя и нижняя линии — на 2 стандартных отклонения от средней. Цена у верхней границы — рынок разогнан вверх сильнее обычного; у нижней — вниз.">
                 <div className="ta-grid">
@@ -206,7 +237,8 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
 
             {patterns && (
               <>
-                <Section title="EMA-уровни" hint="плавающие поддержка и сопротивление">
+                {show.ema && (
+                <Section title="EMA-уровни" hint={note('ema') || 'плавающие поддержка и сопротивление'}>
                   <div className="ta-grid">
                     {[9, 100, 200].map((p) => {
                       const e = patterns.emaLevels?.[`ema${p}`];
@@ -219,8 +251,9 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
                     })}
                   </div>
                 </Section>
+                )}
 
-                {patterns.supportResistance?.length > 0 && (() => {
+                {show.levels && patterns.supportResistance?.length > 0 && (() => {
                   // Ranked here, not baked into computePatternsAtEntry — Боллинджер
                   // lives in `indicators`, computed by a separate module, and only the
                   // two are ever available together at this render layer without
@@ -228,7 +261,7 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
                   // Radar) that calls both compute functions independently.
                   const ranked = markStrongestLevel(patterns.supportResistance, patterns.emaLevels, patterns.fibonacci, indicators?.bollinger);
                   return (
-                    <Section title="Уровни поддержки и сопротивления" hint="по свингам: красные — цена упиралась сверху, зелёные — отталкивалась снизу">
+                    <Section title="Уровни поддержки и сопротивления" hint={note('levels') || 'по свингам: красные — цена упиралась сверху, зелёные — отталкивалась снизу'}>
                       <div className="ta-chips">
                         {ranked.map((lvl, i) => (
                           <Chip key={i} tone={lvl.type === 'resistance' ? 'neg' : 'pos'} strong={lvl.isStrongest}>
@@ -247,7 +280,7 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
                   );
                 })()}
 
-                {patterns.fibonacci && (
+                {show.fibonacci && patterns.fibonacci && (
                   <Section title="Уровни Фибоначчи" hint={`от ${formatNumber(patterns.fibonacci.from.price, 2)} до ${formatNumber(patterns.fibonacci.to.price, 2)}`}>
                     <div className="ta-chips">
                       {patterns.fibonacci.levels.map((lvl, i) => (
@@ -262,7 +295,8 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
                   </Section>
                 )}
 
-                <Section title="Фигуры-кандидаты" hint="алгоритмическая оценка, не мнение AI">
+                {show.patterns && (
+                <Section title="Фигуры-кандидаты" hint={note('patterns') || 'алгоритмическая оценка, не мнение AI'}>
                   {patterns.candidates?.length > 0 ? (
                     <div className="ta-list">
                       {patterns.candidates.map((c, i) => (
@@ -284,6 +318,7 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title }) {
                     <div className="ta-note">Формальных фигур не найдено.</div>
                   )}
                 </Section>
+                )}
               </>
             )}
           </>

@@ -7,6 +7,8 @@ import { describeSchedule } from '../../services/marketData/tradingSchedule';
 import { getUserTrades } from '../../services/trades';
 import { getStrategies } from '../../services/analytics/strategy';
 import { futuresTurnoverRub, turnoverStatus } from '../../services/analytics/dayTurnover';
+import { normalizeTaPrefs } from '../../services/analytics/taView';
+import TaSettingsCard from './TaSettingsCard';
 import toast from 'react-hot-toast';
 
 import Icon from '../shared/Icon';
@@ -71,6 +73,22 @@ export default function Settings() {
   }, [userProfile]);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  // Блоки технического анализа: свой выбор и своя кнопка сохранения (результат виден сразу в примере).
+  const [taPrefs, setTaPrefs] = useState(() => normalizeTaPrefs(userProfile?.taPrefs));
+  const [taSaving, setTaSaving] = useState(false);
+  useEffect(() => { setTaPrefs(normalizeTaPrefs(userProfile?.taPrefs)); }, [userProfile?.taPrefs]);
+  const taDirty = JSON.stringify(taPrefs) !== JSON.stringify(normalizeTaPrefs(userProfile?.taPrefs));
+  const saveTaPrefs = async () => {
+    setTaSaving(true);
+    try {
+      await updateUserProfile({ taPrefs: normalizeTaPrefs(taPrefs) });
+      toast.success('Выбор блоков сохранён');
+    } catch (e) {
+      toast.error('Ошибка сохранения: ' + (e.message || 'неизвестная ошибка'));
+    }
+    setTaSaving(false);
+  };
 
   const save = async () => {
     setSaving(true);
@@ -216,6 +234,8 @@ export default function Settings() {
         {/* Часы работы фонового робота. Раньше он был жёстко прибит к 10:00-18:40 МСК и
             всю вечернюю сессию не видел вообще — а по фьючерсам это живая половина дня.
             Теперь сессии берутся из общего расписания, а трейдер решает, какие смотреть. */}
+        <TaSettingsCard value={taPrefs} onChange={setTaPrefs} onSave={saveTaPrefs} saving={taSaving} dirty={taDirty} />
+
         <div className="card" style={{marginBottom:20}}>
           <div className="section-title">
             <div className="section-title-icon"><Icon name="clock" size={15} /></div>

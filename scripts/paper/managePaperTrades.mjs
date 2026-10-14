@@ -75,6 +75,9 @@ const { expiryOfContract } = await import(rollUrl);
 // alerts.js намеренно без единой зависимости (см. его шапку) — подтягивается без заглушек.
 const alertsUrl = esmify(path.join(repoRoot, 'src/services/alerts.js'));
 const { computeClosePnl } = await import(closeUrl);
+// Ход цены за время сделки — записывается в закрытую сделку, чтобы сравнивать стратегии по доле забранного хода.
+const excUrl = esmify(path.join(repoRoot, 'src/services/analytics/excursion.js'));
+const { excursionPct } = await import(excUrl);
 const { formatPaperForTelegram, paperTelegramAllowed, paperRepeatKeyboard } = await import(alertsUrl);
 const { commissionRateFor, DEFAULT_TARIFF } = await import(analyticsUrls.commission);
 
@@ -213,12 +216,19 @@ export function planPaperUpdate({ trade, rules, candles, entryIndex, commRate })
       });
       events.push(`закрыл остаток ${qty} по ${state.exit.price} (${state.exit.reason})`);
     }
+    // Максимальный ход в свою и в чужую сторону за время сделки: нужен отчёту, чтобы отвечать
+    // «какую часть хода стратегия забрала», а не только «сколько рублей получилось».
+    const exc = excursionPct({
+      candles, fromIndex: entryIndex, toIndex: state.exit.index,
+      direction: trade.direction === 'short' ? 'short' : 'long', entryPrice: parseFloat(trade.entryPrice),
+    });
     patch = {
       status: 'closed',
       remainingVolume: 0,
       closeDate: exitAt,
       closedAt: exitAt,
       exitPrice: state.exit.price,
+      ...(exc ? { maxFavorablePct: exc.maxFavorablePct, maxAdversePct: exc.maxAdversePct } : {}),
     };
   } else if (remainingAfterFires < originalVolume) {
     patch = { status: 'partial', remainingVolume: remainingAfterFires };
@@ -301,7 +311,7 @@ async function manageTrade({ db, uid, profile, trade }) {
       await db.collection('paperTrades').doc(trade.id).update({
         ...expPlan.patch, updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       });
-      if (paperTelegramAllowed(profile.alertPrefs, trade.entryStrategyId)) {
+      if (paperTelegramAllowed(profile.alertPrefs, trade.entryStrategyId, profile.strategies)) {
         await notifyPaper(formatPaperForTelegram({
           title: `${trade.ticker} ${trade.direction === 'short' ? 'шорт' : 'лонг'} — закрыта по экспирации`,
           lines: [...expPlan.events, `Итог по сделке: ${expPlan.patch.pnl} ₽.`],
@@ -328,7 +338,7 @@ async function manageTrade({ db, uid, profile, trade }) {
     ...plan.patch,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   });
-  if (paperTelegramAllowed(profile.alertPrefs, trade.entryStrategyId)) {
+  if (paperTelegramAllowed(profile.alertPrefs, trade.entryStrategyId, profile.strategies)) {
     const closed = plan.patch.status === 'closed';
     const left = plan.patch.remainingVolume ?? trade.remainingVolume;
     await notifyPaper(formatPaperForTelegram({

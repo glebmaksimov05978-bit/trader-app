@@ -57,6 +57,10 @@ const takePlan = planPaperUpdate({ trade: takeTrade, rules: RULES, candles: take
 
 check('Цель достигнута — сделка закрыта', takePlan.patch?.status, (v) => v === 'closed');
 check('Остатка в рынке не осталось', takePlan.patch?.remainingVolume, (v) => v === 0);
+// Ход цены за время сделки: максимум в свою сторону от входа 100 — бар с high 112, то есть +12%;
+// против — low 99 на разгоне, то есть 1%. Нужен отчёту, чтобы сравнивать стратегии по доле забранного хода.
+check('В закрытую сделку записан максимальный ход в свою сторону (+12%)', takePlan.patch?.maxFavorablePct, (v) => v === 12);
+check('…и максимальный ход против (1%)', takePlan.patch?.maxAdversePct, (v) => v === 1);
 check('Закрыто по цене цели, а не по цене бара', takePlan.patch?.exitPrice, (v) => v === 110);
 // (110 − 100) × 10 = 100 грязными, комиссия 100 × 10 × 0.0005 × 2 = 1 → 99 чистыми.
 check('P&L посчитан той же формулой, что и в Журнале', takePlan.patch?.pnl, (v) => Math.abs(v - 99) < 1e-6);

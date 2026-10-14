@@ -16,6 +16,7 @@ import { computeIndicatorsAtEntry } from '../services/analytics/indicators';
 import { computePatternsAtEntry } from '../services/analytics/patterns';
 import { computeMarketContextAtEntry } from '../services/analytics/marketContext';
 import { evaluateStrategy, getActiveStrategy, getStrategies } from '../services/analytics/strategy';
+import { workTimeframeOf } from '../services/analytics/strategyMeta';
 
 const RadarLiveContext = createContext(null);
 
@@ -65,7 +66,8 @@ export function RadarLiveProvider({ children }) {
           instrumentType: item.instrumentType || 'stock',
           toDate: now,
           tinkoffToken: userProfile?.tinkoffToken,
-          timeframe: item.timeframe || undefined,
+          // Рабочий таймфрейм стратегии (из Капитала) важнее, чем у записи радара — как у робота.
+          timeframe: workTimeframeOf(strategy) || item.timeframe || undefined,
         });
         const indicators = computeIndicatorsAtEntry(candles, now);
         const patterns = computePatternsAtEntry(candles, now);

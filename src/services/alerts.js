@@ -276,10 +276,16 @@ export function buildKeyboard(alert, trade) {
  * paperTelegram + список заглушённых стратегий paperTelegramMuted (Настройки → Бумажные сделки):
  * когда торгуют сразу несколько стратегий, шумную можно приглушить, не трогая остальные.
  */
-export function paperTelegramAllowed(prefs = {}, strategyId = null) {
+export function paperTelegramAllowed(prefs = {}, strategyId = null, strategies = null) {
   if (prefs.paperTelegram === false) return false;
   const muted = Array.isArray(prefs.paperTelegramMuted) ? prefs.paperTelegramMuted : [];
-  return !(strategyId && muted.includes(strategyId));
+  if (strategyId && muted.includes(strategyId)) return false;
+  // Режим наблюдения (Сопровождение): бумажные сделки идут, уведомлений нет.
+  if (strategyId && Array.isArray(strategies)) {
+    const st = strategies.find((s) => s && s.id === strategyId);
+    if (st && st.observe === true) return false;
+  }
+  return true;
 }
 
 /**
