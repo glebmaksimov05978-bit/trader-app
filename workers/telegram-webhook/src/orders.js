@@ -459,3 +459,43 @@ export async function handleOrderConfig(request, env) {
     accountsError,
   });
 }
+
+
+/**
+ * POST /order/state — чем кончилась ранее отправленная заявка (исполнена, ждёт, снята).
+ * Тело: { orderId, accountId }. Заголовок: Authorization: Bearer <firebase id token>.
+ * Нужен приложению, чтобы заявки, не исполненные сразу, не терялись: запись в Журнале «ждёт
+ * исполнения» сама превращается в открытую сделку, когда брокер сообщит об исполнении.
+ * Только чтение: ничего не отправляет.
+ */
+export async function handleOrderState(request, env) {
+  if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders(env) });
+  if (request.method !== 'POST') return json(env, { error: 'только POST' }, 405);
+
+  const auth = request.headers.get('Authorization') || '';
+  const idToken = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+  const who = await verifyFirebaseToken(idToken, env.FIREBASE_PROJECT_ID, env.OWNER_UID);
+  if (!who.ok) return json(env, { error: `Доступ запрещён: ${who.error}` }, 403);
+  if (!hasBrokerAccess(env)) return json(env, { error: 'Отправка заявок не настроена.' }, 503);
+
+  const body = await request.json().catch(() => null);
+  const orderId = String(body?.orderId || '').trim();
+  const accountId = String(body?.accountId || '').trim();
+  if (!orderId || !accountId) return json(env, { error: 'Нужны orderId и accountId' }, 400);
+
+  try {
+    // Счёт сверяется со списком настоящих счетов токена — как и при отправке заявки.
+    const accounts = await listAccounts(env);
+    if (!accounts.some((a) => a.id === accountId)) return json(env, { error: 'Счёт не найден среди счетов токена.' }, 400);
+    const st = await tinkoff(env, 'OrdersService/GetOrderState', { accountId, orderId });
+    return json(env, {
+      ok: true,
+      status: st?.executionReportStatus || null,
+      lotsRequested: st?.lotsRequested != null ? Number(st.lotsRequested) : null,
+      lotsExecuted: st?.lotsExecuted != null ? Number(st.lotsExecuted) : 0,
+      averagePrice: quotationToFloat(st?.averagePositionPrice) || null,
+    });
+  } catch (e) {
+    return json(env, { error: translateBrokerError(e.message) }, 502);
+  }
+}

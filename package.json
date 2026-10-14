@@ -30,6 +30,7 @@
     "test:undefined": "node scripts/firestoreUndefinedTest.mjs",
     "test:tgtrade": "node scripts/tgTradeTests.mjs",
     "test:relay": "node scripts/relayTests.mjs",
+    "test:pending": "node scripts/pendingOrdersTests.mjs",
     "test:papergroups": "node scripts/paperGroupsTests.mjs",
     "test:fillsclose": "node scripts/fillsCloseTest.mjs",
     "test:period": "node scripts/periodReportTests.mjs",

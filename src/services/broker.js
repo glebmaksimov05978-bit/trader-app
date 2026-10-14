@@ -102,3 +102,25 @@ export async function placeOrder({
     return { ok: false, error: `Связь с сервером прервалась: ${e.message}. Проверьте заявки в приложении брокера, прежде чем повторять.` };
   }
 }
+
+
+/**
+ * Состояние ранее отправленной заявки у брокера. null — не удалось узнать (сервер не отвечает,
+ * не настроен): вызывающий просто оставит запись как есть и спросит в следующий раз.
+ */
+export async function fetchOrderState(userProfile, { orderId, accountId }) {
+  const base = workerUrlOf(userProfile);
+  if (!base || !orderId || !accountId) return null;
+  try {
+    const res = await fetch(`${base}/order/state`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(await authHeader()) },
+      body: JSON.stringify({ orderId, accountId }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data?.ok) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}

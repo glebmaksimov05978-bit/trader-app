@@ -796,7 +796,7 @@ export default function Calculator() {
         ticker: form.ticker || instrumentInfo?.ticker || '',
         date: openedAtDate.toISOString().split('T')[0],
         openedAt: openedAtDate.toISOString(),
-        status: 'open',
+        status: overrides.status || 'open',
         direction: activeDirection || displayResult.direction,
         entryPrice: entryPriceFinal,
         // Задуманная цена входа остаётся отдельно от того, по чему реально исполнилось —
@@ -839,6 +839,9 @@ export default function Calculator() {
         // Заявка, которой открыта сделка, — чтобы позже можно было найти её в истории
         // операций брокера, а не только в журнале приложения.
         ...(overrides.orderId ? { orderId: overrides.orderId, orderAccountId: overrides.orderAccountId || null } : {}),
+        // Заявка принята, но ещё не исполнена: в Журнале она лежит как «ждёт исполнения», а статус
+        // у брокера приложение проверяет само (services/pendingOrders.js).
+        ...(overrides.pendingOrder ? { pendingOrder: overrides.pendingOrder } : {}),
         orderType,
         // The timeframe the trader was actually analysing on when they opened the trade —
         // the Journal's auto-timeframe uses this over its duration-based guess.
@@ -860,9 +863,11 @@ export default function Calculator() {
         entryStrategyId: activeStrategy?.id || null,
         entryStrategyName: activeStrategy?.name || null,
       });
-      toast.success(overrides.source === 'order'
-        ? `✅ Заявка исполнена и записана в Журнал: ${volumeFinal} × ${entryPriceFinal}`
-        : '✅ Сделка открыта в журнале');
+      toast.success(overrides.status === 'pending'
+        ? 'Заявка ждёт исполнения — записана в Журнал с пометкой, приложение само проверит её'
+        : overrides.source === 'order'
+          ? `✅ Заявка исполнена и записана в Журнал: ${volumeFinal} × ${entryPriceFinal}`
+          : '✅ Сделка открыта в журнале');
       setShowJournalModal(false);
       setJournalExtra({ setup: '', emotion: '', notes: '' });
       // The draft is meant to survive navigating away mid-plan (Журнал and back) — not
@@ -905,9 +910,29 @@ export default function Calculator() {
         orderAccountId: res?.preview?.accountId || null,
       });
     }
-    // Заявка не исполнилась мгновенно (висящая лимитная) — ничего не пишем в Журнал:
-    // писать «открыто по цене X» для позиции, которой ещё нет, было бы враньём. Само
-    // окно уже объяснило трейдеру, что в этом случае нужно сделать.
+    // Заявка не исполнилась мгновенно (висящая лимитная): позиции ещё нет, поэтому «открыто по цене
+    // X» писать нельзя. Вместо этого в Журнал кладётся запись со статусом «ждёт исполнения» и
+    // номером заявки — приложение само проверит у брокера, чем она кончилась, и превратит её в
+    // открытую сделку (или пометит «не исполнена»).
+    else if (res?.order?.orderId) {
+      handleSaveToJournal({
+        status: 'pending',
+        entryPrice: res?.preview?.price ?? parseFloat(form.entryPrice),
+        volume: res?.preview?.lots ?? effectiveContracts,
+        openedAtDate: new Date(),
+        source: 'order',
+        orderId: res.order.orderId,
+        orderAccountId: res?.preview?.accountId || null,
+        pendingOrder: {
+          orderId: res.order.orderId,
+          accountId: res?.preview?.accountId || null,
+          lots: res?.preview?.lots ?? null,
+          price: res?.preview?.price ?? null,
+          orderType: res?.preview?.orderType || orderType,
+          placedAt: new Date().toISOString(),
+        },
+      });
+    }
   };
 
   const handleJournalClick = () => {

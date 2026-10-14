@@ -6,6 +6,8 @@ import { getUserTrades, addTrade, updateTrade, deleteTrade, calcStats, resolveOp
 import { fetchTradeLegs, resolveAccountId } from '../../services/positionSync';
 import { formatCurrency, formatNumber } from '../../utils/calculator';
 import { fetchMarketPrice } from '../../services/marketData/lastPrice';
+import { reconcilePendingTrades } from '../../services/pendingOrders';
+import { fetchOrderState } from '../../services/broker';
 import { fetchDailyCandles, availableTimeframes, recommendTimeframe, TIMEFRAMES, DEFAULT_TIMEFRAME } from '../../services/marketData/candles';
 import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
@@ -80,7 +82,22 @@ export default function Journal() {
 
   const load = useCallback(async () => {
     if (!user) return;
-    const t = await getUserTrades(user.uid);
+    let t = await getUserTrades(user.uid);
+    // Заявки, ждавшие исполнения: спрашиваем у брокера, чем кончилось, и обновляем записи.
+    if (t.some((x) => x.status === 'pending' || x.pendingClose)) {
+      try {
+        const r = await reconcilePendingTrades({
+          trades: t, userProfile,
+          fetchState: (o) => fetchOrderState(userProfile, o),
+          updateTrade,
+          applyClose: applyTradeClose,
+        });
+        if (r.changed > 0) {
+          t = await getUserTrades(user.uid);
+          toast.success(`Обновлены заявки, ждавшие исполнения: ${r.changed}`);
+        }
+      } catch { /* сверка необязательна — Журнал покажется как есть */ }
+    }
     setTrades(t);
     setStats(calcStats(t));
     setLoading(false);
@@ -465,15 +482,15 @@ export default function Journal() {
       if (filter === 'short') return t.direction === 'short';
       if (filter === 'currency') return t.instrumentType === 'currency';
       // A partially closed position still has volume open — group it with "Открытые".
-      if (filter === 'open') return t.status === 'open' || t.status === 'partial';
+      if (filter === 'open') return t.status === 'open' || t.status === 'partial' || t.status === 'pending';
       if (filter === 'closed') return t.status === 'closed';
       return true;
     })
     .filter(t => !search || t.ticker?.toLowerCase().includes(search.toLowerCase()))
     .sort((a, b) => {
       // Открытые и частично закрытые всегда сверху
-      const aOpen = a.status === 'open' || a.status === 'partial';
-      const bOpen = b.status === 'open' || b.status === 'partial';
+      const aOpen = a.status === 'open' || a.status === 'partial' || a.status === 'pending';
+      const bOpen = b.status === 'open' || b.status === 'partial' || b.status === 'pending';
       if (aOpen && !bOpen) return -1;
       if (bOpen && !aOpen) return 1;
 
@@ -625,9 +642,13 @@ export default function Journal() {
                   const hasHistory = Array.isArray(trade.legs) && trade.legs.length > 1;
                   const isExpanded = expandedId === trade.id;
                   const isPartial = trade.status === 'partial';
-                  const statusLabel = trade.status === 'partial' ? 'Частично закрыта'
-                    : trade.status === 'closed' ? 'Закрыта' : 'Открыта';
-                  const statusCls = trade.status === 'partial' ? 'badge-blue'
+                  const statusLabel = trade.status === 'pending' ? 'Ждёт исполнения'
+                    : trade.status === 'cancelled' ? 'Не исполнена'
+                    : trade.status === 'partial' ? 'Частично закрыта'
+                    : trade.status === 'closed' ? 'Закрыта' : (trade.pendingClose ? 'Открыта · ждёт закрытия' : 'Открыта');
+                  const statusCls = trade.status === 'pending' ? 'badge-gold'
+                    : trade.status === 'cancelled' ? 'badge-gray'
+                    : trade.status === 'partial' ? 'badge-blue'
                     : trade.status === 'open' ? 'badge-blue'
                     : trade.pnl >= 0 ? 'badge-green' : 'badge-red';
                   return (

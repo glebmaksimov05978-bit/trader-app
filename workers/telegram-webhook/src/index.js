@@ -20,7 +20,7 @@
 // расхождений. Обработчики при этом полностью раздельны — общего между ними ровно
 // ничего, кроме адреса.
 import { buildReasonKeyboard, describeDecision, escapeHtml } from '../../../src/services/alerts.js';
-import { handleOrder, handleOrderConfig } from './orders.js';
+import { handleOrder, handleOrderConfig, handleOrderState } from './orders.js';
 import { MENU_KEYBOARD, renderMenuReply, commandOf, menuButtons } from './menu.js';
 import { tinkoff, resolveInstrument, listAccounts } from './orders.js';
 import { prepare, execute, cancel, parseCallback } from './tgTrade.js';
@@ -206,6 +206,7 @@ export default {
     const path = new URL(request.url).pathname;
     if (path === '/order') return handleOrder(request, env);
     if (path === '/order/config') return handleOrderConfig(request, env);
+    if (path === '/order/state') return handleOrderState(request, env);
     if (path === '/setup') return handleSetup(request, env);
 
     // Второй, независимый путь для будильника — обычный веб-адрес, на который может

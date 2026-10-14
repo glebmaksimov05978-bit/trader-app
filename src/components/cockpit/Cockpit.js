@@ -33,7 +33,9 @@ import { computeProfitBreakdown, computeLossBreakdown } from '../../services/bac
 import { evaluateAlerts, DEFAULT_ALERT_PREFS } from '../../services/alerts';
 import { loadBacktestSample, findSimilar, probabilityOfGoal } from '../../services/backtest/similarTrades';
 import { applyTradeClose } from '../../services/tradeClose';
-import { fetchOrderConfig } from '../../services/broker';
+import { fetchOrderConfig, fetchOrderState } from '../../services/broker';
+import { reconcilePendingTrades } from '../../services/pendingOrders';
+import { updateTrade } from '../../services/trades';
 import CandleChart from '../shared/CandleChart';
 import RadarPanel from './RadarPanel';
 import StrategyOverview from './StrategyOverview';
@@ -252,7 +254,18 @@ export default function Cockpit() {
     (async () => {
       setLoading(true);
       try {
-        const all = await getUserTrades(user.uid);
+        let all = await getUserTrades(user.uid);
+        // Ожидавшие заявки: сверка с брокером (подробности — services/pendingOrders.js).
+        if (all.some((x) => x.status === 'pending' || x.pendingClose)) {
+          try {
+            const r = await reconcilePendingTrades({
+              trades: all, userProfile,
+              fetchState: (o) => fetchOrderState(userProfile, o),
+              updateTrade, applyClose: applyTradeClose,
+            });
+            if (r.changed > 0) all = await getUserTrades(user.uid);
+          } catch { /* необязательно */ }
+        }
         const open = all.filter((t) => t.status === 'open' || t.status === 'partial');
         setTrades(open);
         setAllTrades(all);
@@ -574,7 +587,18 @@ export default function Cockpit() {
   const handleCloseOrderPlaced = async (res) => {
     const lotsExecuted = res?.order?.lotsExecuted;
     const executedPrice = res?.order?.executedPrice;
-    if (!(lotsExecuted > 0) || executedPrice == null || !trade) return;
+    if (!(lotsExecuted > 0) || executedPrice == null) {
+      // Закрывающая заявка принята, но ещё не исполнена: отмечаем её на сделке — по исполнению
+      // приложение само закроет (services/pendingOrders.js), а не потеряет.
+      if (trade && res?.order?.orderId) {
+        try {
+          await updateTrade(trade.id, { pendingClose: { orderId: res.order.orderId, accountId: res?.preview?.accountId || null, lots: res?.preview?.lots ?? null, placedAt: new Date().toISOString() } });
+          toast.success('Заявка на закрытие ждёт исполнения — приложение само закроет сделку, когда она исполнится');
+        } catch { /* отметка не критична */ }
+      }
+      return;
+    }
+    if (!trade) return;
     try {
       const commRate = parseFloat(trade.commissionRate)
         || commissionRateFor(userProfile?.brokerTariff || DEFAULT_TARIFF, trade.instrumentType || 'stock').rate;
@@ -613,7 +637,44 @@ export default function Cockpit() {
   const handleRepeatOrderPlaced = async (res) => {
     const lotsExecuted = res?.order?.lotsExecuted;
     const executedPrice = res?.order?.executedPrice;
-    if (!(lotsExecuted > 0) || executedPrice == null || !trade) return;
+    if (!(lotsExecuted > 0) || executedPrice == null) {
+      // Повтор принят, но не исполнен: в Журнал ложится запись «ждёт исполнения».
+      if (trade && res?.order?.orderId) {
+        try {
+          await addTrade(user.uid, {
+            ticker: trade.ticker.toUpperCase(),
+            date: new Date().toISOString().split('T')[0],
+            openedAt: new Date().toISOString(),
+            status: 'pending',
+            direction: trade.direction === 'short' ? 'short' : 'long',
+            entryPrice: res?.preview?.price ?? parseFloat(trade.entryPrice) ?? null,
+            intendedEntryPrice: parseFloat(trade.entryPrice) || null,
+            exitPrice: null,
+            stopLoss: trade.stopLoss ?? null,
+            takeProfit: trade.takeProfit ?? null,
+            volume: res?.preview?.lots ?? parseFloat(trade.volume) ?? 1,
+            lot: parseFloat(trade.lot) || 1,
+            instrumentType: trade.instrumentType || 'stock',
+            isFuture: (trade.instrumentType || 'stock') === 'future',
+            minStep: parseFloat(trade.minStep) || null,
+            minStepAmount: parseFloat(trade.minStepAmount) || null,
+            commissionRate: parseFloat(trade.commissionRate) || null,
+            pnl: null,
+            source: 'paper-repeat',
+            orderId: res.order.orderId,
+            orderAccountId: res?.preview?.accountId || null,
+            pendingOrder: { orderId: res.order.orderId, accountId: res?.preview?.accountId || null, lots: res?.preview?.lots ?? null, price: res?.preview?.price ?? null, placedAt: new Date().toISOString() },
+            entryTimeframe: trade.entryTimeframe || null,
+            entryStrategyId: trade.entryStrategyId || null,
+            entryStrategyName: trade.entryStrategyName || null,
+            repeatedFromPaperId: trade.id,
+          });
+          toast.success('Заявка ждёт исполнения — записана в Журнал с пометкой, приложение само проверит её');
+        } catch { /* запись не критична — заявка у брокера */ }
+      }
+      return;
+    }
+    if (!trade) return;
     const openedAtDate = new Date();
     const lot = parseFloat(trade.lot) || 1;
     const commRate = parseFloat(trade.commissionRate)
