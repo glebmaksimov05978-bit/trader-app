@@ -24,6 +24,17 @@ import CollapsibleSection from './CollapsibleSection';
 import InstrumentPicker from './InstrumentPicker';
 
 import Icon from '../shared/Icon';
+// Строка робота под тикером повторяла то, что и так видно («2 из 4 условий»), и шумела на каждом
+// тикере. Показываем её, только когда в ней что-то новое: сделка открыта, ошибка, нулевой объём,
+// блокировка по экспирации. Обычное «условия не сошлись / вне торговых часов / уже открыта» скрыто
+// (полный текст — во всплывающей подсказке строки и в Telegram по кнопке «Радар»).
+export function isRobotNoteUseful(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  const parts = t.split(' · ').map((x) => x.replace(/^«[^»]*»:\s*/, ''));
+  return parts.some((x) => !/^(вне торговых часов|условия не сошлись|бумажная сделка уже открыта|торги закрыты|клиринг)/i.test(x));
+}
+
 export default function RadarPanel({ filterId: filterIdProp, onFilterChange, onItems }) {
   const { user, userProfile } = useAuth();
   const navigate = useNavigate();
@@ -205,7 +216,7 @@ export default function RadarPanel({ filterId: filterIdProp, onFilterChange, onI
                   // странице для явного входа.
                   : navigate(`/cockpit?previewTicker=${encodeURIComponent(it.ticker)}&previewType=${encodeURIComponent(it.instrumentType || 'stock')}`)
                 )}
-                title={paperTradeId ? 'Систему уже торгует эту сделку — открыть в Сопровождении' : 'Открыть график и технический анализ'}
+                title={`${paperTradeId ? 'Систему уже торгует эту сделку — открыть в Сопровождении' : 'Открыть график и технический анализ'}${it.robotCheck?.text ? `\nРобот: ${it.robotCheck.text}` : ''}`}
               >
                 <RadarRing pct={pct} hot={hot} />
                 <InstrumentIcon ticker={it.ticker} logoUrl={logoUrlFromName(logos.get(logoKey))} size={22} />
@@ -220,7 +231,7 @@ export default function RadarPanel({ filterId: filterIdProp, onFilterChange, onI
                       : pct != null ? `${res.result.passed} из ${res.result.total} условий`
                         : 'ждёт проверки'}
                   </div>
-                  {it.robotCheck?.text && (
+                  {it.robotCheck?.text && isRobotNoteUseful(it.robotCheck.text) && (
                     <div className="ck-radar-sub ck-radar-robot" title={`Робот, ${new Date(it.robotCheck.at).toLocaleString('ru-RU')}: ${it.robotCheck.text}`}>
                       {new Date(it.robotCheck.at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} · {it.robotCheck.text}
                     </div>
