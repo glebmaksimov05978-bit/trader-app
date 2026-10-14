@@ -19,7 +19,7 @@ New-Item -ItemType Directory -Force -Path (Join-Path $stage 'relay') | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $stage 'workers\telegram-webhook\src') | Out-Null
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
 
-foreach ($f in 'handler.mjs', 'yandex.mjs', 'server.mjs') {
+foreach ($f in 'handler.mjs', 'yandex.mjs', 'yandex.js', 'server.mjs') {
   Copy-Item (Join-Path $PSScriptRoot $f) (Join-Path $stage 'relay')
 }
 foreach ($f in 'orders.js', 'verifyFirebaseToken.js') {

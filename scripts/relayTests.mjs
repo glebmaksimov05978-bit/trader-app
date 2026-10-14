@@ -2,7 +2,7 @@
 // сеть не нужна. Проверяется: ключ, список разрешённых методов, стоп-кран, непросачивание токена,
 // и весь путь «воркер → посредник → брокер».
 import { handle, ALLOWED_METHODS } from '../relay/handler.mjs';
-import { tinkoff, hasBrokerAccess, checkOrderGates } from '../workers/telegram-webhook/src/orders.js';
+import { tinkoff, hasBrokerAccess, checkOrderGates, relayEndpoint } from '../workers/telegram-webhook/src/orders.js';
 import { handler as yandexHandler } from '../relay/yandex.mjs';
 
 let fails = 0;
@@ -135,6 +135,17 @@ const yb = await yandexHandler({ httpMethod: 'POST', path: '/broker/UsersService
 ok('Яндекс-обёртка: тело в base64 тоже разбирается', yb.statusCode === 200);
 const yh = await yandexHandler({ httpMethod: 'GET', path: '/health', headers: { Host: 'f.example' }, body: null });
 ok('Яндекс-обёртка: /health доступен без ключа и без токена в ответе', yh.statusCode === 200 && !yh.body.includes(SECRET_TOKEN));
+
+// --- адрес на Яндексе: маршрут в параметре, путь после идентификатора недопустим ---
+ok('relayEndpoint: обычный сервер — база + путь', relayEndpoint('https://relay.example.ru/', '/broker/UsersService/GetAccounts') === 'https://relay.example.ru/broker/UsersService/GetAccounts');
+const ye = relayEndpoint('https://functions.yandexcloud.net/abc123', '/broker/UsersService/GetAccounts');
+ok('relayEndpoint: Яндекс — маршрут параметром, без пути после id', ye.startsWith('https://functions.yandexcloud.net/abc123?') && /route=%2Fbroker%2FUsersService%2FGetAccounts/.test(ye) && /integration=raw/.test(ye));
+const yr = await yandexHandler({ httpMethod: 'GET', path: '/', headers: { Host: 'f.example' }, queryStringParameters: { integration: 'raw', route: '/health' }, body: null });
+ok('Яндекс-обёртка: ?route=/health открывает проверку здоровья', yr.statusCode === 200 && JSON.parse(yr.body).service === 'traderpro-relay');
+const yb2 = await yandexHandler({ httpMethod: 'POST', path: '/', headers: { Host: 'f.example', 'X-Relay-Key': KEY }, queryStringParameters: { integration: 'raw', route: '/broker/UsersService/GetAccounts' }, body: '{}' });
+ok('Яндекс-обёртка: ?route=/broker/… проходит с ключом', yb2.statusCode === 200);
+const yi = await yandexHandler({ httpMethod: 'GET', path: '/', headers: { Host: 'f.example' }, queryStringParameters: { integration: 'raw' }, body: null });
+ok('Яндекс-обёртка: без route — тоже здоровье (корень)', yi.statusCode === 200);
 
 if (fails) { console.log(`\nПровалено: ${fails}`); process.exit(1); }
 console.log('\nВсе проверки посредника прошли ✓');

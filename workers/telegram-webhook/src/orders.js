@@ -79,6 +79,23 @@ export async function tinkoffDirect(env, method, body) {
   return parseBrokerResponse(res, method);
 }
 
+/**
+ * Полный адрес вызова посредника. На обычном сервере — база + путь. У Яндекс Облака путь после
+ * идентификатора функции недопустим, поэтому для functions.yandexcloud.net маршрут уходит
+ * параметром: <адрес>?integration=raw&route=/broker/<метод>.
+ */
+export function relayEndpoint(base, path) {
+  const b = String(base).replace(/\/+$/, '');
+  if (/functions\.yandexcloud\.net/.test(b) || b.includes('?')) {
+    const [clean, query] = b.split('?');
+    const params = new URLSearchParams(query || '');
+    params.set('integration', 'raw');
+    params.set('route', path);
+    return `${clean}?${params.toString()}`;
+  }
+  return `${b}${path}`;
+}
+
 async function tinkoffViaRelay(env, method, body) {
   if (!env.RELAY_KEY) throw new Error('Для посредника не задан RELAY_KEY');
   // Основной адрес и (необязательно) запасной RELAY_URL_BACKUP — второй экземпляр на другом
@@ -90,7 +107,7 @@ async function tinkoffViaRelay(env, method, body) {
   let lastError = null;
   for (const base of urls) {
     try {
-      const res = await fetch(`${base}/broker/${method}`, {
+      const res = await fetch(relayEndpoint(base, `/broker/${method}`), {
         method: 'POST',
         headers: { 'X-Relay-Key': env.RELAY_KEY, 'Content-Type': 'application/json' },
         body: JSON.stringify(body),

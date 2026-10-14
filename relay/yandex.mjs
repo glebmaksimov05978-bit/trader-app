@@ -12,10 +12,16 @@ export async function handler(event) {
   const method = event.httpMethod || 'GET';
   const headers = event.headers || {};
   const host = headers.Host || headers.host || 'localhost';
-  const qs = event.queryStringParameters
-    ? `?${new URLSearchParams(event.queryStringParameters).toString()}`
-    : '';
-  const path = event.path || event.url || '/';
+  // Яндекс не принимает путь после идентификатора функции («.../<id>/health» → «invalid functionID»),
+  // поэтому нужный маршрут передаётся параметром: ?integration=raw&route=/health.
+  // Служебные параметры (integration, route) дальше не пробрасываются.
+  const params = { ...(event.queryStringParameters || {}) };
+  const route = params.route;
+  delete params.route;
+  delete params.integration;
+  const rest = new URLSearchParams(params).toString();
+  const qs = rest ? `?${rest}` : '';
+  const path = route || event.path || event.url || '/';
   const raw = event.body == null ? undefined
     : event.isBase64Encoded ? Buffer.from(event.body, 'base64') : event.body;
 
