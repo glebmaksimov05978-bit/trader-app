@@ -28,6 +28,7 @@ import EquityCurve from './EquityCurve';
 import TechnicalAnalysisBlock from '../shared/TechnicalAnalysisBlock';
 import toast from 'react-hot-toast';
 
+import Icon from '../shared/Icon';
 const EXIT_REASON_LABELS = {
   stop: 'Стоп', take: 'Тейк', signal: 'Сигнал пропал', time: 'По времени', end_of_data: 'Конец истории (не закрыта)',
   trail: 'Движение выдохлось', trail_adverse: 'Против входа, не отыгралось',
@@ -412,7 +413,7 @@ export default function Backtest() {
     <div className="page">
       <div className="page-header">
         <div>
-          <h1 className="page-title">🧪 Бэктест (внутренний инструмент)</h1>
+          <h1 className="page-title">Бэктест (внутренний инструмент)</h1>
           <p className="page-subtitle">
             Прогон сохранённой стратегии по реальной истории. Видно только тебе — цифры ещё калибруются, для клиентов пока не показываем.
           </p>
@@ -420,7 +421,7 @@ export default function Backtest() {
       </div>
 
       <div className="card" style={{marginBottom:16}}>
-        <div className="section-title"><div className="section-title-icon">⚙️</div>Параметры прогона</div>
+        <div className="section-title"><div className="section-title-icon"><Icon name="settings" size={15} /></div>Параметры прогона</div>
 
         <div className="input-group" style={{maxWidth:320, marginBottom:12}}>
           <label className="input-label">Стратегия</label>
@@ -728,7 +729,7 @@ export default function Backtest() {
 
           {diagnostics.length > 0 && (
             <div className="card" style={{marginBottom:16}}>
-              <div className="section-title"><div className="section-title-icon">🩺</div>Диагностика сделок</div>
+              <div className="section-title"><div className="section-title-icon"><Icon name="info" size={15} /></div>Диагностика сделок</div>
               <p className="text-xs text-muted" style={{marginBottom:12}}>
                 Разбор того, ЧЕМ закрывались сделки в этом прогоне (стоп/тейк/время) — не ИИ,
                 просто пороговые правила по факту результата. Показывается только когда есть
@@ -750,7 +751,7 @@ export default function Backtest() {
 
           {equity.points.length > 1 && (
             <div className="card" style={{marginBottom:16}}>
-              <div className="section-title"><div className="section-title-icon">📈</div>Кривая капитала</div>
+              <div className="section-title"><div className="section-title-icon"><Icon name="trendUp" size={15} /></div>Кривая капитала</div>
               <p className="text-xs text-muted" style={{marginBottom:8}}>
                 {realRiskEnabled
                   ? `Реальные рубли: каждая сделка сайзится по риску ${riskSizing.riskPercent}% от депозита (условие «Риск на сделку» этой стратегии), как если бы ты правда так торговал.`
@@ -762,7 +763,7 @@ export default function Backtest() {
 
           {result.trades?.length > 0 && (
             <div className="card" style={{marginBottom:16}}>
-              <div className="section-title"><div className="section-title-icon">📊</div>График сделок</div>
+              <div className="section-title"><div className="section-title-icon"><Icon name="chart" size={15} /></div>График сделок</div>
               <p className="text-xs text-muted" style={{marginBottom:8}}>
                 Все сделки прогона сразу на графике — ▲/▼ вход, ● выход. Слои S/R/EMA/Боллинджер/RSI/MACD
                 считаются НА ПОСЛЕДНЮЮ свечу (как сейчас), не пересчитываются на каждый день прогона — это
@@ -779,7 +780,7 @@ export default function Backtest() {
 
           {result.trades?.length > 0 && (
             <div className="card">
-              <div className="section-title"><div className="section-title-icon">📋</div>Сделки ({result.trades.length})</div>
+              <div className="section-title"><div className="section-title-icon"><Icon name="journal" size={15} /></div>Сделки ({result.trades.length})</div>
               <p className="text-xs text-muted" style={{marginBottom:8}}>Клик по строке — что именно алгоритм увидел на момент входа этой сделки.</p>
               <div style={{overflowX:'auto'}}>
                 <table className="table" style={{fontSize:13}}>
@@ -819,7 +820,7 @@ export default function Backtest() {
                             <tr>
                               <td colSpan={9} style={{background:'var(--bg-surface-2)', padding:'12px 16px 16px'}}>
                                 <div className="section-title" style={{marginBottom:12}}>
-                                  <div className="section-title-icon">🔍</div>
+                                  <div className="section-title-icon"><Icon name="search" size={15} /></div>
                                   Что видел алгоритм на момент входа {t.entryDate.toLocaleDateString('ru-RU')}
                                 </div>
                                 <div style={{marginBottom:16}}>

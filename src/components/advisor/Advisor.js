@@ -241,7 +241,7 @@ ${recentTrades || 'Нет данных'}${calcContext}
     <div className="advisor-page">
       {/* Заголовок */}
       <div className="advisor-header">
-        <h1 className="page-title">🤖 AI Советник</h1>
+        <h1 className="page-title">AI Советник</h1>
         <p className="page-subtitle">Анализ торговли с помощью искусственного интеллекта</p>
       </div>
 

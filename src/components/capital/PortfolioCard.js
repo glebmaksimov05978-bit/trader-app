@@ -12,6 +12,7 @@ import { computeBaskets, getPortfolio } from '../../services/analytics/portfolio
 import { classifyStrategy, kindBadge } from '../../services/analytics/strategyKind';
 import { formatCurrency } from '../../utils/calculator';
 
+import Icon from '../shared/Icon';
 const rub = (v) => `${v >= 0 ? '+' : '−'}${formatCurrency(Math.abs(Math.round(v)))}`;
 
 export default function PortfolioCard({ userProfile, strategies, trades, onSave }) {
@@ -54,7 +55,7 @@ export default function PortfolioCard({ userProfile, strategies, trades, onSave 
   return (
     <div className="card" style={{ marginTop: 24 }}>
       <div className="section-title">
-        <div className="section-title-icon">🧺</div>
+        <div className="section-title-icon"><Icon name="layers" size={15} /></div>
         Портфельный режим
       </div>
       <p className="text-sm text-secondary" style={{ marginBottom: 16 }}>

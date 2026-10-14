@@ -9,6 +9,7 @@ import { getStrategies } from '../../services/analytics/strategy';
 import { futuresTurnoverRub, turnoverStatus } from '../../services/analytics/dayTurnover';
 import toast from 'react-hot-toast';
 
+import Icon from '../shared/Icon';
 export default function Settings() {
   const { user, userProfile, updateUserProfile } = useAuth();
   // Оборот по фьючерсам за сегодня — по записям журнала; нужен карточке тарифа, чтобы показать
@@ -110,14 +111,14 @@ export default function Settings() {
   return (
     <div className="page">
       <div className="page-header">
-        <h1 className="page-title">⚙️ Настройки</h1>
+        <h1 className="page-title">Настройки</h1>
         <p className="page-subtitle">Профиль и интеграции</p>
       </div>
 
       <div style={{maxWidth: 600}}>
         <div className="card" style={{marginBottom:20}}>
           <div className="section-title">
-            <div className="section-title-icon">👤</div>
+            <div className="section-title-icon"><Icon name="user" size={15} /></div>
             Профиль
             {/* Real user report: on a multi-account setup it wasn't obvious WHICH
                 account's settings this page was even showing. */}
@@ -165,7 +166,7 @@ export default function Settings() {
 
         <div className="card" style={{marginBottom:20}}>
           <div className="section-title">
-            <div className="section-title-icon">🔑</div>
+            <div className="section-title-icon"><Icon name="lock" size={15} /></div>
             Т-Инвестиции API
           </div>
           <p className="text-sm text-secondary" style={{marginBottom:12}}>
@@ -217,7 +218,7 @@ export default function Settings() {
             Теперь сессии берутся из общего расписания, а трейдер решает, какие смотреть. */}
         <div className="card" style={{marginBottom:20}}>
           <div className="section-title">
-            <div className="section-title-icon">⏰</div>
+            <div className="section-title-icon"><Icon name="clock" size={15} /></div>
             Когда работает робот
           </div>
           <p className="text-sm text-secondary" style={{marginBottom:16}}>
@@ -264,7 +265,7 @@ export default function Settings() {
             можно позволить то, что для настоящей торговли было бы опасно. */}
         <div className="card" style={{marginBottom:20}}>
           <div className="section-title">
-            <div className="section-title-icon">📄</div>
+            <div className="section-title-icon"><Icon name="file" size={15} /></div>
             Бумажные сделки
           </div>
           <p className="text-sm text-secondary" style={{marginBottom:16}}>
@@ -360,7 +361,7 @@ export default function Settings() {
 
         <div className="card" style={{marginBottom:20}}>
           <div className="section-title">
-            <div className="section-title-icon">📊</div>
+            <div className="section-title-icon"><Icon name="chart" size={15} /></div>
             Торговые параметры
           </div>
           <div className="flex flex-col gap-3">
@@ -404,7 +405,7 @@ export default function Settings() {
 
         <div className="card" style={{marginBottom:20}}>
           <div className="section-title">
-            <div className="section-title-icon">📓</div>
+            <div className="section-title-icon"><Icon name="journal" size={15} /></div>
             Журнал сделок
           </div>
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 0'}}>
@@ -486,7 +487,7 @@ function OrderWorkerCard({ userProfile, updateUserProfile }) {
   return (
     <div className="card" style={{marginBottom:20}}>
       <div className="section-title">
-        <div className="section-title-icon">⚡</div>
+        <div className="section-title-icon"><Icon name="bolt" size={15} /></div>
         Отправка заявок брокеру
       </div>
       <p className="text-sm text-secondary" style={{marginBottom:12}}>
@@ -543,7 +544,7 @@ function TariffCard({ tariffId, onChange, onSave, saving, turnover }) {
   return (
     <div className="card" style={{marginBottom:20}}>
       <div className="section-title">
-        <div className="section-title-icon">💳</div>
+        <div className="section-title-icon"><Icon name="capital" size={15} /></div>
         Тариф Т-Банка
       </div>
       <p className="text-sm text-secondary" style={{marginBottom:12}}>

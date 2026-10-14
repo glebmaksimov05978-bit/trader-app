@@ -504,7 +504,7 @@ export default function Journal() {
     <div className="page">
       <div className="page-header flex justify-between items-center">
         <div>
-          <h1 className="page-title">📓 Журнал сделок</h1>
+          <h1 className="page-title">Журнал сделок</h1>
           <p className="page-subtitle">
             {view === 'trades' ? 'История всех ваших позиций' : 'Тикеры, за которыми вы следите, пока сетап не подтвердился'}
             {view === 'radar' && radarLive && radarUpdatedAt && (

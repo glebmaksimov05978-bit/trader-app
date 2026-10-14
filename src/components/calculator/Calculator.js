@@ -28,6 +28,7 @@ import StrategyChecklist from '../shared/StrategyChecklist';
 import toast from 'react-hot-toast';
 import './Calculator.css';
 
+import Icon from '../shared/Icon';
 // MOEX API — бесплатные цены без токена
 // Вне часов торгов на MOEX блок marketdata приходит пустым (LAST=null) — это НЕ значит,
 // что инструмента не существует, просто сейчас нет живой котировки. Раньше это читалось
@@ -952,7 +953,7 @@ export default function Calculator() {
       `}</style>
 
       <div className="page-header">
-        <h1 className="page-title">🧮 Калькулятор сделки</h1>
+        <h1 className="page-title">Калькулятор сделки</h1>
         <p className="page-subtitle">Автоматический расчёт параметров позиции</p>
       </div>
 
@@ -1440,7 +1441,7 @@ export default function Calculator() {
 
               {/* Детализация */}
               <div className="card">
-                <div className="section-title"><div className="section-title-icon">📋</div>Детализация</div>
+                <div className="section-title"><div className="section-title-icon"><Icon name="journal" size={15} /></div>Детализация</div>
                 <ResultRow label="Риск на сделку" value={formatCurrency(displayResult.riskAmount)} color="var(--red)" />
                 <ResultRow label="Тиков до SL" value={formatNumber(displayResult.ticksToSL)} />
                 <ResultRow label="Тиков до TP" value={displayResult.ticksToTP > 0 ? formatNumber(displayResult.ticksToTP) : '—'} />
@@ -1463,7 +1464,7 @@ export default function Calculator() {
                   left-hand input form, instead of leaving dead space under it. */}
               {taState.data?.indicators?.atr14 != null && form.stopLoss && form.entryPrice && (
                 <div className="card" style={{cursor:'pointer'}} onClick={() => setShowAtrModal(true)}>
-                  <div className="section-title"><div className="section-title-icon">📏</div>Волатильность (ATR)</div>
+                  <div className="section-title"><div className="section-title-icon"><Icon name="chart" size={15} /></div>Волатильность (ATR)</div>
                   {(() => {
                     const stopDist = Math.abs(parseFloat(form.entryPrice) - parseFloat(form.stopLoss));
                     const atrMult = stopDist / taState.data.indicators.atr14;
@@ -1488,7 +1489,7 @@ export default function Calculator() {
                   this column (title starts right at the top), leftover height just
                   becomes one gap at the bottom instead of two split gaps. */}
               <div className="card" style={{flex:1, display:'flex', flexDirection:'column', justifyContent:'flex-start'}}>
-                <div className="section-title"><div className="section-title-icon">⚡</div>Использование капитала</div>
+                <div className="section-title"><div className="section-title-icon"><Icon name="bolt" size={15} /></div>Использование капитала</div>
                 <div className="risk-gauge-bar">
                   <div className="risk-gauge-fill" style={{width:`${Math.min(displayResult.marginUsagePercent||0,100)}%`,background:(displayResult.marginUsagePercent||0)>50?'linear-gradient(90deg,#f59e0b,#ef4444)':(displayResult.marginUsagePercent||0)>25?'linear-gradient(90deg,var(--accent-primary),#f59e0b)':'linear-gradient(90deg,var(--accent-primary),#10b981)'}}/>
                 </div>
@@ -1528,7 +1529,7 @@ export default function Calculator() {
       {taOpen && (
         <div ref={taPanelRef} className="card" style={{marginTop:16}}>
           <div className="section-title">
-            <div className="section-title-icon">📊</div>
+            <div className="section-title-icon"><Icon name="chart" size={15} /></div>
             Технический анализ {form.ticker ? `— ${form.ticker.toUpperCase()}` : ''}
           </div>
           {taState.data?.candles?.length > 0 && (

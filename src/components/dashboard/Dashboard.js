@@ -18,6 +18,7 @@ import {
 import { formatCurrency, formatNumber } from '../../utils/calculator';
 import toast from 'react-hot-toast';
 
+import Icon from '../shared/Icon';
 const INSTRUMENT_LABELS = { stock: 'Акции', future: 'Фьючерсы', currency: 'Валюта' };
 
 // The original plain kpi-card, restored — flipping the whole card (tried in an earlier
@@ -265,7 +266,7 @@ export default function Dashboard() {
         {/* Equity curve */}
         <div className="card">
           <div className="section-title">
-            <div className="section-title-icon">📈</div>
+            <div className="section-title-icon"><Icon name="trendUp" size={15} /></div>
             Кривая капитала
           </div>
           {equity.length > 1 ? (
@@ -309,7 +310,7 @@ export default function Dashboard() {
         {/* Recent PnL bars */}
         <div className="card">
           <div className="section-title">
-            <div className="section-title-icon">💹</div>
+            <div className="section-title-icon"><Icon name="chart" size={15} /></div>
             Последние 10 сделок
           </div>
           {barData.length > 0 ? (
@@ -355,7 +356,7 @@ export default function Dashboard() {
       {radarItems.length > 0 && (
         <div className="card" style={{marginBottom: 24}}>
           <div className="section-title" style={{alignItems:'center'}}>
-            <div className="section-title-icon">📡</div>
+            <div className="section-title-icon"><Icon name="radar" size={15} /></div>
             Радар
             {!activeStrategy?.conditions?.length ? (
               <span style={{fontWeight:400, fontSize:12, color:'var(--text-muted)', marginLeft:8}}>
@@ -438,7 +439,7 @@ export default function Dashboard() {
       {/* Weekly habits — top money-significant conclusions from the deterministic engine */}
       <div className="card" style={{marginBottom: 24}}>
         <div className="section-title" style={{alignItems:'baseline'}}>
-          <div className="section-title-icon">🎯</div>
+          <div className="section-title-icon"><Icon name="target" size={15} /></div>
           Что стоит вам денег
           <span style={{fontWeight:400, fontSize:12, color:'var(--text-muted)', marginLeft:8}}>
             {windowUsed === '30d'
@@ -510,7 +511,7 @@ export default function Dashboard() {
         <div className="grid-2">
           <div className="card">
             <div className="section-title">
-              <div className="section-title-icon">📐</div>
+              <div className="section-title-icon"><Icon name="chart" size={15} /></div>
               Статистика
             </div>
             <div className="stat-row"><span className="stat-row-label">Средний профит</span><span className="stat-row-value text-green">{formatCurrency(Math.round(stats.avgWin))}</span></div>
@@ -527,7 +528,7 @@ export default function Dashboard() {
               instead, next to the stats it belongs with. */}
           <div className="card">
             <div className="section-title">
-              <div className="section-title-icon">🧩</div>
+              <div className="section-title-icon"><Icon name="layers" size={15} /></div>
               P&amp;L по типам инструментов
             </div>
             {instrumentPnl.length > 0 ? (

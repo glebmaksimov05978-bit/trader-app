@@ -5,6 +5,7 @@
 // pass/fail logic lives in services/analytics/strategy.js, never here.
 import React from 'react';
 
+import Icon from './Icon';
 // Custom ("Свои условия") rows have no computed outcome — the app can't check a
 // stochastic or a news calendar, so the trader ticks a real checkbox by hand instead of
 // reading a computed ✅/❌ (see evaluateStrategy in strategy.js). Everything else about
@@ -63,7 +64,7 @@ export default function StrategyChecklist({ strategyName, result, readinessThres
   return (
     <div className="card" style={{marginTop:16}}>
       <div className="section-title">
-        <div className="section-title-icon">🎯</div>
+        <div className="section-title-icon"><Icon name="target" size={15} /></div>
         {strategyName || 'Моя стратегия'}
       </div>
       <div className="flex justify-between items-center" style={{marginBottom:12}}>

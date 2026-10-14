@@ -13,6 +13,7 @@ import ExitRulesEditor from '../shared/ExitRulesEditor';
 import toast from 'react-hot-toast';
 import './Capital.css';
 
+import Icon from '../shared/Icon';
 // The flat two-section list ("market" / "plan") outgrew itself — 18 conditions in one
 // column made eyes glaze over (real user report: "пунктов много, глаза разбегаются").
 // Grouped into collapsible <details> sections instead; a group opens by default when
@@ -288,7 +289,7 @@ export default function Capital() {
   return (
     <div className="page">
       <div className="page-header">
-        <h1 className="page-title">💰 Управление капиталом</h1>
+        <h1 className="page-title">Управление капиталом</h1>
         <p className="page-subtitle">Риск-менеджмент и контроль просадки</p>
       </div>
 
@@ -346,7 +347,7 @@ export default function Capital() {
               the problem, not unclear copy). */}
           <div className="card" style={{flex:1}}>
             <div className="section-title">
-              <div className="section-title-icon">📉</div>
+              <div className="section-title-icon"><Icon name="trendDown" size={15} /></div>
               Дневной лимит убытка
             </div>
             <div className="capital-gauge">
@@ -385,7 +386,7 @@ export default function Capital() {
         {/* Settings */}
         <div className="card">
           <div className="section-title">
-            <div className="section-title-icon">⚙️</div>
+            <div className="section-title-icon"><Icon name="settings" size={15} /></div>
             Настройки риск-менеджмента
           </div>
 
@@ -448,7 +449,7 @@ export default function Capital() {
           только выбор условий и порогов, никакой отдельной логики оценки. */}
       <div className="card" style={{marginTop:24}}>
         <div className="section-title">
-          <div className="section-title-icon">🎯</div>
+          <div className="section-title-icon"><Icon name="target" size={15} /></div>
           Моя стратегия
         </div>
         <p className="text-sm text-secondary" style={{marginBottom:16}}>
@@ -832,7 +833,7 @@ function StrategyPerformanceCard({ trades, strategies }) {
   return (
     <div className="card" style={{marginTop:24}}>
       <div className="section-title">
-        <div className="section-title-icon">⚖️</div>
+        <div className="section-title-icon"><Icon name="layers" size={15} /></div>
         Как торгуют ваши стратегии
       </div>
       <p className="text-sm text-secondary" style={{marginBottom:16}}>

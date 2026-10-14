@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 
+import Icon from '../shared/Icon';
 export default function AdminPanel() {
   const { isAdmin } = useAuth();
   const navigate = useNavigate();
@@ -65,14 +66,14 @@ export default function AdminPanel() {
   return (
     <div className="page">
       <div className="page-header">
-        <h1 className="page-title">⚙️ Админ-панель</h1>
+        <h1 className="page-title">Админ-панель</h1>
         <p className="page-subtitle">Управление пользователями</p>
       </div>
 
       {/* Create user */}
       <div className="card" style={{marginBottom:24}}>
         <div className="section-title">
-          <div className="section-title-icon">➕</div>
+          <div className="section-title-icon"><Icon name="plus" size={15} /></div>
           Создать пользователя
         </div>
         <div className="grid-4" style={{marginBottom:16}}>
@@ -109,7 +110,7 @@ export default function AdminPanel() {
       <div className="card" style={{padding:0}}>
         <div style={{padding:'20px 24px 0'}}>
           <div className="section-title">
-            <div className="section-title-icon">👥</div>
+            <div className="section-title-icon"><Icon name="user" size={15} /></div>
             Пользователи ({users.length})
           </div>
         </div>
