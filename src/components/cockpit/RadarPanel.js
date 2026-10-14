@@ -23,7 +23,7 @@ import { catalogEntry } from '../../services/marketData/instrumentCatalog';
 import CollapsibleSection from './CollapsibleSection';
 import InstrumentPicker from './InstrumentPicker';
 
-export default function RadarPanel() {
+export default function RadarPanel({ filterId: filterIdProp, onFilterChange, onItems }) {
   const { user, userProfile } = useAuth();
   const navigate = useNavigate();
   const { radarLive, setRadarLive, radarUpdatedAt, radarResults } = useRadarLive() || {};
@@ -43,7 +43,10 @@ export default function RadarPanel() {
   const [logos, setLogos] = useState(new Map());
   // Какой стратегией сейчас смотрим список: 'all' — все тикеры разом, иначе только те,
   // что отслеживаются выбранной стратегией.
-  const [filterId, setFilterId] = useState('all');
+  const [filterIdLocal, setFilterIdLocal] = useState('all');
+  // Режим Сопровождения (Обзор / конкретная стратегия) может сам задавать фильтр.
+  const filterId = filterIdProp ?? filterIdLocal;
+  const setFilterId = (v) => { setFilterIdLocal(v); onFilterChange?.(v); };
   const strategies = getStrategies(userProfile);
   const strategy = getActiveStrategy(userProfile);
   // Каждый тикер может смотреться по своей стратегии — резолвится так же, как в
@@ -54,6 +57,7 @@ export default function RadarPanel() {
     if (!user) return;
     getRadarItems(user.uid).then((rows) => {
       setItems(rows);
+      onItems?.(rows);
       const keys = rows.map((it) => logoCacheKey({
         ticker: it.ticker, instrumentType: it.instrumentType, basicAsset: catalogEntry(it.ticker)?.basicAsset,
       }));

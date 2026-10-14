@@ -36,6 +36,8 @@ import { applyTradeClose } from '../../services/tradeClose';
 import { fetchOrderConfig } from '../../services/broker';
 import CandleChart from '../shared/CandleChart';
 import RadarPanel from './RadarPanel';
+import StrategyOverview from './StrategyOverview';
+import { useRadarLive } from '../../context/RadarLiveContext';
 import CollapsibleSection from './CollapsibleSection';
 import OrderModal from '../calculator/OrderModal';
 import './Cockpit.css';
@@ -127,6 +129,11 @@ export default function Cockpit() {
   const [allPaper, setAllPaper] = useState([]);
   // Какую стратегию показывать в списке бумажных: 'all' или ключ стратегии.
   const [paperFilter, setPaperFilter] = useState('all');
+  // Режим Сопровождения: 'all' — общий обзор, иначе id стратегии. Режим стратегии сужает всё сразу:
+  // радар, бумажные и открытые позиции показывают только её, а вкладка ведёт сделки по её правилам.
+  const [scopeId, setScopeId] = useState('all');
+  const [radarItems, setRadarItems] = useState([]);
+  const radarLive = useRadarLive();
   // Переход из Радара может указывать конкретную сделку (обычно бумажную, которую уже
   // ведёт система) — ?activeId=... в ссылке. Читается один раз при заходе на вкладку;
   // эффекты ниже, загружающие настоящие/бумажные сделки, не перезатирают уже заданный
@@ -206,6 +213,15 @@ export default function Cockpit() {
     () => strategies.find((s) => s.id === strategyId) || getActiveStrategy(userProfile),
     [strategies, strategyId, userProfile],
   );
+  const chooseScope = (id) => {
+    setScopeId(id);
+    setPaperFilter(id);
+    if (id !== 'all') setStrategyId(id);
+    // Выбранная сделка могла быть чужой стратегии — сбрасываем, чтобы режим не показывал лишнего.
+    setActiveId(null);
+    if (previewTicker || urlActiveId) setSearchParams({}, { replace: true });
+  };
+
   // Выбрали сделку — вкладка сразу ведёт её по ТОЙ стратегии, которой она открыта. Раньше
   // оставалась последняя выбранная вручную, и сделка краткосрочной стратегии считалась по
   // правилам долгосрочной (одинаковые цифры при «переключении» — именно отсюда). Переключить
@@ -242,7 +258,9 @@ export default function Cockpit() {
         setAllTrades(all);
         // Зашли по ссылке из радара на инструмент без сделки — не подсовываем вместо него
         // первую попавшуюся открытую позицию.
-        setActiveId((cur) => cur || (previewTicker ? null : open[0]?.id) || null);
+        // Стартовый экран — «Обзор» по стратегиям, а не первая попавшаяся открытая позиция:
+        // сделку выбирают из списка слева (или переходом по ссылке из радара/Telegram).
+        setActiveId((cur) => cur || null);
       } catch (e) {
         toast.error('Не удалось загрузить сделки');
       } finally {
@@ -260,6 +278,21 @@ export default function Cockpit() {
     getOpenPaperTrades(user.uid).then(setPaperTrades).catch(() => setPaperTrades([]));
     getPaperTrades(user.uid).then(setAllPaper).catch(() => setAllPaper([]));
   }, [user]);
+
+  // Сколько тикеров смотрит каждая стратегия и сколько «горячих» (готовность не ниже порога).
+  const radarByStrategy = useMemo(() => {
+    const active = getActiveStrategy(userProfile);
+    const out = {};
+    for (const it of radarItems) {
+      const st = (it.strategyId && strategies.find((x) => x.id === it.strategyId)) || active;
+      if (!st) continue;
+      const row = out[st.id] || (out[st.id] = { total: 0, hot: 0 });
+      row.total += 1;
+      const r = radarLive?.radarResults?.[it.id]?.result;
+      if (r?.total && (r.passed / r.total) * 100 >= (st.readinessThreshold ?? 100)) row.hot += 1;
+    }
+    return out;
+  }, [radarItems, strategies, radarLive?.radarResults, userProfile]);
 
   // Бумажные по стратегиям: у каждой стратегии свой горизонт (краткосрок, среднесрок…), их не
   // сравнивают друг с другом, а смотрят по отдельности — отсюда вкладки и сводка над списком.
@@ -771,6 +804,20 @@ export default function Cockpit() {
         </div>
       )}
 
+      {/* Режим: общий обзор или одна стратегия. В режиме стратегии весь экран говорит только о ней. */}
+      {strategies.length > 0 && (
+        <nav className="ck-scope" aria-label="Режим">
+          <button className={scopeId === 'all' ? 'on' : ''} onClick={() => chooseScope('all')}>
+            <Icon name="dashboard" size={14} /> Обзор
+          </button>
+          {strategies.map((st) => (
+            <button key={st.id} className={scopeId === st.id ? 'on' : ''} onClick={() => chooseScope(st.id)} title={st.name}>
+              {st.name || 'Без названия'}
+            </button>
+          ))}
+        </nav>
+      )}
+
       {/* Сделка была открыта по одной стратегии, а вкладка сейчас ведёт её по другой —
           это законный режим «примерить другие правила», но он должен быть виден. */}
       {trade?.entryStrategyName && strategy?.name && trade.entryStrategyName !== strategy.name && (
@@ -786,7 +833,7 @@ export default function Cockpit() {
         <aside className="ck-side">
           <CollapsibleSection title="Открытые позиции" badge={trades.length}>
             <div className="ck-pos-list">
-              {trades.map((t) => {
+              {trades.filter((t) => scopeId === 'all' || !t.entryStrategyId || t.entryStrategyId === scopeId).map((t) => {
                 const on = t.id === activeId;
                 const rem = parseFloat(t.remainingVolume ?? t.volume) || 0;
                 const vol = parseFloat(t.volume) || 0;
@@ -1016,7 +1063,7 @@ export default function Cockpit() {
             </div>
           </CollapsibleSection>
 
-          <RadarPanel />
+          <RadarPanel filterId={scopeId} onFilterChange={(v) => { if (v !== scopeId) chooseScope(v); }} onItems={setRadarItems} />
         </aside>
 
         {/* ---------- кабина ---------- */}
@@ -1038,6 +1085,11 @@ export default function Cockpit() {
                 технический анализ и готовность к входу.
               </div>
             </section>
+          )}
+
+          {/* Обзор: что происходит у каждой стратегии. Показывается, пока ничего не выбрано. */}
+          {!trade && !previewTicker && scopeId === 'all' && (
+            <StrategyOverview strategies={strategies} groups={paperGroups.groups} radar={radarByStrategy} onPick={chooseScope} />
           )}
 
           {/* Инструмент не выбран вообще — та же вёрстка, но вместо графика подсказка. */}
