@@ -16,7 +16,7 @@
 // фоновый робот однажды уже искал сделки по полю `userId`, которого в базе нет, молча
 // получал ноль документов и не слал уведомлений вообще ни разу за всё время работы.
 import {
-  collection, addDoc, updateDoc, deleteDoc, doc, query, where, getDocs, serverTimestamp,
+  collection, addDoc, updateDoc, deleteDoc, doc, query, where, getDocs, serverTimestamp, arrayUnion,
 } from 'firebase/firestore';
 import { db } from './firebase';
 
@@ -43,6 +43,15 @@ export async function addPaperTrade(uid, trade) {
 export async function updatePaperTrade(tradeId, data) {
   return updateDoc(doc(db, COLL, tradeId), {
     ...stripUndefined(data),
+    updatedAt: serverTimestamp(),
+  });
+}
+
+// Отметка «что сделали вы» по бумажной сделке (вошёл / пропустил / снял часть / закрыл). Дописывается
+// в массив decisions атомарно — две отметки подряд (приложение и Telegram) не затирают друг друга.
+export async function addPaperDecision(tradeId, decision) {
+  return updateDoc(doc(db, COLL, tradeId), {
+    decisions: arrayUnion(stripUndefined(decision)),
     updatedAt: serverTimestamp(),
   });
 }

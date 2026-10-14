@@ -17,6 +17,7 @@ import { computePatternsAtEntry } from '../services/analytics/patterns';
 import { computeMarketContextAtEntry } from '../services/analytics/marketContext';
 import { evaluateStrategy, getActiveStrategy, getStrategies } from '../services/analytics/strategy';
 import { workTimeframeOf } from '../services/analytics/strategyMeta';
+import { userLevelsForChart } from '../services/chartDrawings';
 
 const RadarLiveContext = createContext(null);
 
@@ -73,7 +74,9 @@ export function RadarLiveProvider({ children }) {
         const patterns = computePatternsAtEntry(candles, now);
         const marketContext = computeMarketContextAtEntry(candles, now);
         if (!indicators) throw new Error('Нет исторических свечей по этому тикеру');
-        const result = evaluateStrategy(strategy, { indicators, patterns, marketContext, plan: {} });
+        const tf = workTimeframeOf(strategy) || item.timeframe || 'D1';
+        const userLevels = userLevelsForChart(userProfile, item.ticker, tf, candles);
+        const result = evaluateStrategy(strategy, { indicators, patterns, marketContext, userLevels, plan: {} });
         return { result, error: null };
       } catch (e) {
         return { result: null, error: e.message || 'Не удалось загрузить данные' };

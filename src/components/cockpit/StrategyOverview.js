@@ -29,11 +29,12 @@ const MAX_CHIPS = 4;
  * @param {(id: string) => void} onPick
  * @param {(item: {ticker, instrumentType}) => void} [onOpenTicker] — открыть график без стратегии
  * @param {(id: string) => void} [onToggleObserve]
+ * @param {Object} [pending] — { [strategyId]: сколько открытых бумажных сигналов ждут вашей отметки }
  * @param {Array<string>} [knownIds] — id ВСЕХ стратегий профиля: группа сделок стратегии, снятой с
  *   сопровождения, не должна всплывать «осиротевшей» плашкой
  */
 export default function StrategyOverview({
-  strategies, groups, radar, onPick, onOpenTicker, onToggleObserve, single = false, knownIds = null,
+  strategies, groups, radar, onPick, onOpenTicker, onToggleObserve, single = false, knownIds = null, pending = null,
 }) {
   const byId = new Map(groups.map((g) => [g.key, g]));
   // Стратегии из профиля — всегда, даже без сделок; плюс «осиротевшие» группы (стратегия удалена).
@@ -121,6 +122,12 @@ export default function StrategyOverview({
                   </span>
                 )}
               </div>
+
+              {(pending?.[r.id] || 0) > 0 && (
+                <div className="so-pending" title="Откройте сделку этой стратегии и отметьте, вошли вы по сигналу или пропустили">
+                  <Icon name="bell" size={12} /> ждут вашей отметки: {pending[r.id]}
+                </div>
+              )}
 
               <div className="so-foot">
                 <span>

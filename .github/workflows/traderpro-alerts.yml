@@ -164,3 +164,42 @@ jobs:
           else
             node scripts/telegram/applyFills.mjs
           fi
+
+      # Седьмой шаг: отметки ВАШИХ действий. Читает позиции в Т-Банке (только чтение, через
+      # российского посредника) и по появлению/уменьшению/исчезновению позиции отмечает в бумажных
+      # сделках «вошёл», «снял часть», «вышел». Заявок не отправляет — у шага нет на это ни кода, ни
+      # ключа. Без секретов RELAY_URL и RELAY_KEY молча пропускается. Отключается в Настройках
+      # (alertPrefs.brokerActionSync = false).
+      - name: Отметки действий по позициям в Т-Банке
+        continue-on-error: true
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ALERT_UIDS: ${{ secrets.ALERT_UIDS }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RELAY_URL: ${{ secrets.RELAY_URL }}
+          RELAY_URL_BACKUP: ${{ secrets.RELAY_URL_BACKUP }}
+          RELAY_KEY: ${{ secrets.RELAY_KEY }}
+        run: |
+          if [ "${{ github.event.inputs.paper_dry }}" = "true" ]; then
+            node scripts/paper/syncActions.mjs --dry
+          else
+            node scripts/paper/syncActions.mjs
+          fi
+
+      # Восьмой шаг: утренняя сводка в Telegram — один раз в сутки при первом проходе после 8:00 МСК
+      # (час и выключатель — в Настройках). Отметка «сегодня слали» хранится в профиле, поэтому три
+      # будильника сообщение не дублируют.
+      - name: Утренняя сводка
+        continue-on-error: true
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ALERT_UIDS: ${{ secrets.ALERT_UIDS }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ "${{ github.event.inputs.paper_dry }}" = "true" ]; then
+            node scripts/alerts/morningDigest.mjs --dry
+          else
+            node scripts/alerts/morningDigest.mjs
+          fi

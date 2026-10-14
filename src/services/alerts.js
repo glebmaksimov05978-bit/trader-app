@@ -44,6 +44,12 @@ export const DEFAULT_ALERT_PREFS = {
   // по настоящим позициям: бумажных сделок со временем станет заметно больше, и они не
   // должны заглушать сообщения о реальных деньгах.
   paperTelegram: true,
+  // Утренняя сводка в Telegram: что в рынке, что близко к входу, риск, итог вчерашнего дня.
+  morningDigest: true,
+  digestHour: 8,           // по Москве; шлётся при первом проходе робота после этого часа
+  // Кнопки «Вошёл / Пропустил» под бумажными сигналами и сверка с позициями в Т-Банке.
+  paperDecisionButtons: false, // включается после обновления бота в Telegram
+  brokerActionSync: true,      // робот сам определяет ваши входы/выходы по позициям у брокера
 };
 
 // Здесь раньше была функция isTradingHours: будни, 10:00-18:40 МСК, одинаково для всех
@@ -299,11 +305,64 @@ export function paperRepeatKeyboard(paperId) {
   return { inline_keyboard: [[{ text: '🔁 Повторить реально', callback_data: `x|o|${paperId}` }]] };
 }
 
+// Причины пропуска БУМАЖНОГО сигнала — свои: «Держу до цели» здесь не имеет смысла (позиции нет).
+export const PAPER_SKIP_REASONS = [
+  { code: 'r1', label: 'Жду уровень' },
+  { code: 'r2', label: 'Новости' },
+  { code: 'r3', label: 'Не успел' },
+  { code: 'r4', label: 'Не поверил сигналу' },
+  { code: 'r6', label: 'Лимит риска исчерпан' },
+  { code: 'r7', label: 'Не моя ситуация' },
+];
+
+// У решений по бумажным сделкам в идентификаторе стоит префикс «P:» — раннер по нему понимает,
+// что писать надо в paperTrades, а не в trades.
+export const PAPER_ID_PREFIX = 'P:';
+export const isPaperRef = (id) => String(id || '').startsWith(PAPER_ID_PREFIX);
+export const paperRef = (id) => `${PAPER_ID_PREFIX}${id}`;
+
 /** Второй экран: выбор причины после нажатия «Пропустил». */
 export function buildReasonKeyboard(tradeId) {
+  const list = isPaperRef(tradeId) ? PAPER_SKIP_REASONS : SKIP_REASONS;
   return {
-    inline_keyboard: SKIP_REASONS.map((r) => ([{ text: r.label, callback_data: `d|${tradeId}|${r.code}` }])),
+    inline_keyboard: list.map((r) => ([{ text: r.label, callback_data: `d|${tradeId}|${r.code}` }])),
   };
+}
+
+/**
+ * Кнопки под сигналом бумажной сделки: что СДЕЛАЛИ ВЫ. Это не решение по сигналу робота (бумажную
+ * сделку ведёт он сам), а отметка вашего действия — чтобы система знала, по каким сигналам вы
+ * реально торговали, и сравнивала вас с собой честно.
+ *
+ * Показывается только когда включено в Настройках (alertPrefs.paperDecisionButtons): нажатия
+ * разбирает воркер Telegram, и до его обновления новые коды он поймёт неверно.
+ */
+export function paperDecisionKeyboard(paperId, { repeat = true } = {}) {
+  if (!paperId) return null;
+  const ref = paperRef(paperId);
+  const rows = [[
+    { text: '✅ Вошёл', callback_data: `d|${ref}|en` },
+    { text: '⏭ Пропустил', callback_data: `d|${ref}|sk` },
+  ]];
+  if (repeat) rows.push([{ text: '🔁 Повторить реально', callback_data: `x|o|${paperId}` }]);
+  return { inline_keyboard: rows };
+}
+
+/** Клавиатура под вопросом «по какой стратегии вы вошли?» (неоднозначное определение по брокеру). */
+export function ambiguousEntryKeyboard(candidates) {
+  const rows = (candidates || []).slice(0, 4).map((c) => ([{
+    text: `✅ «${String(c.strategy || 'без названия').slice(0, 28)}»`,
+    callback_data: `d|${paperRef(c.paperId)}|en`,
+  }]));
+  const first = (candidates || [])[0];
+  if (first) rows.push([{ text: '✖ Ни по одной', callback_data: `d|${paperRef(first.paperId)}|nt` }]);
+  return { inline_keyboard: rows };
+}
+
+/** «Система увидела позицию — это не по этому сигналу?» */
+export function notThisKeyboard(paperId) {
+  if (!paperId) return null;
+  return { inline_keyboard: [[{ text: '✖ Это не по этому сигналу', callback_data: `d|${paperRef(paperId)}|nt` }]] };
 }
 
 /**
@@ -315,6 +374,134 @@ export function describeDecision(code) {
   if (code === 'fp') return { action: 'fixed_partial', label: 'Снял часть' };
   if (code === 'fa') return { action: 'closed_full', label: 'Закрыл целиком' };
   if (code === 'sn4') return { action: 'snoozed', label: 'Тихий режим на 4 часа' };
-  const reason = SKIP_REASONS.find((r) => r.code === code);
+  if (code === 'en') return { action: 'entered', label: 'Вошёл по сигналу' };
+  if (code === 'nt') return { action: 'not_this', label: 'Это не по этому сигналу' };
+  const reason = SKIP_REASONS.find((r) => r.code === code) || PAPER_SKIP_REASONS.find((r) => r.code === code);
   return { action: 'skipped', label: reason?.label || 'Ничего не делал' };
+}
+
+// ----------------------------------------------------------------------------------------------
+// Карточка сигнала и утренняя сводка для Telegram
+// ----------------------------------------------------------------------------------------------
+
+const fmtNum = (v, d = 2) => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '—';
+  return n.toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: d });
+};
+const fmtRubS = (v) => `${Math.round(Number(v) || 0).toLocaleString('ru-RU')} ₽`;
+const fmtSigned = (v) => (v == null ? '—' : `${v >= 0 ? '+' : '−'}${fmtNum(Math.abs(v), 1)}%`);
+
+/**
+ * Подробная карточка бумажного сигнала. Всё, что нужно, чтобы решить «вхожу / пропускаю» не открывая
+ * приложение: стратегия и таймфрейм, вход/стоп/цель в рублях и процентах, соотношение прибыли к
+ * риску, объём и риск в процентах депозита, какие условия стратегии сошлись, а какие нет.
+ *
+ * @param {object} a
+ * @param {object} a.trade — бумажная сделка (ticker, direction, entryPrice, stopLoss, takeProfit, volume, entryStrategyName, entryTimeframe)
+ * @param {string} [a.caption] — «краткосрок · Ч1»
+ * @param {Array<{label:string, passed:boolean}>} [a.conditions]
+ * @param {number|null} [a.riskRub]
+ * @param {number|null} [a.riskPct] — % от капитала стратегии/депозита
+ * @param {string|null} [a.signalBar] — дата свечи, на закрытии которой сошлись условия (строка)
+ */
+export function formatPaperSignalCard({ trade, caption = '', conditions = [], riskRub = null, riskPct = null, signalBar = null }) {
+  const dir = trade.direction === 'short' ? 'шорт' : 'лонг';
+  const strat = trade.entryStrategyName ? `«${escapeHtml(trade.entryStrategyName)}»` : 'стратегия без названия';
+  const head = `📄 <b>Бумажная · ${strat} — ${escapeHtml(trade.ticker)} ${dir}, сигнал</b>`;
+  const sub = [caption, signalBar ? `свеча ${signalBar}` : null].filter(Boolean).map(escapeHtml).join(' · ');
+
+  const entry = Number(trade.entryPrice);
+  const stop = trade.stopLoss != null ? Number(trade.stopLoss) : null;
+  const take = trade.takeProfit != null ? Number(trade.takeProfit) : null;
+  const sign = trade.direction === 'short' ? -1 : 1;
+  const pctTo = (p) => (entry > 0 && p != null ? ((p - entry) / entry) * 100 * sign : null);
+
+  const lines = [];
+  const parts = [`<b>Вход</b> ${fmtNum(entry)}`];
+  if (stop != null) parts.push(`<b>Стоп</b> ${fmtNum(stop)} (${fmtSigned(pctTo(stop))})`);
+  else parts.push('<b>Стопа нет</b> — ведёт следящий выход');
+  if (take != null) parts.push(`<b>Цель</b> ${fmtNum(take)} (${fmtSigned(pctTo(take))})`);
+  lines.push(parts.join('  ·  '));
+
+  if (stop != null && take != null && Math.abs(entry - stop) > 0) {
+    lines.push(`Прибыль к риску: ${fmtNum(Math.abs(take - entry) / Math.abs(entry - stop), 1)} : 1`);
+  }
+  const vol = [`Объём ${fmtNum(trade.volume, 0)}`];
+  if (riskRub != null) vol.push(`риск ≈ ${fmtRubS(riskRub)}${riskPct != null ? ` (${fmtNum(riskPct, 1)}% капитала)` : ''}`);
+  lines.push(vol.join(' · '));
+
+  const passed = conditions.filter((c) => c.passed).length;
+  let cond = '';
+  if (conditions.length) {
+    cond = `\n\n<b>Условия стратегии: ${passed} из ${conditions.length}</b>\n`
+      + conditions.slice(0, 10).map((c) => `${c.passed ? '✅' : '▫️'} ${escapeHtml(c.label)}`).join('\n');
+  } else if (trade.entryPassed != null && trade.entryTotal != null) {
+    cond = `\n\n<b>Условия стратегии: ${trade.entryPassed} из ${trade.entryTotal}</b>`;
+  }
+
+  const tail = trade.riskTooBig
+    ? '\n\n<i>Объём условный: на эту сделку при текущем депозите денег бы не хватило.</i>'
+    : '';
+  return `${head}${sub ? `\n<i>${sub}</i>` : ''}\n\n${lines.join('\n')}${cond}${tail}`;
+}
+
+const WEEKDAYS = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
+const MONTHS_G = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+
+/**
+ * Утренняя сводка. Секции без содержимого не выводятся; если пусто всё — вернёт null (слать нечего).
+ *
+ * @param {object} a
+ * @param {Date} a.date
+ * @param {Array} a.open — открытые реальные: { ticker, direction, strategy, entryPrice, stopLoss, takeProfit, days }
+ * @param {Array} a.paper — открытые бумажные: { ticker, direction, strategy, caption }
+ * @param {Array} a.near — близко к входу: { ticker, strategy, passed, total }
+ * @param {object|null} a.risk — { riskRub, riskPct, count }
+ * @param {object|null} a.yesterday — { count, pnl }
+ * @param {number} [a.pendingDecisions] — сколько бумажных сигналов ждут вашей отметки
+ */
+export function formatMorningDigest({ date, open = [], paper = [], near = [], risk = null, yesterday = null, pendingDecisions = 0 }) {
+  const has = open.length || paper.length || near.length || (yesterday && yesterday.count) || pendingDecisions;
+  if (!has) return null;
+  const d = date instanceof Date ? date : new Date(date);
+  const head = `☀️ <b>Утренняя сводка — ${WEEKDAYS[d.getDay()]}, ${d.getDate()} ${MONTHS_G[d.getMonth()]}</b>`;
+  const out = [head];
+  const dirW = (x) => (x === 'short' ? 'шорт' : 'лонг');
+
+  if (open.length) {
+    out.push(`\n<b>В рынке (${open.length})</b>`);
+    for (const t of open.slice(0, 8)) {
+      const bits = [`вход ${fmtNum(t.entryPrice)}`];
+      if (t.stopLoss != null) bits.push(`стоп ${fmtNum(t.stopLoss)}`);
+      if (t.takeProfit != null) bits.push(`цель ${fmtNum(t.takeProfit)}`);
+      if (t.days != null) bits.push(`${fmtNum(t.days, 0)} дн.`);
+      out.push(`• ${escapeHtml(t.ticker)} ${dirW(t.direction)}${t.strategy ? ` · «${escapeHtml(t.strategy)}»` : ''} — ${bits.join(', ')}`);
+    }
+    if (open.length > 8) out.push(`… и ещё ${open.length - 8}`);
+  }
+  if (risk && risk.count) {
+    out.push(`\n<b>Риск открытых позиций:</b> ${fmtRubS(risk.riskRub)}${risk.riskPct != null ? ` (${fmtNum(risk.riskPct, 1)}% депозита)` : ''}`);
+  }
+  if (paper.length) {
+    out.push(`\n<b>Бумажные сделки (${paper.length})</b>`);
+    for (const t of paper.slice(0, 8)) {
+      out.push(`• ${escapeHtml(t.ticker)} ${dirW(t.direction)} · «${escapeHtml(t.strategy || 'без названия')}»${t.caption ? ` (${escapeHtml(t.caption)})` : ''}`);
+    }
+    if (paper.length > 8) out.push(`… и ещё ${paper.length - 8}`);
+  }
+  if (pendingDecisions > 0) {
+    const word = pendingDecisions === 1 ? 'сигнал' : pendingDecisions < 5 ? 'сигнала' : 'сигналов';
+    out.push(`\n<b>Ждут вашей отметки:</b> ${pendingDecisions} ${word} — вошли или пропустили (Сопровождение).`);
+  }
+  if (near.length) {
+    out.push('\n<b>Близко к входу</b>');
+    for (const n of near.slice(0, 6)) {
+      out.push(`• ${escapeHtml(n.ticker)} — ${n.passed} из ${n.total} условий${n.strategy ? ` («${escapeHtml(n.strategy)}»)` : ''}`);
+    }
+  }
+  if (yesterday && yesterday.count) {
+    out.push(`\n<b>Вчера:</b> закрыто ${yesterday.count}, итог ${yesterday.pnl >= 0 ? '+' : '−'}${fmtRubS(Math.abs(yesterday.pnl))}`);
+  }
+  return out.join('\n');
 }

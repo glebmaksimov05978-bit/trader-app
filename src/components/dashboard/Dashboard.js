@@ -1,4 +1,5 @@
 // src/components/dashboard/Dashboard.js
+import { userLevelsForChart } from '../../services/chartDrawings';
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../../context/AuthContext';
@@ -100,7 +101,10 @@ export default function Dashboard() {
       const marketContext = computeMarketContextAtEntry(candles, now);
       if (!indicators) throw new Error('Нет исторических свечей по этому тикеру');
       const result = activeStrategy?.conditions?.length
-        ? evaluateStrategy(activeStrategy, { indicators, patterns, marketContext, plan: {} })
+        ? evaluateStrategy(activeStrategy, {
+          indicators, patterns, marketContext, plan: {},
+          userLevels: userLevelsForChart(userProfile, item.ticker, item.timeframe || 'D1', candles),
+        })
         : null;
       setRadarState((s) => ({ ...s, [item.id]: { loading: false, result, error: null } }));
       return result;

@@ -73,10 +73,15 @@ const { fetchDailyCandles, TIMEFRAMES, DEFAULT_TIMEFRAME } = await import(candle
 const { shouldWatchNow, marketPhase, anyMarketOpen } = await import(scheduleUrl);
 const { fetchActiveFutureCard, fetchStockLot } = await import(specsUrl);
 const { entryGuard, DEFAULT_MIN_DAYS_TO_EXPIRY } = await import(rollUrl);
-const { formatPaperForTelegram, paperTelegramAllowed, paperRepeatKeyboard } = await import(alertsUrl);
+const { formatPaperForTelegram, paperTelegramAllowed, paperRepeatKeyboard, formatPaperSignalCard, paperDecisionKeyboard } = await import(alertsUrl);
+// Для карточки сигнала: список условий стратегии, риск позиции в рублях, подпись «горизонт · таймфрейм».
+const { evaluateStrategy } = await import(pathToFileURL(path.join(tmp, 'strategy.js')).href);
+const { positionRisk } = await import(esmify(path.join(repoRoot, 'src/services/analytics/openRisk.js')));
 // Паспорт стратегии (горизонт, рабочий таймфрейм, «на сопровождении», наблюдение) — без зависимостей.
 const metaUrl = esmify(path.join(repoRoot, 'src/services/analytics/strategyMeta.js'));
-const { paperStrategyIdsFor, timeframeFor } = await import(metaUrl);
+// Свои линии трейдера с графика — для условия «цена у моей линии» (модуль без зависимостей).
+const { userLevelsForChart } = await import(esmify(path.join(repoRoot, 'src/services/chartDrawings.js')));
+const { paperStrategyIdsFor, timeframeFor, captionOf } = await import(metaUrl);
 
 const DRY = process.argv.includes('--dry');
 const FORCE = process.argv.includes('--force') || process.env.FORCE_CHECK === 'true';
@@ -216,6 +221,8 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades, strat
   const entryBar = candles[candles.length - 1];
 
   const baseCtx = buildCtx(candles, signalBar.date, undefined, tf.minutes);
+  // Линии считаются на момент последней ЗАКРЫТОЙ свечи (сигнальной), как и остальные условия.
+  baseCtx.userLevels = userLevelsForChart(profile, item.ticker, tfKey, candles.slice(0, -1));
   if (!baseCtx.indicators) return { skipped: 'не хватает истории для индикаторов' };
 
   const long = readinessPercent(strategy, { ...baseCtx, direction: 'long' });
@@ -335,16 +342,26 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades, strat
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   });
   if (paperTelegramAllowed(profile.alertPrefs, paper.entryStrategyId, profile.strategies)) {
-    await notifyPaper(formatPaperForTelegram({
-      title: `${paper.ticker} ${paper.direction === 'short' ? 'шорт' : 'лонг'} — открыта`,
-      lines: [
-        `Вход ${paper.entryPrice}, объём ${paper.volume}.`,
-        paper.stopLoss != null ? `Стоп ${paper.stopLoss}.` : 'Стопа нет — закрывать будет следящий выход.',
-        paper.takeProfit != null ? `Цель ${paper.takeProfit}.` : null,
-        `Условия стратегии «${paper.entryStrategyName || 'без названия'}»: ${paper.entryPassed} из ${paper.entryTotal}.`,
-      ],
+    // Подробная карточка: стратегия и таймфрейм, вход/стоп/цель в процентах, прибыль к риску,
+    // объём и риск в рублях и процентах капитала, какие условия сошлись и какие нет.
+    let conditions = [];
+    try {
+      conditions = evaluateStrategy(strategy, { ...baseCtx, direction })
+        .results.filter((r) => !r.na).map((r) => ({ label: r.label, passed: !!r.passed }));
+    } catch { /* карточка обойдётся счётом из записи сделки */ }
+    const risk = positionRisk({ ...paper, id: ref.id, stopLoss: sizingStopPrice }, 'paper');
+    const riskRub = risk?.riskRub != null ? Math.round(risk.riskRub) : null;
+    const riskPct = riskRub != null && capital > 0 ? (riskRub / capital) * 100 : null;
+    // Кнопки «Вошёл / Пропустил» — только когда включены в Настройках (бот должен быть обновлён).
+    const keyboard = profile.alertPrefs?.paperDecisionButtons === true
+      ? paperDecisionKeyboard(ref.id)
+      : paperRepeatKeyboard(ref.id);
+    await notifyPaper(formatPaperSignalCard({
       trade: paper,
-    }), paperRepeatKeyboard(ref.id));
+      caption: captionOf({ ...strategy, timeframe: strategy.timeframe || tfKey }) || (tfKey ? tfKey : ''),
+      conditions, riskRub, riskPct,
+      signalBar: new Date(signalBar.date).toISOString().slice(0, 16).replace('T', ' '),
+    }), keyboard);
   }
   return { opened: paper };
 }

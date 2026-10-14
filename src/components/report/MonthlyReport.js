@@ -13,6 +13,7 @@ import { getPaperTrades } from '../../services/paperTrades';
 import { getActiveStrategy, getStrategies } from '../../services/analytics/strategy';
 import { buildStrategyComparison, comparisonNote } from '../../services/analytics/strategyCompare';
 import { buildOpenRisk } from '../../services/analytics/openRisk';
+import { buildDecisionJournal } from '../../services/analytics/decisionJournal';
 import { buildMonthlyReport, reportVerdict } from '../../services/analytics/monthlyReport';
 import { buildPeriodReport, listPeriods, SCOPES } from '../../services/analytics/periodReport';
 import { buildEntryStats } from '../../services/analytics/entryStats';
@@ -74,6 +75,10 @@ export default function MonthlyReport() {
       items: rep.items, paperTrades: paper, realTrades: real, strategies, type, key,
     });
   }, [rep, paper, real, strategies, type, key]);
+
+  // Журнал решений: что вы делали с бумажными сигналами и чего это стоило.
+  const journal = useMemo(() => (key ? buildDecisionJournal({ paperTrades: paper, realTrades: real, type, key }) : null),
+    [paper, real, type, key]);
 
   // Общий риск открытых позиций — на сейчас, а не за период: он про то, что в рынке прямо сейчас.
   const openRisk = useMemo(() => buildOpenRisk({
@@ -150,6 +155,8 @@ export default function MonthlyReport() {
           </div>
 
           <ComparisonCard cmp={comparison} label={rep.label} />
+
+          <DecisionCard j={journal} label={rep.label} />
 
           <div className="mr-two">
             <div className="card mr-block">
@@ -274,6 +281,68 @@ function OpenRiskCard({ risk }) {
       )}
       {risk.paper.count > 0 && (
         <p className="mr-note">Бумажных открыто {risk.paper.count}: условный риск {formatCurrency(Math.round(risk.paper.riskRub))} — в реальный риск не входит.</p>
+      )}
+    </div>
+  );
+}
+
+// ---------- журнал решений ----------
+function DecisionCard({ j, label }) {
+  if (!j || !j.hasAnything) return null;
+  const avgTxt = (b) => (b.count ? `${money(b.avg)} за сделку · ${Math.round(b.winrate)}% прибыльных` : '—');
+  return (
+    <div className="card mr-block">
+      <div className="section-title">Журнал решений</div>
+      {j.signals > 0 ? (
+        <>
+          <p className="mr-note" style={{ marginTop: 0 }}>
+            Сигналов за {label.toLowerCase()}: <b>{j.signals}</b>. Отмечено вами или по данным Т-Банка: <b>{j.marked}</b>
+            {j.unmarkedSignals > 0 && <>, без отметки: <b>{j.unmarkedSignals}</b></>}
+            {j.waiting > 0 && <> · сейчас ждут решения: <b>{j.waiting}</b></>}.
+          </p>
+          <table className="table table-compact">
+            <thead><tr><th>Что вы сделали</th><th>Закрытых сигналов</th><th>Итог системы по ним</th><th>В среднем</th></tr></thead>
+            <tbody>
+              <tr><td style={{ fontWeight: 600 }}>Вошли</td><td>{j.followed.count}</td>
+                <td className={`mr-num ${sgn(j.followed.pnl)}`}>{j.followed.count ? money(j.followed.pnl) : '—'}</td><td>{avgTxt(j.followed)}</td></tr>
+              <tr><td style={{ fontWeight: 600 }}>Пропустили</td><td>{j.skipped.count}</td>
+                <td className={`mr-num ${sgn(j.skipped.pnl)}`}>{j.skipped.count ? money(j.skipped.pnl) : '—'}</td><td>{avgTxt(j.skipped)}</td></tr>
+              <tr><td style={{ fontWeight: 600 }}>Без отметки</td><td>{j.unmarked.count}</td>
+                <td className={`mr-num ${sgn(j.unmarked.pnl)}`}>{j.unmarked.count ? money(j.unmarked.pnl) : '—'}</td><td>{avgTxt(j.unmarked)}</td></tr>
+            </tbody>
+          </table>
+          <p className="mr-note"><b>{j.verdict.enough ? 'Вывод: ' : ''}</b>{j.verdict.text}</p>
+          {j.reasons.length > 0 && (
+            <>
+              <div className="mr-cmp-sub">Причины пропусков</div>
+              <table className="table table-compact">
+                <thead><tr><th>Причина</th><th>Сигналов</th><th style={{ textAlign: 'right' }}>Чего стоил пропуск</th></tr></thead>
+                <tbody>
+                  {j.reasons.map((r) => (
+                    <tr key={r.reason}><td style={{ fontWeight: 600 }}>{r.reason}</td><td>{r.count}</td>
+                      <td className={`mr-num ${sgn(-r.pnl)}`}>{r.pnl > 0 ? `упущено ${money(r.pnl)}` : r.pnl < 0 ? `сэкономлено ${money(-r.pnl)}` : '—'}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="mr-note">Цифры — результат системы по пропущенным сигналам, а не ваш: вы этих денег не получили и не потеряли.</p>
+            </>
+          )}
+        </>
+      ) : <p className="mr-note" style={{ marginTop: 0 }}>За период не было бумажных сигналов.</p>}
+
+      {j.entryKinds.length > 0 && (
+        <>
+          <div className="mr-cmp-sub">Мои реальные входы: по сигналу или по своему решению</div>
+          <table className="table table-compact">
+            <thead><tr><th>Причина входа</th><th>Сделок</th><th>Прибыльных</th><th style={{ textAlign: 'right' }}>Итог</th></tr></thead>
+            <tbody>
+              {j.entryKinds.map((k) => (
+                <tr key={k.kind}><td style={{ fontWeight: 600 }}>{k.label}</td><td>{k.count}</td><td>{Math.round(k.winrate)}%</td>
+                  <td className={`mr-num ${sgn(k.pnl)}`}>{money(k.pnl)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </>
       )}
     </div>
   );

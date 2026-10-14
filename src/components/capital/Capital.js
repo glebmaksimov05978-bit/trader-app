@@ -27,7 +27,7 @@ import Icon from '../shared/Icon';
 const CONDITION_GROUPS = [
   { id: 'indicators', label: 'Индикаторы (RSI / MACD)', ids: ['rsi_below', 'rsi_above', 'macd_positive', 'macd_negative'], color: '#3b82f6' },
   { id: 'ema', label: 'Скользящие средние (EMA)', ids: ['price_above_ema200', 'price_below_ema200'], color: '#f59e0b' },
-  { id: 'levels', label: 'Уровни и полосы Боллинджера', ids: ['near_support', 'near_resistance', 'bollinger_lower', 'bollinger_upper'], color: '#10b981' },
+  { id: 'levels', label: 'Уровни и полосы Боллинджера', ids: ['near_support', 'near_resistance', 'near_my_line', 'bollinger_lower', 'bollinger_upper'], color: '#10b981' },
   { id: 'patterns', label: 'Фигуры теханализа', ids: ['pattern_confirmed'], color: '#a855f7' },
   { id: 'context', label: 'Рыночный контекст и объём', ids: ['volume_above_avg', 'market_trending', 'market_sideways', 'volatility_not_high'], color: '#06b6d4' },
   { id: 'plan', label: 'Условия плана (из Калькулятора)', ids: ['min_rr', 'max_risk_percent', 'max_margin_usage'], color: '#ef4444' },

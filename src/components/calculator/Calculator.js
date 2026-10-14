@@ -26,6 +26,9 @@ import TechnicalAnalysisBlock, { PATTERN_LABELS, InfoTip } from '../shared/Techn
 import CandleChart from '../shared/CandleChart';
 import StrategyChecklist from '../shared/StrategyChecklist';
 import toast from 'react-hot-toast';
+import EntryDecisionModal from './EntryDecisionModal';
+import { userLevelsForChart } from '../../services/chartDrawings';
+import { getOpenPaperTrades } from '../../services/paperTrades';
 import './Calculator.css';
 
 import Icon from '../shared/Icon';
@@ -121,6 +124,8 @@ export default function Calculator() {
   const [stopIsSizingOnly, setStopIsSizingOnly] = useState(draft?.stopIsSizingOnly || false);
   const [journalAnim, setJournalAnim] = useState(false);
   const [showJournalModal, setShowJournalModal] = useState(false);
+  // Вопрос «почему вошли?» после сохранения сделки: { tradeId, ticker, direction, papers } или null.
+  const [decisionAsk, setDecisionAsk] = useState(null);
   const [showTinkoffModal, setShowTinkoffModal] = useState(false);
   const [showAtrModal, setShowAtrModal] = useState(false);
   const [tinkoffCopied, setTinkoffCopied] = useState('');
@@ -394,6 +399,8 @@ export default function Calculator() {
       indicators: taState.data.indicators,
       patterns: taState.data.patterns,
       marketContext: taState.data.marketContext,
+      // Свои линии с графика этого инструмента и таймфрейма — для условия «цена у моей линии».
+      userLevels: userLevelsForChart(userProfile, form.ticker, taTimeframe, taState.data.candles),
       // The trader's planned entry (limit price) and direction — price-relative
       // conditions judge the plan, not the current quote, and direction-bound
       // conditions skip the opposite side. See evaluateStrategy.
@@ -407,7 +414,7 @@ export default function Calculator() {
       manualChecks,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasAnyConditions, userProfile?.strategy, userProfile?.strategies, userProfile?.activeStrategyId, taState.data, displayResult, form.riskPercent, form.entryPrice, activeDirection, manualChecks]);
+  }, [hasAnyConditions, userProfile?.strategy, userProfile?.strategies, userProfile?.activeStrategyId, userProfile?.chartDrawings, taState.data, displayResult, form.riskPercent, form.entryPrice, activeDirection, manualChecks]);
 
   // Rounded to 1 decimal — same precision shown on screen (formatNumber(rr,1)) — so the
   // big number's color always agrees with the badge below it (see RR badge comment).
@@ -792,7 +799,9 @@ export default function Calculator() {
       const openedAtDate = overrides.openedAtDate || new Date(openedAt);
       const entryPriceFinal = overrides.entryPrice ?? parseFloat(form.entryPrice);
       const volumeFinal = overrides.volume ?? effectiveContracts;
-      await addTrade(user.uid, {
+      const savedTickerForAsk = (form.ticker || instrumentInfo?.ticker || '').toUpperCase();
+      const savedDirForAsk = activeDirection || displayResult.direction;
+      const savedRef = await addTrade(user.uid, {
         ticker: form.ticker || instrumentInfo?.ticker || '',
         date: openedAtDate.toISOString().split('T')[0],
         openedAt: openedAtDate.toISOString(),
@@ -869,6 +878,15 @@ export default function Calculator() {
           ? `Заявка исполнена и записана в Журнал: ${volumeFinal} × ${entryPriceFinal}`
           : 'Сделка открыта в журнале');
       setShowJournalModal(false);
+      // Журнал решений: короткий вопрос «почему вошли?». Выключается в Настройках; вместе с ним
+      // подгружаем открытые бумажные сигналы по этому тикеру и направлению — вход можно привязать к ним.
+      if (userProfile?.decisionPrompt !== false && savedRef?.id && overrides.status !== 'pending') {
+        getOpenPaperTrades(user.uid).catch(() => []).then((list) => {
+          const papers = (list || []).filter((p) => String(p.ticker || '').toUpperCase() === savedTickerForAsk
+            && (p.direction === 'short' ? 'short' : 'long') === savedDirForAsk);
+          setDecisionAsk({ tradeId: savedRef.id, ticker: savedTickerForAsk, direction: savedDirForAsk, papers });
+        });
+      }
       setJournalExtra({ setup: '', emotion: '', notes: '' });
       // The draft is meant to survive navigating away mid-plan (Журнал and back) — not
       // to outlive the plan actually being acted on. Leaving yesterday's ticker/SL/TP
@@ -1559,6 +1577,7 @@ export default function Calculator() {
           </div>
           {taState.data?.candles?.length > 0 && (
             <CandleChart
+              drawingTools
               candles={taState.data.candles}
               patterns={taState.data.patterns}
               ticker={form.ticker.toUpperCase()}
@@ -1753,6 +1772,8 @@ export default function Calculator() {
           </div>
         </div>
       )}
+
+      <EntryDecisionModal ask={decisionAsk} onClose={() => setDecisionAsk(null)} />
 
       {/* Модалка "В журнал" */}
       {showJournalModal && (

@@ -159,6 +159,26 @@ export const CONDITION_CATALOG = [
       return { passed: distPct <= param, detail: `Ближайшее сопротивление ${nearest.price.toFixed(2)}, ${distPct.toFixed(1)}% от цены` };
     },
   },
+  // Свои линии с графика (Сопровождение/Калькулятор → инструменты рисования): горизонтали, лучи,
+  // трендовые линии, зоны и уровни Фибоначчи, которые трейдер нарисовал сам. Вызывающий кладёт в
+  // контекст готовый список `userLevels` (см. chartDrawings.userLevelsFrom); в бэктесте его нет,
+  // и условие просто не учитывается — исторических линий трейдера у нас нет.
+  {
+    id: 'near_my_line', category: 'market', label: 'Цена у моей линии на графике (в пределах X%)',
+    paramLabel: 'В пределах, %', defaultParam: 0.5,
+    evaluate: (ctx, param) => {
+      const price = refPrice(ctx);
+      if (price == null || price === 0) return { na: true };
+      const levels = (ctx.userLevels || []).filter((l) => l && Number.isFinite(l.price) && l.price > 0);
+      if (!levels.length) return { na: true, detail: 'На графике этого инструмента нет нарисованных линий' };
+      const nearest = levels.reduce((best, l) => (Math.abs(price - l.price) < Math.abs(price - best.price) ? l : best));
+      const distPct = (Math.abs(price - nearest.price) / price) * 100;
+      return {
+        passed: distPct <= param,
+        detail: `Ближайшая ваша линия${nearest.label ? ` (${nearest.label})` : ''} — ${nearest.price.toFixed(2)}, ${distPct.toFixed(1)}% от цены`,
+      };
+    },
+  },
   {
     id: 'bollinger_lower', category: 'market', label: 'Цена у нижней полосы Боллинджера',
     paramLabel: 'Позиция в полосах (0 = нижняя, 1 = верхняя) не выше', defaultParam: 0.1,

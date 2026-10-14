@@ -11,6 +11,14 @@ import { createPortal } from 'react-dom';
 import { createChart, CrosshairMode, CandlestickSeries, LineSeries, AreaSeries, HistogramSeries, BaselineSeries, createSeriesMarkers } from 'lightweight-charts';
 import { ema, bollingerSeries, rsi, macd } from '../../services/analytics/indicators';
 import { TIMEFRAMES } from '../../services/marketData/candles';
+import { useAuth } from '../../context/AuthContext';
+import toast from 'react-hot-toast';
+import {
+  drawingsFor, withDrawings, newDrawing, addDrawing, removeDrawing, rulerStats, rulerText, snapPrice, atrOf,
+  TWO_POINT, PALETTE, TOOL_LABELS,
+} from '../../services/chartDrawings';
+import { DrawingsPrimitive } from './chartDrawingsPrimitive';
+import ChartDrawingToolbar from './ChartDrawingToolbar';
 import './CandleChart.css';
 
 // `tradeOnly` chips only make sense on a real trade (Journal) — hidden in Calculator/
@@ -262,6 +270,7 @@ export default function CandleChart({
   trades,      // Бэктест: [{ direction, entryDate, exitDate, status, pnlPct }, ...] — ALL trades on one chart, overrides legs/entryMarker/exitMarker
   systemMarkers, // [{ date, text }] — где система (движок) закрыла бы позицию; только у открытых сделок в Сопровождении
   layerPreset, // ['sr','rsi',…] | null — «призма» стратегии: ровно эти индикаторные слои включены; null — как выбрал трейдер
+  drawingTools = false, // true — панель «Рисование» и сохранение рисунков по паре «тикер + таймфрейм» в профиле
   height,      // px, необязательный — переопределяет высоту графика вне полноэкранного режима (по умолчанию 300 + панели RSI/MACD)
 }) {
   const containerRef = useRef(null);
@@ -270,6 +279,46 @@ export default function CandleChart({
   const seriesRef = useRef({});
   const fillsByBarRef = useRef(new Map());
   const isTrade = entryPrice != null;
+
+  // ---- рисование ----
+  const { userProfile, updateUserProfile } = useAuth();
+  const primRef = useRef(null);
+  const [drawings, setDrawings] = useState(() => (drawingTools ? drawingsFor(userProfile, ticker, timeframe) : []));
+  const [drawOpen, setDrawOpen] = useState(false);
+  const [tool, setTool] = useState('cursor');
+  const [drawColor, setDrawColor] = useState(PALETTE[0]);
+  const [magnet, setMagnet] = useState(true);
+  const [textLabel, setTextLabel] = useState('');
+  const [selectedId, setSelectedId] = useState(null);
+  const [draftPoint, setDraftPoint] = useState(null); // первая точка двухточечного инструмента
+  const [rulerDone, setRulerDone] = useState(null);   // готовая линейка (до следующего клика)
+  // Подписка на клик создаётся один раз — актуальное состояние читает через ref (см. ниже).
+  const drawRef = useRef({});
+
+  // Рисунки привязаны к паре «инструмент + таймфрейм»: при смене графика подгружаем свои.
+  useEffect(() => {
+    if (!drawingTools) return;
+    setDrawings(drawingsFor(userProfile, ticker, timeframe));
+    setSelectedId(null); setDraftPoint(null); setRulerDone(null);
+    // userProfile намеренно не в зависимостях: локальная копия — источник правды после загрузки,
+    // иначе каждый сохранённый рисунок перезапускал бы загрузку.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawingTools, ticker, timeframe]);
+
+  const persistDrawings = async (list) => {
+    const next = withDrawings(userProfile, ticker, timeframe, list);
+    if (!next) { toast.error('Слишком много графиков с рисунками — сотрите ненужные'); return; }
+    try {
+      await updateUserProfile({ chartDrawings: next });
+    } catch (e) {
+      toast.error('Рисунок не сохранился: ' + (e.message || 'ошибка'));
+    }
+  };
+  const commitDrawings = (list) => { setDrawings(list); persistDrawings(list); };
+  drawRef.current = {
+    tool, color: drawColor, magnet, label: textLabel, draft: draftPoint, drawings, selectedId, ticker, timeframe,
+    commit: commitDrawings,
+  };
 
   const [layers, setLayers] = useState(() =>
     Object.fromEntries(LAYER_DEFS.map((l) => [l.key, l.defaultOn]))
@@ -367,7 +416,90 @@ export default function CandleChart({
     };
     chart.subscribeCrosshairMove(onMove);
 
+    // ---- рисование: примитив на ряду свечей, клик и предпросмотр ----
+    let onDrawClick = null, onDrawMove = null;
+    if (drawingTools) {
+      const prim = new DrawingsPrimitive();
+      seriesRef.current.candles.attachPrimitive(prim);
+      primRef.current = prim;
+
+      // Точка графика из события: цена (с магнитом к свече) и время (к центру бара, если магнит).
+      const pointFrom = (param) => {
+        if (!param?.point) return null;
+        const st = drawRef.current;
+        const raw = prim.pointAt(param.point.x, param.point.y);
+        if (!raw) return null;
+        let { time, price } = raw;
+        if (st.magnet) {
+          const ts = prim._s.times;
+          const l = chart.timeScale().coordinateToLogical(param.point.x);
+          if (l != null && ts.length) {
+            const idx = Math.max(0, Math.min(ts.length - 1, Math.round(l)));
+            time = ts[idx];
+            const c = seriesRef.current.candleByTime?.get(time);
+            const y2 = prim.yToPrice(param.point.y + 10);
+            const thr = y2 != null ? Math.abs(price - Number(y2)) : 0;
+            price = snapPrice(price, c, thr);
+          }
+        }
+        return { time, price };
+      };
+
+      onDrawClick = (param) => {
+        const st = drawRef.current;
+        const pt = pointFrom(param);
+        if (!pt) return;
+        if (st.tool === 'cursor') {
+          const id = prim.hitTest(param.point.x, param.point.y);
+          setSelectedId(id);
+          setRulerDone(null);
+          return;
+        }
+        setRulerDone(null);
+        if (st.tool === 'ruler') {
+          if (!st.draft) { setDraftPoint(pt); return; }
+          setRulerDone({ p1: st.draft, p2: pt });
+          setDraftPoint(null);
+          return;
+        }
+        if (st.tool === 'hline' || st.tool === 'vline' || st.tool === 'text') {
+          if (st.tool === 'text' && !st.label.trim()) { toast('Сначала введите текст метки'); return; }
+          const d = newDrawing({ type: st.tool, p1: pt, color: st.color, label: st.label.trim() });
+          st.commit(addDrawing(st.drawings, d));
+          setSelectedId(d.id);
+          return;
+        }
+        if (TWO_POINT.has(st.tool)) {
+          if (!st.draft) { setDraftPoint(pt); return; }
+          if (st.draft.time === pt.time && st.draft.price === pt.price) return; // та же точка — игнорируем
+          const d = newDrawing({ type: st.tool, p1: st.draft, p2: pt, color: st.color });
+          st.commit(addDrawing(st.drawings, d));
+          setDraftPoint(null);
+          setSelectedId(d.id);
+        }
+      };
+
+      onDrawMove = (param) => {
+        const st = drawRef.current;
+        if (!st.draft || !param?.point) { if (prim._s.preview || prim._s.ruler) prim.setState({ preview: null, ruler: null }); return; }
+        const pt = pointFrom(param);
+        if (!pt) return;
+        if (st.tool === 'ruler') {
+          const bars = TIMEFRAMES[st.timeframe]?.minutes ? TIMEFRAMES[st.timeframe].minutes * 60 : null;
+          const stats = rulerStats({ p1: st.draft, p2: pt, atr: seriesRef.current.atr ?? null, barSeconds: bars });
+          prim.setState({ preview: null, ruler: { p1: st.draft, p2: pt, up: stats.delta >= 0, text: rulerText(stats, { priceDigits: 2 }) } });
+        } else if (TWO_POINT.has(st.tool)) {
+          prim.setState({ ruler: null, preview: { id: '__preview', type: st.tool, p1: st.draft, p2: pt, color: st.color, width: 1 } });
+        }
+      };
+      chart.subscribeClick(onDrawClick);
+      chart.subscribeCrosshairMove(onDrawMove);
+    }
+
     return () => {
+      if (onDrawClick) chart.unsubscribeClick(onDrawClick);
+      if (onDrawMove) chart.unsubscribeCrosshairMove(onDrawMove);
+      primRef.current = null;
       chart.unsubscribeCrosshairMove(onMove);
       chart.remove();
       chartRef.current = null;
@@ -383,8 +515,47 @@ export default function CandleChart({
     series.setData(candles.map((c) => ({
       time: toChartTime(c.date), open: c.open, high: c.high, low: c.low, close: c.close,
     })));
+    // Для рисования: свеча по времени бара (магнит) и ATR (линейка).
+    seriesRef.current.candleByTime = new Map(candles.map((c) => [toChartTime(c.date), c]));
+    seriesRef.current.atr = atrOf(candles, 14);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [candles]);
+
+  // Состояние слоя рисунков: список, выбранный, времена баров и линейка (когда она «застыла»).
+  useEffect(() => {
+    const prim = primRef.current;
+    if (!prim || !candles?.length) return;
+    const bars = TIMEFRAMES[timeframe]?.minutes ? TIMEFRAMES[timeframe].minutes * 60 : 86400;
+    let ruler = null;
+    if (rulerDone) {
+      const stats = rulerStats({ p1: rulerDone.p1, p2: rulerDone.p2, atr: seriesRef.current.atr ?? null, barSeconds: bars });
+      ruler = { ...rulerDone, up: stats.delta >= 0, text: rulerText(stats, { priceDigits: 2 }) };
+    }
+    prim.setState({
+      drawings, selectedId, times: candles.map((c) => toChartTime(c.date)), barSec: bars,
+      digits: candles[candles.length - 1].close < 10 ? 4 : 2,
+      ...(rulerDone || !draftPoint ? { ruler } : {}),
+      ...(!draftPoint ? { preview: null } : {}),
+    });
+  }, [drawings, selectedId, candles, timeframe, rulerDone, draftPoint]);
+
+  // Клавиши: Delete — удалить выбранное, Esc — отменить начатое и вернуться к курсору.
+  useEffect(() => {
+    if (!drawingTools || !drawOpen) return undefined;
+    const onKey = (e) => {
+      const tag = (e.target?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      if (e.key === 'Escape') { setDraftPoint(null); setRulerDone(null); setTool('cursor'); setSelectedId(null); }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId) {
+        e.preventDefault();
+        commitDrawings(removeDrawing(drawings, selectedId));
+        setSelectedId(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawingTools, drawOpen, selectedId, drawings]);
 
   // Visible range — separate from the data-load effect above because it must ALSO
   // re-run when just the selected trade changes with the SAME candle array (backtest
@@ -707,6 +878,32 @@ export default function CandleChart({
           ))}
         </div>
       </div>
+      {drawingTools && (
+        <ChartDrawingToolbar
+          open={drawOpen}
+          onToggle={() => { setDrawOpen((v) => !v); if (drawOpen) { setTool('cursor'); setDraftPoint(null); } }}
+          tool={tool}
+          onTool={(t) => { setTool(t); setDraftPoint(null); setRulerDone(null); }}
+          color={drawColor} onColor={(c) => {
+            setDrawColor(c);
+            if (selectedId) commitDrawings(drawings.map((d) => (d.id === selectedId ? { ...d, color: c } : d)));
+          }}
+          magnet={magnet} onMagnet={() => setMagnet((v) => !v)}
+          label={textLabel} onLabel={setTextLabel}
+          hasSelected={!!selectedId}
+          onDeleteSelected={() => { if (selectedId) { commitDrawings(removeDrawing(drawings, selectedId)); setSelectedId(null); } }}
+          count={drawings.length}
+          onClearAll={() => { if (drawings.length) { commitDrawings([]); setSelectedId(null); } }}
+          hint={
+            tool === 'cursor' ? 'Кликните по рисунку, чтобы выбрать его: цвет меняется сразу, Delete — удалить.'
+              : draftPoint ? `${TOOL_LABELS[tool]}: кликните по второй точке (Esc — отмена).`
+                : tool === 'ruler' ? 'Линейка: кликните по двум точкам — покажет ход в рублях, процентах, барах и ATR.'
+                  : tool === 'hline' || tool === 'vline' ? `${TOOL_LABELS[tool]}: один клик по графику.`
+                    : tool === 'text' ? 'Введите текст и кликните по графику.'
+                      : `${TOOL_LABELS[tool]}: кликните по первой точке.`
+          }
+        />
+      )}
       <div style={fullscreen ? {position:'relative', flex:1, minHeight:0} : {position:'relative'}}>
         <div ref={containerRef} style={{width:'100%', height:chartHeight}} />
         <div ref={tooltipRef} style={{

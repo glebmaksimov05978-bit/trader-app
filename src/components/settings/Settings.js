@@ -40,6 +40,10 @@ export default function Settings() {
     paperTelegram: true,
     paperStrategyIds: [], // пусто = как раньше (одна стратегия на тикер); иначе — каждая отмеченная торгует бумажно
     paperTelegramMuted: [], // стратегии, чьи бумажные сделки НЕ присылать в Telegram
+    morningDigest: true,        // утренняя сводка в Telegram
+    digestHour: '8',            // с какого часа по Москве
+    paperDecisionButtons: false, // кнопки «Вошёл / Пропустил» под бумажными сигналами
+    brokerActionSync: true,      // робот сам определяет ваши действия по позициям в Т-Банке
   });
   const [saving, setSaving] = useState(false);
   const [showToken, setShowToken] = useState(false);
@@ -64,6 +68,10 @@ export default function Settings() {
         paperTelegram: userProfile.alertPrefs?.paperTelegram !== false,
         paperStrategyIds: Array.isArray(userProfile.alertPrefs?.paperStrategyIds) ? userProfile.alertPrefs.paperStrategyIds : [],
         paperTelegramMuted: Array.isArray(userProfile.alertPrefs?.paperTelegramMuted) ? userProfile.alertPrefs.paperTelegramMuted : [],
+        morningDigest: userProfile.alertPrefs?.morningDigest !== false,
+        digestHour: String(userProfile.alertPrefs?.digestHour ?? 8),
+        paperDecisionButtons: userProfile.alertPrefs?.paperDecisionButtons === true,
+        brokerActionSync: userProfile.alertPrefs?.brokerActionSync !== false,
       }));
       // askExtra инициализируем только один раз
       if (askExtra === null) {
@@ -114,6 +122,10 @@ export default function Settings() {
           paperTelegram: form.paperTelegram,
           paperStrategyIds: form.paperStrategyIds || [],
           paperTelegramMuted: form.paperTelegramMuted || [],
+          morningDigest: form.morningDigest !== false,
+          digestHour: Math.min(11, Math.max(0, parseInt(form.digestHour, 10) || 8)),
+          paperDecisionButtons: form.paperDecisionButtons === true,
+          brokerActionSync: form.brokerActionSync !== false,
         },
       });
       toast.success('Настройки сохранены');
@@ -422,6 +434,56 @@ export default function Settings() {
           </div>
         </div>
 
+
+        <div className="card" style={{marginBottom:20}}>
+          <div className="section-title">
+            <div className="section-title-icon"><Icon name="bell" size={15} /></div>
+            Решения и сводка
+          </div>
+          <p className="text-sm text-secondary" style={{marginBottom:12, lineHeight:1.6}}>
+            Журнал решений отвечает на вопрос «где мои решения лучше системы, а где хуже»: по каждому
+            бумажному сигналу видно, вошли вы или пропустили и чего это стоило. Изменения сохраняются кнопкой «Сохранить» внизу страницы.
+          </p>
+
+          <label className="flex items-center gap-2" style={{cursor:'pointer', marginBottom:10}}>
+            <input type="checkbox" checked={userProfile?.decisionPrompt !== false}
+              onChange={async (e) => {
+                try { await updateUserProfile({ decisionPrompt: e.target.checked }); toast.success(e.target.checked ? 'После входа будем спрашивать причину' : 'Вопрос после входа выключен'); }
+                catch { toast.error('Ошибка сохранения'); }
+              }} />
+            <span>После входа в сделку в Калькуляторе спрашивать, почему вошли</span>
+          </label>
+
+          <label className="flex items-center gap-2" style={{cursor:'pointer', marginBottom:10}}>
+            <input type="checkbox" checked={form.brokerActionSync !== false}
+              onChange={(e) => set('brokerActionSync', e.target.checked)} />
+            <span>Определять мои входы и выходы по позициям в Т-Банке (только чтение)</span>
+          </label>
+
+          <label className="flex items-center gap-2" style={{cursor:'pointer', marginBottom:4}}>
+            <input type="checkbox" checked={form.paperDecisionButtons === true}
+              onChange={(e) => set('paperDecisionButtons', e.target.checked)} />
+            <span>Кнопки «Вошёл / Пропустил» под бумажными сигналами в Telegram</span>
+          </label>
+          <div className="text-xs text-muted" style={{lineHeight:1.6, marginBottom:12, marginLeft:24}}>
+            Включайте после того, как бот в Telegram обновлён (новые кнопки он понимает только в новой версии).
+          </div>
+
+          <label className="flex items-center gap-2" style={{cursor:'pointer', marginBottom:8}}>
+            <input type="checkbox" checked={form.morningDigest !== false}
+              onChange={(e) => set('morningDigest', e.target.checked)} />
+            <span>Утренняя сводка в Telegram</span>
+          </label>
+          {form.morningDigest !== false && (
+            <div className="flex items-center gap-2" style={{marginLeft:24, marginBottom:4}}>
+              <span className="text-sm text-secondary">присылать с</span>
+              <select className="input" style={{width:90}} value={form.digestHour} onChange={(e) => set('digestHour', e.target.value)}>
+                {[6,7,8,9,10,11].map((h) => <option key={h} value={String(h)}>{h}:00</option>)}
+              </select>
+              <span className="text-sm text-secondary">по Москве, один раз в день</span>
+            </div>
+          )}
+        </div>
 
         <div className="card" style={{marginBottom:20}}>
           <div className="section-title">

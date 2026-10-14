@@ -145,11 +145,24 @@ async function applyPendingDecisions(db, uid, runState) {
       } else {
         // Решение пишется в саму сделку — там же, где живёт её история, чтобы потом
         // «Сопровождение» могло показать, какие причины сколько стоили.
-        await db.collection('trades').doc(entry.tradeId).set({
-          decisions: admin.firestore.FieldValue.arrayUnion({
-            at: entry.at, action: entry.action, reason: entry.label, via: 'telegram',
-          }),
-        }, { merge: true });
+        // Идентификатор вида «P:<id>» — отметка по БУМАЖНОЙ сделке: пишем в её коллекцию и только если
+        // сделка ещё существует (иначе merge создал бы пустой документ-призрак).
+        const decision = {
+          at: entry.at, action: entry.action, reason: entry.label, via: 'telegram',
+        };
+        if (String(entry.tradeId).startsWith('P:')) {
+          const ref = db.collection('paperTrades').doc(String(entry.tradeId).slice(2));
+          const snap = await ref.get();
+          if (snap.exists) {
+            await ref.update({ decisions: admin.firestore.FieldValue.arrayUnion(decision) });
+          } else {
+            console.log(`[${uid}] бумажная сделка ${entry.tradeId} уже удалена — решение пропущено`);
+          }
+        } else {
+          await db.collection('trades').doc(entry.tradeId).set({
+            decisions: admin.firestore.FieldValue.arrayUnion(decision),
+          }, { merge: true });
+        }
       }
       await cfKv(`/values/${encodeURIComponent(name)}`, { method: 'DELETE' });
       console.log(`[${uid}] решение по ${tag}: ${entry.label}`);

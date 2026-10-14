@@ -52,6 +52,7 @@ const CONDITION_TO_SECTION = {
   price_below_ema200: 'ema',
   near_support: 'levels',
   near_resistance: 'levels',
+  near_my_line: 'levels',
   pattern_confirmed: 'patterns',
 };
 
@@ -76,6 +77,7 @@ function noteFor(c) {
     case 'price_below_ema200': return 'цена ниже EMA200';
     case 'near_support': return p != null ? `у поддержки, в пределах ${fmt(p)}%` : 'у поддержки';
     case 'near_resistance': return p != null ? `у сопротивления, в пределах ${fmt(p)}%` : 'у сопротивления';
+    case 'near_my_line': return p != null ? `у моей линии, в пределах ${fmt(p)}%` : 'у моей линии';
     case 'pattern_confirmed': return p != null ? `уверенность не ниже ${fmt(p)}%` : 'подтверждённая фигура';
     default: return '';
   }

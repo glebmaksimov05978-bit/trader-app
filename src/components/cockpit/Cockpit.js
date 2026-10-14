@@ -27,6 +27,7 @@ import { getActiveStrategy, getStrategies, evaluateStrategy } from '../../servic
 import { classifyStrategy, kindBadge } from '../../services/analytics/strategyKind';
 import { followedStrategies, setObserve, isObserved } from '../../services/analytics/strategyMeta';
 import { resolveTaView, chartLayersFor } from '../../services/analytics/taView';
+import { userLevelsForChart } from '../../services/chartDrawings';
 import { commissionRateFor, DEFAULT_TARIFF } from '../../services/analytics/commission';
 import { computeBaskets, getPortfolio } from '../../services/analytics/portfolio';
 import { formatCurrency } from '../../utils/calculator';
@@ -41,6 +42,8 @@ import { updateTrade } from '../../services/trades';
 import CandleChart from '../shared/CandleChart';
 import RadarPanel from './RadarPanel';
 import StrategyOverview from './StrategyOverview';
+import PaperActions from './PaperActions';
+import { summarizeDecisions } from '../../services/analytics/actionMatch';
 import { useRadarLive } from '../../context/RadarLiveContext';
 import CollapsibleSection from './CollapsibleSection';
 import OrderModal from '../calculator/OrderModal';
@@ -379,17 +382,20 @@ export default function Cockpit() {
     if (!(strategy.conditions?.length || strategy.customConditions?.length)) return null;
     const cs = taState.data.candles;
     const lastClose = cs?.[cs.length - 1]?.close ?? null;
+    // Свои линии инструмента на том таймфрейме, который сейчас показан (условие «цена у моей линии»).
+    const userLevels = userLevelsForChart(userProfile, taTicker, taTf || userProfile?.preferredTimeframe || 'D1', cs);
     const run = (direction) => evaluateStrategy(strategy, {
       indicators: taState.data.indicators,
       patterns: taState.data.patterns,
       marketContext: taState.data.marketContext,
+      userLevels,
       direction,
       // Плана входа ещё нет — условия, привязанные к цене, судятся по последней цене.
       plan: { rr: null, riskPercent: null, marginUsagePercent: null, entryPrice: lastClose },
       manualChecks: {},
     });
     return { long: run('long'), short: run('short') };
-  }, [trade, taState.data, strategy]);
+  }, [trade, taState.data, strategy, userProfile?.chartDrawings, taTicker, taTf]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- состояние позиции по данным движка ---
   const recompute = useCallback(async () => {
@@ -771,6 +777,17 @@ export default function Cockpit() {
   };
 
   // Режим наблюдения стратегии прямо с плашки обзора: бумажные сделки идут, уведомлений нет.
+  // Сколько открытых бумажных сигналов каждой стратегии ждут вашей отметки («вошёл / пропустил»).
+  const pendingByStrategy = useMemo(() => {
+    const out = {};
+    for (const t of paperTrades) {
+      if (summarizeDecisions(t).last) continue;
+      const k = t.entryStrategyId || t.entryStrategyName;
+      if (k) out[k] = (out[k] || 0) + 1;
+    }
+    return out;
+  }, [paperTrades]);
+
   const taLensStrategy = useMemo(() => strategies.find((x) => x.id === taLensId) || null, [strategies, taLensId]);
   const taView = useMemo(
     () => resolveTaView({ prefs: userProfile?.taPrefs, strategy: taLensStrategy }),
@@ -1197,6 +1214,7 @@ export default function Cockpit() {
                 onPick={chooseScope}
                 onOpenTicker={(c) => navigate(`/cockpit?previewTicker=${encodeURIComponent(c.ticker)}&previewType=${encodeURIComponent(c.instrumentType || 'stock')}`)}
                 onToggleObserve={toggleObserveFor}
+                pending={pendingByStrategy}
                 single={scopeId !== 'all'}
               />
               <div className="ck-hint-line">
@@ -1460,6 +1478,20 @@ export default function Cockpit() {
             </section>
           )}
 
+          {/* Что сделали ВЫ по бумажному сигналу: вошёл / пропустил / снял часть / закрыл — вручную или по данным Т-Банка. */}
+          {trade && isPaper && (
+            <PaperActions
+              trade={trade}
+              journalTrades={allTrades}
+              userProfile={userProfile}
+              onDecision={(id, d) => {
+                const add = (list) => list.map((t) => (t.id === id ? { ...t, decisions: [...(t.decisions || []), d] } : t));
+                setPaperTrades(add);
+                setAllPaper(add);
+              }}
+            />
+          )}
+
           {/* ---------- график ---------- */}
           {(trade || previewTicker) && (
           <section className="ck-panel ck-chart">
@@ -1477,6 +1509,7 @@ export default function Cockpit() {
             </div>
             {(trade ? candles : taState.data?.candles)?.length ? (
               <CandleChart
+                drawingTools
                 candles={trade ? candles : taState.data.candles}
                 patterns={trade ? patterns : taState.data.patterns}
                 height={390}
