@@ -28,6 +28,7 @@ import TradeModal from './TradeModal';
 import ImportModal from './ImportModal';
 import './Journal.css';
 
+import Icon from '../shared/Icon';
 const COLS = ['Тикер', 'Дата', 'Направление', 'Вход', 'Выход', 'Объём', 'P&L', '% депоз.', 'Статус', ''];
 
 export default function Journal() {
@@ -257,7 +258,7 @@ export default function Journal() {
         token, accountId, trade, openedAt: resolveOpenedAt(trade),
       });
       if (!res.legs.length) {
-        toast('По этой сделке у брокера операций не нашлось', { icon: 'ℹ️' });
+        toast('По этой сделке у брокера операций не нашлось', { icon: 'ℹ' });
         return;
       }
       const closedAll = res.remainingVolume <= 0;
@@ -538,7 +539,7 @@ export default function Journal() {
                 + Добавить сделку
               </button>
               <button className="btn btn-secondary" onClick={() => setImportOpen(true)}>
-                📥 Импортировать отчёт
+                Импортировать отчёт
               </button>
             </>
           ) : (
@@ -558,7 +559,7 @@ export default function Journal() {
                     fontFamily:'inherit', fontSize:13, fontWeight:600,
                   }}
                 >
-                  {radarLive ? '🔴 Live' : '⚪ Live'}
+                  {radarLive ? 'Live' : 'Live'}
                 </button>
               )}
               <button className="btn btn-primary" onClick={() => { setRadarTypeTouched(false); setAddRadarOpen(true); }}>
@@ -570,8 +571,8 @@ export default function Journal() {
       </div>
 
       <div className="tabs" style={{maxWidth:300, marginBottom:20}}>
-        <button className={`tab ${view==='trades'?'active':''}`} onClick={() => setView('trades')}>📓 Сделки</button>
-        <button className={`tab ${view==='radar'?'active':''}`} onClick={() => setView('radar')}>📡 Радар</button>
+        <button className={`tab ${view==='trades'?'active':''}`} onClick={() => setView('trades')}>Сделки</button>
+        <button className={`tab ${view==='radar'?'active':''}`} onClick={() => setView('radar')}>Радар</button>
       </div>
 
       {/* Stats strip */}
@@ -613,7 +614,7 @@ export default function Journal() {
         <input
           className="input"
           style={{maxWidth:200}}
-          placeholder="🔍 Поиск по тикеру"
+          placeholder="Поиск по тикеру"
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
@@ -627,7 +628,7 @@ export default function Journal() {
           <div className="empty-state"><div className="spinner" style={{width:28,height:28}}/></div>
         ) : filtered.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-state-icon">📓</div>
+            <div className="empty-state-icon"><Icon name="journal" size={40} /></div>
             <div className="empty-state-title">Нет сделок</div>
             <div className="empty-state-text">Нажмите «Добавить сделку», чтобы начать вести журнал</div>
           </div>
@@ -683,7 +684,7 @@ export default function Journal() {
                     </td>
                     <td>
                       <span className={`badge ${trade.direction==='long' ? 'badge-green' : 'badge-red'}`}>
-                        {trade.direction === 'long' ? '📈 Лонг' : '📉 Шорт'}
+                        {trade.direction === 'long' ? 'Лонг' : 'Шорт'}
                       </span>
                     </td>
                     <td>{formatNumber(trade.entryPrice, 1)}</td>
@@ -699,7 +700,7 @@ export default function Journal() {
                           {trade.pnl >= 0 ? '+' : ''}{formatCurrency(Math.round(trade.pnl))}
                         </span>
                       ) : trade.pnlNeedsSpecs ? (
-                        <span className="text-muted" title="Биржа не дала параметры контракта — раскройте сделку, чтобы ввести вручную">⚠️ —</span>
+                        <span className="text-muted" title="Биржа не дала параметры контракта — раскройте сделку, чтобы ввести вручную">—</span>
                       ) : <span className="text-muted">—</span>}
                     </td>
                     <td>
@@ -717,15 +718,15 @@ export default function Journal() {
                     </td>
                     <td>
                       {/* Stacked, not inline — an open trade's extra "Закрыть" button used to
-                          push ✏️/🗑 past the visible table width, and the horizontal-scroll
+                          push /past the visible table width, and the horizontal-scroll
                           affordance wasn't obvious, so the trash icon looked cut off (real
                           user report). Both rows share the same width and vertical padding
                           now too — they used to be visibly different sizes (real user
                           follow-up report), which read as sloppy even after the overflow fix. */}
                       <div className="flex flex-col gap-1" style={{width:92}}>
                         <div className="flex gap-2" style={{width:'100%'}}>
-                          <button className="btn btn-ghost btn-sm" style={{flex:1, padding:'6px 0'}} onClick={() => openEdit(trade)} title="Редактировать">✏️</button>
-                          <button className="btn btn-ghost btn-sm" style={{flex:1, padding:'6px 0', color:'var(--red)'}} onClick={() => handleDelete(trade.id)} title="Удалить">🗑</button>
+                          <button className="btn btn-ghost btn-sm" style={{flex:1, padding:'6px 0'}} onClick={() => openEdit(trade)} title="Редактировать"><Icon name="edit" size={15} /></button>
+                          <button className="btn btn-ghost btn-sm" style={{flex:1, padding:'6px 0', color:'var(--red)'}} onClick={() => handleDelete(trade.id)} title="Удалить"></button>
                         </div>
                         {/* Below ✏️/🗑, not above — user report: the extra button should
                             sit under the pair, not push it down. */}
@@ -748,7 +749,7 @@ export default function Journal() {
                             onClick={() => openClose(trade)}
                             title="Закрыть сделку или зафиксировать часть"
                           >
-                            ✅ Закрыть
+                            Закрыть
                           </button>
                         )}
                         {(trade.status === 'open' || trade.status === 'partial') && userProfile?.tinkoffToken && (
@@ -810,7 +811,7 @@ export default function Journal() {
                             borderRadius: 10, padding: '10px 14px', marginBottom: 16,
                           }}>
                             <div style={{fontSize: 13, color: 'var(--gold)', marginBottom: 8}}>
-                              ⚠️ Не удалось определить P&L автоматически — биржа не публикует параметры этого
+                              Не удалось определить P&L автоматически — биржа не публикует параметры этого
                               контракта (обычно так с мини-фьючерсами или уже неторгуемыми сериями). Введите
                               стоимость 1 пункта цены в рублях (можно посмотреть на странице контракта на
                               Мосбирже) — и мы посчитаем сами.
@@ -886,7 +887,7 @@ export default function Journal() {
             <div className="card empty-state"><div className="spinner" style={{width:28,height:28}}/></div>
           ) : radarItems.length === 0 ? (
             <div className="card empty-state">
-              <div className="empty-state-icon">📡</div>
+              <div className="empty-state-icon"><Icon name="radar" size={40} /></div>
               <div className="empty-state-title">Радар пуст</div>
               <div className="empty-state-text">Добавьте тикер, за которым хотите следить, пока сетап не подтвердится</div>
             </div>
@@ -925,9 +926,9 @@ export default function Journal() {
                     </div>
                     <div className="flex gap-2">
                       <button className="btn btn-secondary btn-sm" onClick={() => openFromRadar(item)}>
-                        📓 Перенести в журнал
+                        Перенести в журнал
                       </button>
-                      <button className="btn btn-ghost btn-sm" style={{color:'var(--red)'}} onClick={() => setConfirmDeleteRadar(item.id)} title="Убрать из радара">🗑</button>
+                      <button className="btn btn-ghost btn-sm" style={{color:'var(--red)'}} onClick={() => setConfirmDeleteRadar(item.id)} title="Убрать из радара"><Icon name="trash" size={15} /></button>
                     </div>
                   </div>
                   {isExpanded && (
@@ -963,7 +964,7 @@ export default function Journal() {
         <div className="modal-overlay" onClick={() => setAddRadarOpen(false)}>
           <div className="modal" style={{maxWidth:400}} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">📡 Добавить в радар</h3>
+              <h3 className="modal-title">Добавить в радар</h3>
               <button className="modal-close" onClick={() => setAddRadarOpen(false)}>✕</button>
             </div>
             <div className="modal-body" style={{paddingTop:20, paddingBottom:8}}>
@@ -1032,7 +1033,7 @@ export default function Journal() {
               <button className="btn btn-ghost" onClick={() => setConfirmDeleteRadar(null)}>Отмена</button>
               <button className="btn" onClick={handleDeleteRadar}
                 style={{background:'linear-gradient(135deg,#ef4444,#dc2626)', color:'#fff', border:'none'}}>
-                🗑 Убрать
+                Убрать
               </button>
             </div>
           </div>
@@ -1052,7 +1053,7 @@ export default function Journal() {
               the inset to match on all sides. */}
           <div className="modal" style={{maxWidth:400}} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">{isPartialClose() ? '✂️ Зафиксировать часть' : '✅ Закрыть сделку'}</h3>
+              <h3 className="modal-title">{isPartialClose() ? 'Зафиксировать часть' : 'Закрыть сделку'}</h3>
               <button className="modal-close" onClick={() => setCloseModal(null)}>✕</button>
             </div>
 
@@ -1085,7 +1086,7 @@ export default function Journal() {
                 <div style={{display:'flex',justifyContent:'space-between'}}>
                   <span style={{color:'var(--text-muted)',fontSize:12}}>Направление</span>
                   <span style={{color: closeModal.direction==='long' ? 'var(--green)' : 'var(--red)', fontWeight:600}}>
-                    {closeModal.direction === 'long' ? '📈 Лонг' : '📉 Шорт'}
+                    {closeModal.direction === 'long' ? 'Лонг' : 'Шорт'}
                   </span>
                 </div>
               </div>
@@ -1247,7 +1248,7 @@ export default function Journal() {
               >
                 {closing
                   ? (isPartialClose() ? 'Фиксируем...' : 'Закрываем...')
-                  : (isPartialClose() ? '✂️ Зафиксировать часть' : '✅ Закрыть сделку')}
+                  : (isPartialClose() ? 'Зафиксировать часть' : 'Закрыть сделку')}
               </button>
             </div>
           </div>
@@ -1264,7 +1265,7 @@ export default function Journal() {
                   width:32,height:32,borderRadius:'50%',
                   background:'rgba(239,68,68,0.15)',
                   display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,
-                }}>🗑</span>
+                }}></span>
                 Удалить сделку?
               </h3>
               <button className="modal-close" onClick={() => setConfirmDelete(null)}>✕</button>
@@ -1285,7 +1286,7 @@ export default function Journal() {
                   boxShadow:'0 4px 12px rgba(239,68,68,0.3)',
                 }}
               >
-                🗑 Удалить
+                Удалить
               </button>
             </div>
           </div>

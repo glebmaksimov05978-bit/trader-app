@@ -22,12 +22,12 @@ import Icon from '../shared/Icon';
 // undifferentiated grey list at a glance (real user report: "не только стикерами,
 // всё равно глаза разбегаются").
 const CONDITION_GROUPS = [
-  { id: 'indicators', label: '📉 Индикаторы (RSI / MACD)', ids: ['rsi_below', 'rsi_above', 'macd_positive', 'macd_negative'], color: '#3b82f6' },
-  { id: 'ema', label: '📈 Скользящие средние (EMA)', ids: ['price_above_ema200', 'price_below_ema200'], color: '#f59e0b' },
-  { id: 'levels', label: '📏 Уровни и полосы Боллинджера', ids: ['near_support', 'near_resistance', 'bollinger_lower', 'bollinger_upper'], color: '#10b981' },
-  { id: 'patterns', label: '📐 Фигуры теханализа', ids: ['pattern_confirmed'], color: '#a855f7' },
-  { id: 'context', label: '🌊 Рыночный контекст и объём', ids: ['volume_above_avg', 'market_trending', 'market_sideways', 'volatility_not_high'], color: '#06b6d4' },
-  { id: 'plan', label: '📝 Условия плана (из Калькулятора)', ids: ['min_rr', 'max_risk_percent', 'max_margin_usage'], color: '#ef4444' },
+  { id: 'indicators', label: 'Индикаторы (RSI / MACD)', ids: ['rsi_below', 'rsi_above', 'macd_positive', 'macd_negative'], color: '#3b82f6' },
+  { id: 'ema', label: 'Скользящие средние (EMA)', ids: ['price_above_ema200', 'price_below_ema200'], color: '#f59e0b' },
+  { id: 'levels', label: 'Уровни и полосы Боллинджера', ids: ['near_support', 'near_resistance', 'bollinger_lower', 'bollinger_upper'], color: '#10b981' },
+  { id: 'patterns', label: 'Фигуры теханализа', ids: ['pattern_confirmed'], color: '#a855f7' },
+  { id: 'context', label: 'Рыночный контекст и объём', ids: ['volume_above_avg', 'market_trending', 'market_sideways', 'volatility_not_high'], color: '#06b6d4' },
+  { id: 'plan', label: 'Условия плана (из Калькулятора)', ids: ['min_rr', 'max_risk_percent', 'max_margin_usage'], color: '#ef4444' },
 ];
 
 export default function Capital() {
@@ -325,7 +325,7 @@ export default function Capital() {
         <div className={`kpi-card ${tradesStopped ? 'red' : 'purple'}`}>
           <div className="kpi-label">Статус торгов</div>
           <div className="kpi-value" style={{fontSize:16, marginTop:4}}>
-            {tradesStopped ? '🛑 СТОП' : '✅ Торгуем'}
+            {tradesStopped ? 'СТОП' : 'Торгуем'}
           </div>
           <div className="kpi-sub">{tradesStopped ? 'Лимит потерь достигнут' : `Макс. риск: ${formatCurrency(riskPerTrade)}`}</div>
         </div>
@@ -366,7 +366,7 @@ export default function Capital() {
               </div>
               {todayLimitUsedPct >= 100 && (
                 <div className="capital-alert">
-                  🛑 Дневной лимит убытка исчерпан. Торговля на сегодня остановлена.
+                  Дневной лимит убытка исчерпан. Торговля на сегодня остановлена.
                 </div>
               )}
             </div>
@@ -433,13 +433,13 @@ export default function Capital() {
 
             {/* Rules summary */}
             <div className="capital-rules">
-              <div className="capital-rule">💡 При риске {riskPct}% и лимите {dailyLossPct}% — макс. <strong>{maxTradesPerRisk} убыточных сделок</strong> в день</div>
-              <div className="capital-rule">🛑 Прекращать торговлю при убытке дня &gt; <strong>{formatCurrency(dailyLossRub)}</strong></div>
-              <div className="capital-rule">📉 Остановить торговлю при просадке &gt; <strong>{ddStopPct}% ({formatCurrency(maxDdRub)})</strong></div>
+              <div className="capital-rule">При риске {riskPct}% и лимите {dailyLossPct}% — макс. <strong>{maxTradesPerRisk} убыточных сделок</strong> в день</div>
+              <div className="capital-rule">Прекращать торговлю при убытке дня &gt; <strong>{formatCurrency(dailyLossRub)}</strong></div>
+              <div className="capital-rule">Остановить торговлю при просадке &gt; <strong>{ddStopPct}% ({formatCurrency(maxDdRub)})</strong></div>
             </div>
 
             <button className="btn btn-primary" onClick={saveSettings} disabled={saving}>
-              {saving ? <><div className="spinner" style={{width:14,height:14}}/> Сохранение...</> : '💾 Сохранить настройки'}
+              {saving ? <><div className="spinner" style={{width:14,height:14}}/> Сохранение...</> : 'Сохранить настройки'}
             </button>
           </div>
         </div>
@@ -478,7 +478,7 @@ export default function Capital() {
               )}
               {editingId === s.id && strategies.length > 1 && (
                 <button className="btn btn-ghost btn-sm" style={{color:'var(--red)'}} title="Удалить стратегию"
-                  onClick={() => setConfirmDeleteStrategyId(s.id)}>🗑</button>
+                  onClick={() => setConfirmDeleteStrategyId(s.id)}><Icon name="trash" size={14} /></button>
               )}
             </div>
           ))}
@@ -516,7 +516,7 @@ export default function Capital() {
                     style={{background:'color-mix(in srgb, var(--accent-primary) 12%, transparent)', border:'1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent)', color:'var(--accent-primary)'}}
                     onClick={() => loadPrivatePreset(preset)}
                   >
-                    🔒 {preset.name}
+                    {preset.name}
                   </button>
                 ))}
               </div>
@@ -571,14 +571,14 @@ export default function Capital() {
                   const selected = patternCond?.patterns || [];
                   return (
                     <div style={{padding:'10px 14px', borderRadius:10, background:'var(--bg-surface-2)', border:'1px solid var(--border-subtle)', marginBottom:4}}>
-                      <div style={{fontSize:13, fontWeight:600, marginBottom:2}}>📚 Какие фигуры умеет искать движок</div>
+                      <div style={{fontSize:13, fontWeight:600, marginBottom:2}}>Какие фигуры умеет искать движок</div>
                       <div className="text-xs text-muted" style={{marginBottom:10}}>
                         {selected.length > 0
                           ? `Отмечено ${selected.length} — в условии «есть подтверждённая фигура» ниже учитываются только они.`
                           : 'Ничего не отмечено — условие ниже засчитывает ЛЮБУЮ подтверждённую фигуру. Отметьте нужные, чтобы сузить.'}
                       </div>
                       <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))', gap:12, fontSize:12}}>
-                        {[['bullish', '🟢 Бычьи (сигнал вверх)'], ['bearish', '🔴 Медвежьи (сигнал вниз)'], ['neutral', '⚪ Нейтральные (куда пробьёт)']].map(([dir, title]) => (
+                        {[['bullish', 'Бычьи (сигнал вверх)'], ['bearish', 'Медвежьи (сигнал вниз)'], ['neutral', 'Нейтральные (куда пробьёт)']].map(([dir, title]) => (
                           <div key={dir}>
                             <div style={{fontWeight:600, marginBottom:4}}>{title}</div>
                             {PATTERN_DIRECTIONS[dir].map(p => (
@@ -640,7 +640,7 @@ export default function Capital() {
         })}
 
         <div style={{marginBottom:20}}>
-          <div className="calc-section-title">🚪 Выход</div>
+          <div className="calc-section-title">Выход</div>
           <div className="text-xs text-muted" style={{marginBottom:10}}>
             Стоп и тейк каждый по своей логике: фиксированный %, множитель ATR, или у ближайшего уровня
             S/R / EMA200 (пересчитывается на момент входа). Плюс два необязательных выхода без цены —
@@ -658,10 +658,10 @@ export default function Capital() {
         </div>
 
         <div style={{marginBottom:20}}>
-          <div className="calc-section-title">✍️ Свои условия</div>
+          <div className="calc-section-title">Свои условия</div>
           <div className="text-xs text-muted" style={{marginBottom:10}}>
             Для всего, чего нет в каталоге выше (экзотические индикаторы, проверка новостей) —
-            впишите своей формулировкой. ⚠️ Приложение это не считает и не проверяет — в
+            впишите своей формулировкой. Приложение это не считает и не проверяет — в
             Калькуляторе вы будете отмечать такой пункт вручную, глядя на график/новости сами.
           </div>
           <div className="flex gap-2" style={{marginBottom:10, flexWrap:'wrap'}}>
@@ -712,7 +712,7 @@ export default function Capital() {
         </div>
 
         <button className="btn btn-primary" onClick={saveStrategy} disabled={savingStrategy}>
-          {savingStrategy ? <><div className="spinner" style={{width:14,height:14}}/> Сохранение...</> : '💾 Сохранить стратегии'}
+          {savingStrategy ? <><div className="spinner" style={{width:14,height:14}}/> Сохранение...</> : 'Сохранить стратегии'}
         </button>
       </div>
 

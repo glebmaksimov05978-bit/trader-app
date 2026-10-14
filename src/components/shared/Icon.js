@@ -12,10 +12,12 @@ const P = {
   calculator: <><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M8 7h8" /><path d="M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01" /></>,
   journal: <><path d="M6 3h11a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6z" /><path d="M6 3v18" /><path d="M10 8h6M10 12h6" /></>,
   report: <><path d="M5 3h10l4 4v14H5z" /><path d="M15 3v4h4" /><path d="M9 13h6M9 17h4" /></>,
-  cockpit: <><circle cx="12" cy="12" r="9" /><path d="M12 12l4-3" /><path d="M12 7v1M7 12h1M17 12h-1" /></>,
+  // Сопровождение: линия роста с небольшой просадкой и стрелкой на конце.
+  cockpit: <><path d="M3 18l5-7 4 3 8-9" /><path d="M15 5h5v5" /></>,
   capital: <><rect x="3" y="6" width="18" height="13" rx="2" /><path d="M3 10h18" /><path d="M16 15h2" /></>,
   advisor: <><rect x="4" y="8" width="16" height="11" rx="3" /><path d="M12 4v4" /><circle cx="9" cy="13" r="1" /><circle cx="15" cy="13" r="1" /></>,
-  settings: <><circle cx="12" cy="12" r="3" /><path d="M12 3v2.5M12 18.5V21M3 12h2.5M18.5 12H21M5.6 5.6l1.8 1.8M16.6 16.6l1.8 1.8M5.6 18.4l1.8-1.8M16.6 7.4l1.8-1.8" /></>,
+  // Шестерёнка: зубчатый контур + кольцо в центре (прежние «лучи» читались как солнце).
+  settings: <><path d="M10.3 3h3.4l.5 2.4 1.7.7 2.1-1.3 2.4 2.4-1.3 2.1.7 1.7 2.4.5v3.4l-2.4.5-.7 1.7 1.3 2.1-2.4 2.4-2.1-1.3-1.7.7-.5 2.4h-3.4l-.5-2.4-1.7-.7-2.1 1.3-2.4-2.4 1.3-2.1-.7-1.7L3 13.7v-3.4l2.4-.5.7-1.7-1.3-2.1 2.4-2.4 2.1 1.3 1.7-.7z" /><circle cx="12"cy="12"r="3" /></>,
   backtest: <><path d="M9 3h6" /><path d="M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 18l-5-9V3" /><path d="M8 15h8" /></>,
   admin: <><path d="M12 3l8 3v6c0 4.5-3.2 7.8-8 9-4.8-1.2-8-4.5-8-9V6z" /></>,
   chart: <><path d="M4 20V4" /><path d="M4 20h16" /><path d="M8 15l3-4 3 2 5-6" /></>,
@@ -57,6 +59,18 @@ const P = {
   trendDown: <><path d="M3 7l6 6 4-4 8 8" /><path d="M15 17h6v-6" /></>,
   flask: <><path d="M9 3h6" /><path d="M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 18l-5-9V3" /></>,
   file: <><path d="M6 3h8l4 4v14H6z" /><path d="M14 3v4h4" /></>,
+  edit: <><path d="M4 20h4L19 9l-4-4L4 16z" /><path d="M13.5 6.5l4 4" /></>,
+  eye: <><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" /><circle cx="12"cy="12"r="3" /></>,
+  eyeOff: <><path d="M3 3l18 18" /><path d="M10.6 6.2A9.6 9.6 0 0 1 12 6c6.5 0 10 6 10 6a17 17 0 0 1-3.2 3.8M6.4 7.6A17 17 0 0 0 2 12s3.5 6 10 6c1.6 0 3-.4 4.2-.9" /><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" /></>,
+  mail: <><rect x="3"y="5"width="18"height="14"rx="2" /><path d="M3 7l9 6 9-6" /></>,
+  chat: <><path d="M4 5h16v11H9l-5 4z" /></>,
+  star: <><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z" /></>,
+  checkCircle: <><circle cx="12"cy="12"r="9" /><path d="M8 12.5l3 3 5-6" /></>,
+  xCircle: <><circle cx="12"cy="12"r="9" /><path d="M9 9l6 6M15 9l-6 6" /></>,
+  minus: <><path d="M5 12h14" /></>,
+  menu: <><path d="M4 7h16M4 12h16M4 17h16" /></>,
+  expand: <><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></>,
+  rocket: <><path d="M5 19c0-4 2-7 5-9l4-4c3-3 6-2 6-2s1 3-2 6l-4 4c-2 3-5 5-9 5z" /><circle cx="15"cy="9"r="1.2" /></>,
 };
 
 export default function Icon({ name, size = 18, strokeWidth = 1.75, className = '', style }) {

@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { formatCurrency } from '../../utils/calculator';
 import './Journal.css';
 
+import Icon from '../shared/Icon';
 // Запасное значение для статического EMPTY ниже — до того, как компонент получит
 // настоящую ставку через проп defaultCommissionRate (см. TradeModal ниже).
 const FALLBACK_COMMISSION_RATE = '0.0006';
@@ -89,7 +90,7 @@ function CustomDatePicker({ value, onChange }) {
           width:'100%',
         }}
       >
-        <span style={{fontSize:15}}>📅</span>
+        <span style={{display:'inline-flex'}}><Icon name="calendar" size={15} /></span>
         <span style={{flex:1}}>{displayValue || 'Выберите дату'}</span>
         <span style={{
           color:'var(--text-muted)', fontSize:11,
@@ -342,7 +343,7 @@ export default function TradeModal({ trade, onSave, onClose, defaultDeposit, def
         <div className="modal-body">
           {Array.isArray(trade?.legs) && trade.legs.length > 1 && (
             <div style={{padding:'10px 14px', background:'rgba(245,158,11,0.08)', border:'1px solid rgba(245,158,11,0.25)', borderRadius:12, fontSize:13, color:'var(--text-secondary)'}}>
-              ⚠️ Эта позиция собрана из {trade.legs.length} сделок брокера (импорт). Изменение цены/объёма/P&L здесь
+              Эта позиция собрана из {trade.legs.length} сделок брокера (импорт). Изменение цены/объёма/P&L здесь
               не обновит историю шагов ниже в журнале — правьте с осторожностью.
             </div>
           )}
@@ -370,8 +371,8 @@ export default function TradeModal({ trade, onSave, onClose, defaultDeposit, def
           <div className="input-group">
             <label className="input-label">Направление</label>
             <div className="tabs">
-              <button className={`tab ${form.direction==='long'?'active':''}`} onClick={() => set('direction','long')}>📈 Лонг</button>
-              <button className={`tab ${form.direction==='short'?'active':''}`} onClick={() => set('direction','short')}>📉 Шорт</button>
+              <button className={`tab ${form.direction==='long'?'active':''}`} onClick={() => set('direction','long')}>Лонг</button>
+              <button className={`tab ${form.direction==='short'?'active':''}`} onClick={() => set('direction','short')}>Шорт</button>
             </div>
           </div>
 
@@ -447,19 +448,19 @@ export default function TradeModal({ trade, onSave, onClose, defaultDeposit, def
               <label className="input-label">Эмоциональное состояние</label>
               <select className="input" value={form.emotion} onChange={e => set('emotion', e.target.value)}>
                 <option value="">— не указано —</option>
-                <option value="calm">😌 Спокойный</option>
-                <option value="confident">💪 Уверенный</option>
-                <option value="anxious">😰 Тревожный</option>
-                <option value="greedy">🤑 Жадный</option>
-                <option value="fear">😨 Страх</option>
-                <option value="fomo">🏃 FOMO</option>
+                <option value="calm">Спокойный</option>
+                <option value="confident">Уверенный</option>
+                <option value="anxious">Тревожный</option>
+                <option value="greedy">Жадный</option>
+                <option value="fear">Страх</option>
+                <option value="fomo">FOMO</option>
               </select>
             </div>
           </div>
 
           <label style={{display:'flex', alignItems:'center', gap:8, cursor:'pointer', fontSize:13, color:'var(--text-secondary)'}}>
             <input type="checkbox" checked={!!form.newsDay} onChange={e => set('newsDay', e.target.checked)} />
-            📰 День важных новостей (заседание ЦБ, отчётность эмитента и т.п.)
+            День важных новостей (заседание ЦБ, отчётность эмитента и т.п.)
           </label>
 
           <div className="input-group">

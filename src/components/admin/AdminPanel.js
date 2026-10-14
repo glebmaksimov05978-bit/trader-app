@@ -136,7 +136,7 @@ export default function AdminPanel() {
                     <td className="text-secondary">{u.email}</td>
                     <td>
                       <span className={`badge ${u.role === 'admin' ? 'badge-purple' : u.role === 'pro' ? 'badge-gold' : u.role === 'free' ? 'badge-blue' : 'badge-blue'}`}>
-                        {u.role === 'admin' ? '👑 Admin' : u.role === 'pro' ? '⚡ Pro' : u.role === 'free' ? '🆓 Free' : '👤 User'}
+                        {u.role === 'admin' ? 'Admin' : u.role === 'pro' ? 'Pro' : u.role === 'free' ? '🆓 Free' : 'User'}
                       </span>
                     </td>
                     <td>{u.depositSize ? u.depositSize.toLocaleString('ru-RU') + ' ₽' : '—'}</td>
@@ -152,7 +152,7 @@ export default function AdminPanel() {
                           <button
                             style={{background:'linear-gradient(135deg,#f59e0b,#d97706)',color:'#000',fontSize:11,padding:'4px 10px',borderRadius:8,border:'none',cursor:'pointer',fontWeight:700}}
                             onClick={() => setRole(u.id, 'pro')}>
-                            ⚡ Дать Pro
+                            Дать Pro
                           </button>
                         )}
                         {u.role === 'pro' && (
@@ -165,7 +165,7 @@ export default function AdminPanel() {
                         {u.role !== 'admin' && (
                           <button className="btn btn-ghost btn-sm"
                             onClick={() => setRole(u.id, 'admin')}>
-                            👑 Админ
+                            Админ
                           </button>
                         )}
                         {u.role === 'admin' && (

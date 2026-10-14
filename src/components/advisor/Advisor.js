@@ -6,12 +6,13 @@ import { getUserTrades, calcStats } from '../../services/trades';
 import toast from 'react-hot-toast';
 import './Advisor.css';
 
+import Icon from '../shared/Icon';
 const MODES = [
-  { id: 'journal',    icon: '📊', label: 'Анализ журнала',     desc: 'Паттерны ошибок и слабые места' },
-  { id: 'calculator', icon: '🧮', label: 'Из калькулятора',    desc: 'Разбор сделки из калькулятора' },
-  { id: 'trade',      icon: '🔍', label: 'Разбор сделки',      desc: 'Детальный анализ конкретной позиции' },
-  { id: 'psychology', icon: '🧠', label: 'Психологический коуч', desc: 'Работа с эмоциями и дисциплиной' },
-  { id: 'chat',       icon: '💬', label: 'Свободный вопрос',   desc: 'Любой вопрос по трейдингу' },
+  { id: 'journal',    icon: <Icon name="chart" size={18} />, label: 'Анализ журнала',     desc: 'Паттерны ошибок и слабые места' },
+  { id: 'calculator', icon: <Icon name="calculator" size={18} />, label: 'Из калькулятора',    desc: 'Разбор сделки из калькулятора' },
+  { id: 'trade',      icon: <Icon name="search" size={18} />, label: 'Разбор сделки',      desc: 'Детальный анализ конкретной позиции' },
+  { id: 'psychology', icon: <Icon name="advisor" size={18} />, label: 'Психологический коуч', desc: 'Работа с эмоциями и дисциплиной' },
+  { id: 'chat',       icon: <Icon name="chat" size={18} />, label: 'Свободный вопрос',   desc: 'Любой вопрос по трейдингу' },
 ];
 
 export default function Advisor() {
@@ -173,11 +174,11 @@ ${recentTrades || 'Нет данных'}${calcContext}
           display:'flex', flexDirection:'column', alignItems:'center',
         }}>
           {/* Иконка */}
-          <div style={{fontSize:56,marginBottom:10,filter:'drop-shadow(0 0 24px color-mix(in srgb, var(--accent-primary) 50%, transparent))'}}>🤖</div>
+          <div style={{fontSize:56,marginBottom:10,color:'var(--accent-primary)'}}><Icon name="advisor" size={48} /></div>
 
           {/* PRO бейдж */}
           <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'linear-gradient(135deg,rgba(245,158,11,0.15),rgba(251,191,36,0.1))',border:'1px solid rgba(245,158,11,0.3)',borderRadius:20,padding:'4px 14px',marginBottom:14}}>
-            <span>⭐</span>
+            <span><Icon name="star" size={13} /></span>
             <span style={{fontSize:11,fontWeight:700,color:'#fbbf24',letterSpacing:'0.8px'}}>ТОЛЬКО ДЛЯ PRO</span>
           </div>
 
@@ -189,12 +190,12 @@ ${recentTrades || 'Нет данных'}${calcContext}
           {/* Фичи 2×3 */}
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:24,width:'100%',textAlign:'left'}}>
             {[
-              ['📊','Анализ журнала','Паттерны ошибок и слабые места'],
-              ['🧠','Психологический коуч','Эмоции и дисциплина'],
-              ['🔍','Разбор сделки','Детальный анализ позиции'],
-              ['📈','Анализ графиков','Загрузи скриншот — AI разберёт'],
-              ['💬','Свободный вопрос','Любой вопрос по трейдингу'],
-              ['🧮','Из калькулятора','Разбор сделки перед входом'],
+              [<Icon name="chart" size={16} />,'Анализ журнала','Паттерны ошибок и слабые места'],
+              [<Icon name="advisor" size={16} />,'Психологический коуч','Эмоции и дисциплина'],
+              [<Icon name="search" size={16} />,'Разбор сделки','Детальный анализ позиции'],
+              [<Icon name="trendUp" size={16} />,'Анализ графиков','Загрузи скриншот — AI разберёт'],
+              [<Icon name="chat" size={16} />,'Свободный вопрос','Любой вопрос по трейдингу'],
+              [<Icon name="calculator" size={16} />,'Из калькулятора','Разбор сделки перед входом'],
             ].map(([icon,title,desc]) => (
               <div key={title} style={{display:'flex',alignItems:'flex-start',gap:10,background:'rgba(255,255,255,0.04)',border:'1px solid rgba(255,255,255,0.07)',borderRadius:12,padding:'10px 12px'}}>
                 <span style={{fontSize:18,flexShrink:0,marginTop:1}}>{icon}</span>
@@ -228,7 +229,7 @@ ${recentTrades || 'Нет данных'}${calcContext}
             onMouseLeave={e => { e.currentTarget.style.transform=''; e.currentTarget.style.boxShadow='0 8px 24px color-mix(in srgb, var(--accent-primary) 40%, transparent)'; }}
             onClick={() => alert('Оплата скоро будет доступна! Напишите в поддержку для активации Pro.')}
           >
-            ⚡ Перейти на Pro — 299 ₽/мес
+            Перейти на Pro — 299 ₽/мес
           </button>
           <p style={{fontSize:11,color:'rgba(255,255,255,0.2)',marginTop:10}}>Отмена в любой момент · Безопасная оплата</p>
         </div>
@@ -291,11 +292,11 @@ ${recentTrades || 'Нет данных'}${calcContext}
       {/* Карточка калькулятора */}
       {mode === 'calculator' && calcData && (
         <div style={{padding:'14px 18px',background:'color-mix(in srgb, var(--accent-primary) 8%, transparent)',border:'1px solid color-mix(in srgb, var(--accent-primary) 25%, transparent)',borderRadius:16,marginBottom:12}}>
-          <div style={{fontSize:12,color:'var(--accent-primary)',fontWeight:700,marginBottom:10,letterSpacing:'0.5px'}}>🧮 ДАННЫЕ ИЗ КАЛЬКУЛЯТОРА</div>
+          <div style={{fontSize:12,color:'var(--accent-primary)',fontWeight:700,marginBottom:10,letterSpacing:'0.5px'}}>ДАННЫЕ ИЗ КАЛЬКУЛЯТОРА</div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:'6px 20px',fontSize:13}}>
             {[
               ['Инструмент', calcData.ticker + (calcData.name ? ` (${calcData.name})` : '')],
-              ['Направление', calcData.direction === 'long' ? '📈 Лонг' : '📉 Шорт'],
+              ['Направление', calcData.direction === 'long' ? 'Лонг' : 'Шорт'],
               ['Цена входа', calcData.entry],
               ['Стоп-лосс', calcData.sl],
               ['Тейк-профит', calcData.tp || '—'],
@@ -319,7 +320,7 @@ ${recentTrades || 'Нет данных'}${calcContext}
         <div className="advisor-messages">
           {messages.length === 0 ? (
             <div className="empty-state">
-              <div className="empty-state-icon">🤖</div>
+              <div className="empty-state-icon"><Icon name="advisor" size={40} /></div>
               <div className="empty-state-title">AI Советник готов</div>
               <div className="empty-state-text">
                 {mode === 'chat' ? 'Задайте вопрос по трейдингу' : 'Нажмите «Запустить анализ», чтобы получить персональные рекомендации'}
@@ -329,7 +330,7 @@ ${recentTrades || 'Нет данных'}${calcContext}
             messages.map((msg, i) => (
               <div key={i} className={`advisor-message ${msg.role}`}>
                 <div className="advisor-message-avatar">
-                  {msg.role === 'user' ? (userProfile?.displayName || 'Вы')[0] : '🤖'}
+                  {msg.role === 'user' ? (userProfile?.displayName || 'Вы')[0] : <Icon name="advisor" size={16} />}
                 </div>
                 <div className="advisor-message-bubble">
                   {msg.role === 'assistant' ? (
@@ -343,7 +344,7 @@ ${recentTrades || 'Нет данных'}${calcContext}
           )}
           {loading && (
             <div className="advisor-message assistant">
-              <div className="advisor-message-avatar">🤖</div>
+              <div className="advisor-message-avatar"><Icon name="advisor" size={16} /></div>
               <div className="advisor-message-bubble">
                 <div className="advisor-typing">
                   <div className="loading-dot" />

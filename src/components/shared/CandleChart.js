@@ -671,7 +671,7 @@ export default function CandleChart({
           className="cc-layers-toggle"
           onClick={() => setIndicatorsOpen((v) => !v)}
         >
-          ⚙ Индикаторы {indicatorsOpen ? '▲' : '▼'}
+          Индикаторы {indicatorsOpen ? '▲' : '▼'}
         </button>
         <div className={`cc-layers-row ${indicatorsOpen ? 'open' : ''}`}>
           {visibleLayers.map((l) => (

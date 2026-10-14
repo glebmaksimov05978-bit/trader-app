@@ -186,7 +186,7 @@ export default function PortfolioCard({ userProfile, strategies, trades, onSave 
       </div>
 
       <button className="btn btn-primary" style={{ marginTop: 16 }} onClick={save} disabled={saving}>
-        {saving ? 'Сохранение…' : '💾 Сохранить портфель'}
+        {saving ? 'Сохранение…' : 'Сохранить портфель'}
       </button>
     </div>
   );

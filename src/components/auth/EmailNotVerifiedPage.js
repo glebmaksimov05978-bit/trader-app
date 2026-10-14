@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
+import Icon from '../shared/Icon';
 export default function EmailNotVerifiedPage() {
   const { user, resendVerificationEmail, refreshEmailVerified, logout, changeEmail } = useAuth();
   const [sending, setSending] = useState(false);
@@ -28,7 +29,7 @@ export default function EmailNotVerifiedPage() {
     try {
       const verified = await refreshEmailVerified();
       if (verified) {
-        toast.success('Почта подтверждена! Добро пожаловать ✅');
+        toast.success('Почта подтверждена! Добро пожаловать ');
       } else {
         toast.error('Почта ещё не подтверждена — проверьте письмо');
       }
@@ -86,7 +87,7 @@ export default function EmailNotVerifiedPage() {
           border:'1px solid rgba(245,158,11,0.3)',
           display:'flex', alignItems:'center', justifyContent:'center',
           fontSize:36, marginBottom:20,
-        }}>📧</div>
+        }}><Icon name="mail" size={44} /></div>
 
         <h1 style={{
           fontSize:24, fontWeight:700, color:'var(--text-primary)',
@@ -132,7 +133,7 @@ export default function EmailNotVerifiedPage() {
                   opacity: checking ? 0.7 : 1,
                 }}
               >
-                {checking ? 'Проверяем...' : '✅ Я подтвердил почту'}
+                {checking ? 'Проверяем...' : 'Я подтвердил почту'}
               </button>
 
               <button
@@ -146,7 +147,7 @@ export default function EmailNotVerifiedPage() {
                   opacity: sending ? 0.7 : 1,
                 }}
               >
-                {sending ? 'Отправляем...' : '📨 Отправить письмо повторно'}
+                {sending ? 'Отправляем...' : 'Отправить письмо повторно'}
               </button>
 
               <button
@@ -158,7 +159,7 @@ export default function EmailNotVerifiedPage() {
                   cursor:'pointer', marginTop:2,
                 }}
               >
-                ✏️ Указали неправильную почту? Изменить
+                Указали неправильную почту? Изменить
               </button>
 
               <button

@@ -159,7 +159,7 @@ export default function Settings() {
                 page was easy to miss — the trader looked for a save control right next
                 to the field they'd just edited and didn't find one (real user report). */}
             <button className="btn btn-secondary btn-sm" onClick={save} disabled={saving} style={{alignSelf:'flex-start'}}>
-              {saving ? <><div className="spinner" style={{width:12,height:12}}/> Сохранение...</> : '💾 Сохранить имя'}
+              {saving ? <><div className="spinner" style={{width:12,height:12}}/> Сохранение...</> : 'Сохранить имя'}
             </button>
           </div>
         </div>
@@ -202,7 +202,7 @@ export default function Settings() {
                 style={{position:'absolute',right:12,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',fontSize:16}}
                 onClick={() => setShowToken(!showToken)}
               >
-                {showToken ? '🙈' : '👁'}
+                {showToken ? <Icon name="eyeOff" size={16} /> : <Icon name="eye" size={16} />}
               </button>
             </div>
             <div className="input-hint">Токен хранится в вашем профиле Firestore, не передаётся третьим лицам</div>
@@ -257,7 +257,7 @@ export default function Settings() {
           </div>
 
           <button className="btn btn-primary" style={{marginTop:16}} onClick={save} disabled={saving}>
-            {saving ? 'Сохранение…' : '💾 Сохранить'}
+            {saving ? 'Сохранение…' : 'Сохранить'}
           </button>
         </div>
 
@@ -334,7 +334,7 @@ export default function Settings() {
           </div>
 
           <div className="text-xs text-muted" style={{lineHeight:1.7, marginBottom:12}}>
-            Бумажные сообщения помечены значком 📄 и словом «бумажная» в первой строке —
+            Бумажные сообщения помечены значком и словом «бумажная» в первой строке —
             в общем потоке видно с одного взгляда, где реальные деньги, а где наблюдение.
             Кнопок «Снял часть» и «Закрыл целиком» у них нет: эти кнопки записывают ВАШЕ
             решение, а бумажную сделку целиком ведёт робот. Если наблюдение начнёт шуметь,
@@ -355,7 +355,7 @@ export default function Settings() {
           </div>
 
           <button className="btn btn-primary" style={{marginTop:16}} onClick={save} disabled={saving}>
-            {saving ? 'Сохранение…' : '💾 Сохранить'}
+            {saving ? 'Сохранение…' : 'Сохранить'}
           </button>
         </div>
 
@@ -440,7 +440,7 @@ export default function Settings() {
         </div>
 
         <button className="btn btn-primary btn-lg" onClick={save} disabled={saving}>
-          {saving ? <><div className="spinner" style={{width:16,height:16}}/> Сохранение...</> : '💾 Сохранить все настройки'}
+          {saving ? <><div className="spinner" style={{width:16,height:16}}/> Сохранение...</> : 'Сохранить все настройки'}
         </button>
       </div>
     </div>
@@ -505,10 +505,10 @@ function OrderWorkerCard({ userProfile, updateUserProfile }) {
       </div>
       <div className="flex gap-2" style={{marginTop:8, flexWrap:'wrap'}}>
         <button className="btn btn-secondary btn-sm" onClick={save} disabled={saving || !url.trim()}>
-          {saving ? 'Сохранение...' : '💾 Сохранить адрес'}
+          {saving ? 'Сохранение...' : 'Сохранить адрес'}
         </button>
         <button className="btn btn-ghost btn-sm" onClick={check} disabled={checking || !url.trim()}>
-          {checking ? 'Проверяю...' : '🔍 Проверить готовность'}
+          {checking ? 'Проверяю...' : 'Проверить готовность'}
         </button>
       </div>
       {cfg && (
@@ -613,7 +613,7 @@ function TariffCard({ tariffId, onChange, onSave, saving, turnover }) {
         </div>
       )}
       <button className="btn btn-secondary btn-sm" style={{marginTop:12}} onClick={onSave} disabled={saving}>
-        {saving ? 'Сохранение...' : '💾 Сохранить тариф'}
+        {saving ? 'Сохранение...' : 'Сохранить тариф'}
       </button>
     </div>
   );

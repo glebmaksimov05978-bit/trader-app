@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 
+import Icon from '../shared/Icon';
 export default function EmailVerifyBanner() {
   const { user, isEmailVerified, resendVerificationEmail, refreshEmailVerified } = useAuth();
   const [sending, setSending] = useState(false);
@@ -28,7 +29,7 @@ export default function EmailVerifyBanner() {
     try {
       const verified = await refreshEmailVerified();
       if (verified) {
-        toast.success('Почта подтверждена ✅');
+        toast.success('Почта подтверждена ');
       } else {
         toast.error('Почта пока не подтверждена');
       }
@@ -49,7 +50,7 @@ export default function EmailVerifyBanner() {
       fontSize:13,
     }}>
       <div style={{display:'flex', alignItems:'center', gap:8, color:'var(--gold)'}}>
-        <span>📧</span>
+        <span style={{display:'inline-flex'}}><Icon name="mail" size={16} /></span>
         <span>Подтвердите почту <strong>{user.email}</strong> — мы отправили письмо со ссылкой</span>
       </div>
       <div style={{display:'flex', alignItems:'center', gap:8}}>

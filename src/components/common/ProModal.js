@@ -5,13 +5,14 @@
 import React from 'react';
 import { useAuth } from '../../context/AuthContext';
 
+import Icon from '../shared/Icon';
 const PRO_FEATURES = [
-  { icon: '🤖', title: 'AI Советник', desc: 'Анализ журнала, разбор сделок, психологический коуч' },
-  { icon: '📊', title: 'Расширенная статистика', desc: 'По дням недели, времени суток, паттернам поведения' },
-  { icon: '📥', title: 'Импорт из Т-Инвестиций', desc: 'Загрузка сделок из отчёта брокера одним кликом' },
-  { icon: '📄', title: 'PDF отчёты', desc: 'Еженедельный и ежемесячный отчёт на почту' },
-  { icon: '🔔', title: 'Уведомления', desc: 'Превышение лимита, сигналы по вашей стратегии' },
-  { icon: '♾️', title: 'Безлимит сделок', desc: 'Без ограничений на количество записей в журнале' },
+  { icon: <Icon name="advisor" size={20} />, title: 'AI Советник', desc: 'Анализ журнала, разбор сделок, психологический коуч' },
+  { icon: <Icon name="chart" size={20} />, title: 'Расширенная статистика', desc: 'По дням недели, времени суток, паттернам поведения' },
+  { icon: <Icon name="download" size={20} />, title: 'Импорт из Т-Инвестиций', desc: 'Загрузка сделок из отчёта брокера одним кликом' },
+  { icon: <Icon name="file" size={20} />, title: 'PDF отчёты', desc: 'Еженедельный и ежемесячный отчёт на почту' },
+  { icon: <Icon name="bell" size={20} />, title: 'Уведомления', desc: 'Превышение лимита, сигналы по вашей стратегии' },
+  { icon: <Icon name="layers" size={20} />, title: 'Безлимит сделок', desc: 'Без ограничений на количество записей в журнале' },
 ];
 
 export default function ProModal({ onClose }) {
@@ -55,7 +56,7 @@ export default function ProModal({ onClose }) {
             border:'1px solid rgba(245,158,11,0.3)',
             borderRadius:20, padding:'6px 16px', marginBottom:16,
           }}>
-            <span style={{fontSize:14}}>⚡</span>
+            <span style={{display:'inline-flex'}}><Icon name="bolt" size={14} /></span>
             <span style={{fontSize:12, fontWeight:700, color:'#fbbf24', letterSpacing:'0.5px'}}>TRADERPRO</span>
             <span style={{
               background:'linear-gradient(135deg,#f59e0b,#fbbf24)',
@@ -131,7 +132,7 @@ export default function ProModal({ onClose }) {
             alert('Оплата скоро будет доступна! Напишите в поддержку для активации Pro.');
           }}
         >
-          ⚡ Перейти на Pro — 299 ₽/мес
+          Перейти на Pro — 299 ₽/мес
         </button>
 
         <p style={{textAlign:'center', fontSize:11, color:'rgba(255,255,255,0.2)', marginTop:12}}>

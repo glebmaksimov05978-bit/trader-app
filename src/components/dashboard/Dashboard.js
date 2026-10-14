@@ -158,7 +158,7 @@ export default function Dashboard() {
       <div className="page-header flex justify-between items-center">
         <div>
           <h1 className="page-title">Дашборд</h1>
-          <p className="page-subtitle">Добро пожаловать, {userProfile?.displayName} 👋</p>
+          <p className="page-subtitle">Добро пожаловать, {userProfile?.displayName} </p>
         </div>
         <div className="badge badge-purple">
           {new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })}
@@ -300,7 +300,7 @@ export default function Dashboard() {
             </>
           ) : (
             <div className="empty-state" style={{padding:'40px 20px'}}>
-              <div className="empty-state-icon">📊</div>
+              <div className="empty-state-icon"></div>
               <div className="empty-state-title">Нет данных</div>
               <div className="empty-state-text">Добавьте сделки в журнал</div>
             </div>
@@ -343,7 +343,7 @@ export default function Dashboard() {
             </ResponsiveContainer>
           ) : (
             <div className="empty-state" style={{padding:'40px 20px'}}>
-              <div className="empty-state-icon">📊</div>
+              <div className="empty-state-icon"></div>
               <div className="empty-state-title">Нет сделок</div>
             </div>
           )}
@@ -374,7 +374,7 @@ export default function Dashboard() {
                   fontFamily:'inherit', fontSize:12, fontWeight:600,
                 }}
               >
-                {radarLive ? '🔴 Live' : '⚪ Live'}
+                {radarLive ? 'Live' : 'Live'}
               </button>
             )}
             {radarLive && radarUpdatedAt && (
@@ -408,7 +408,7 @@ export default function Dashboard() {
                   {st?.loading ? (
                     <div className="spinner" style={{width:14,height:14}}/>
                   ) : st?.error ? (
-                    <span style={{fontSize:12, color:'var(--red)'}}>⚠️ {st.error}</span>
+                    <span style={{fontSize:12, color:'var(--red)'}}>{st.error}</span>
                   ) : st?.result && st.result.total > 0 ? (
                     <span style={{fontWeight:700, color}}>{st.result.passed} из {st.result.total}</span>
                   ) : st?.result ? (
@@ -461,7 +461,7 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="empty-state" style={{padding:'24px 20px'}}>
-            <div className="empty-state-icon">🎯</div>
+            <div className="empty-state-icon"><Icon name="target" size={40} /></div>
             <div className="empty-state-title">
               {allHabits.some((h) => h.confidence === 'confirmed')
                 ? 'Явных дорогих привычек не найдено'
@@ -494,7 +494,7 @@ export default function Dashboard() {
                 {h.previous && (
                   <div style={{fontSize:12, marginTop:4, color: h.triggered && !h.previous.triggered ? 'var(--red)' : (!h.triggered && h.previous.triggered ? 'var(--green)' : 'var(--text-muted)')}}>
                     {h.previous.triggered
-                      ? `Раньше (до этого окна): проявлялось, цена −${formatCurrency(Math.round(h.previous.costRub))}${!h.triggered ? ' — сейчас не проявляется, прогресс 👍' : ''}`
+                      ? `Раньше (до этого окна): проявлялось, цена −${formatCurrency(Math.round(h.previous.costRub))}${!h.triggered ? ' — сейчас не проявляется, прогресс ' : ''}`
                       : h.triggered
                         ? 'Раньше не проявлялось — привычка новая, стоит обратить внимание'
                         : 'Раньше тоже не проявлялось'}
@@ -549,7 +549,7 @@ export default function Dashboard() {
               </div>
             ) : (
               <div className="empty-state" style={{padding:'40px 20px'}}>
-                <div className="empty-state-icon">🧩</div>
+                <div className="empty-state-icon"><Icon name="layers" size={40} /></div>
                 <div className="empty-state-title">Нет сделок</div>
               </div>
             )}
@@ -560,7 +560,7 @@ export default function Dashboard() {
       {!stats && (
         <div className="card" style={{textAlign:'center', padding:'48px'}}>
           <div className="empty-state">
-            <div className="empty-state-icon">🚀</div>
+            <div className="empty-state-icon"><Icon name="trendUp" size={40} /></div>
             <div className="empty-state-title">Начните вести журнал сделок</div>
             <div className="empty-state-text">Добавьте первую сделку, чтобы увидеть статистику на дашборде</div>
           </div>

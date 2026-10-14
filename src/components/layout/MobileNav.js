@@ -6,6 +6,7 @@ import { TRUSTED_UIDS } from '../../constants/trustedUids';
 import { NAV_ITEMS, ADMIN_ITEMS, TRUSTED_ITEMS } from '../../constants/navItems';
 import './Sidebar.css';
 
+import Icon from '../shared/Icon';
 // Real user report on the FIRST version of this (bottom bar + hamburger for extras
 // only): the hamburger button was fixed-position over page content and partially
 // covered the "Дашборд" heading, and the drawer only ever held Бэктест — confusing,
@@ -78,7 +79,7 @@ export default function MobileNav() {
   return (
     <>
       <div className="mobile-topbar">
-        <button className="mobile-hamburger" onClick={() => setDrawerOpen(true)} aria-label="Меню">☰</button>
+        <button className="mobile-hamburger" onClick={() => setDrawerOpen(true)} aria-label="Меню"><Icon name="menu" size={20} /></button>
         <span className="mobile-topbar-title">TraderPro</span>
       </div>
       {drawerOpen && (

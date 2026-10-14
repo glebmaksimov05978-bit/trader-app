@@ -20,7 +20,7 @@ function ResultRow({ r, onToggleManual }) {
         <input type="checkbox" checked={!!r.passed} onChange={() => onToggleManual?.(r.id)}
           style={{marginTop:2, flexShrink:0, cursor:'pointer'}} />
       ) : (
-        <span style={{color: r.na ? 'var(--text-muted)' : r.passed ? 'var(--green)' : 'var(--red)', flexShrink:0}}>{r.na ? '➖' : r.passed ? '✅' : '❌'}</span>
+        <span style={{color: r.na ? 'var(--text-muted)' : r.passed ? 'var(--green)' : 'var(--red)', flexShrink:0}}>{r.na ? <Icon name="minus" size={14} /> : r.passed ? <Icon name="checkCircle" size={14} /> : <Icon name="xCircle" size={14} />}</span>
       )}
       <div>
         <div style={{color:'var(--text-primary)', cursor: r.custom && !r.na ? 'pointer' : undefined}}

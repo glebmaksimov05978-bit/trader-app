@@ -12,6 +12,7 @@ import { InfoTip } from '../shared/TechnicalAnalysisBlock';
 import toast from 'react-hot-toast';
 import './Journal.css';
 
+import Icon from '../shared/Icon';
 const STAGES = [
   ['reading', 'Чтение файла'],
   ['parsing', 'Парсинг отчёта'],
@@ -159,7 +160,7 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
           still fits on a laptop screen. */}
       <div className="modal" style={{maxWidth: 960, width: '96vw'}}>
         <div className="modal-header">
-          <h2 className="modal-title">📥 Импорт отчёта Т-Инвестиций</h2>
+          <h2 className="modal-title">Импорт отчёта Т-Инвестиций</h2>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
@@ -182,7 +183,7 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
                   className="btn btn-ghost btn-sm"
                   onClick={() => setShowHowTo(v => !v)}
                 >
-                  ❓ Как это сделать?
+                  Как это сделать?
                 </button>
               </div>
 
@@ -223,7 +224,7 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
             <div style={{textAlign:'center', padding:'32px 16px'}}>
               {preview.alreadyImportedCount > 0 ? (
                 <>
-                  <div style={{fontSize:32, marginBottom:8}}>✅</div>
+                  <div style={{marginBottom:8, color:'var(--green)'}}><Icon name="checkCircle" size={34} /></div>
                   <div style={{fontSize:15, fontWeight:600, marginBottom:6}}>Эти сделки уже загружены в журнал этого аккаунта</div>
                   <div style={{fontSize:13, color:'var(--text-muted)'}}>
                     Уже есть в журнале: {preview.alreadyImportedCount} из {preview.totalTransactions} операций отчёта.
@@ -231,7 +232,7 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
                 </>
               ) : preview.unmatchedCount > 0 ? (
                 <>
-                  <div style={{fontSize:32, marginBottom:8}}>⚠️</div>
+                  <div style={{marginBottom:8, color:'var(--gold)'}}><Icon name="warning" size={34} /></div>
                   <div style={{fontSize:15, fontWeight:600, marginBottom:6}}>Дублей нет, но сделки не с чем сопоставить</div>
                   <div style={{fontSize:13, color:'var(--text-muted)'}}>
                     В отчёте {preview.unmatchedCount} закрывающих операций, а покупок/продаж, которые они закрывают, в файле нет —
@@ -240,7 +241,7 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
                 </>
               ) : (
                 <>
-                  <div style={{fontSize:32, marginBottom:8}}>📄</div>
+                  <div style={{marginBottom:8, color:'var(--text-muted)'}}><Icon name="file" size={34} /></div>
                   <div style={{fontSize:15, fontWeight:600, marginBottom:6}}>В отчёте не найдено сделок</div>
                   <div style={{fontSize:13, color:'var(--text-muted)'}}>
                     Операций в файле: {preview.totalTransactions}. Проверьте, что это брокерский отчёт Т-Инвестиций с разделом сделок.
@@ -283,21 +284,21 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
                 )}
                 {preview.classified.some((c) => c.warnings?.length > 0) && (
                   <span className="badge badge-red">
-                    ⚠️ Подозрительных позиций: {preview.classified.filter((c) => c.warnings?.length > 0).length}
+                    Подозрительных позиций: {preview.classified.filter((c) => c.warnings?.length > 0).length}
                   </span>
                 )}
               </div>
 
               {preview.unmatchedCount > 0 && (
                 <div style={{marginBottom:12, padding:'12px 16px', background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.3)', borderRadius:12, color:'var(--text-secondary)', fontSize:13, lineHeight:1.5}}>
-                  ⚠️ {preview.unmatchedCount === 1 ? 'Одна сделка' : `${preview.unmatchedCount} сделки`} не сопоставилась — вероятно, позиция была открыта до начала периода отчёта.
+                  {preview.unmatchedCount === 1 ? 'Одна сделка' : `${preview.unmatchedCount} сделки`} не сопоставилась — вероятно, позиция была открыта до начала периода отчёта.
                   Чтобы этого избежать, запросите у брокера отчёт за более широкий период (например, за весь год) или за месяц, когда позиция была открыта, и импортируйте его.
                 </div>
               )}
 
               {preview.unparsedDealNumbers?.length > 0 && (
                 <div style={{marginBottom:12, padding:'12px 16px', background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.3)', borderRadius:12, color:'var(--text-secondary)', fontSize:13, lineHeight:1.5}}>
-                  ⚠️ В отчёте есть {preview.unparsedDealNumbers.length === 1 ? 'строка' : 'строки'} с номером сделки
+                  В отчёте есть {preview.unparsedDealNumbers.length === 1 ? 'строка' : 'строки'} с номером сделки
                   ({preview.unparsedDealNumbers.slice(0, 5).join(', ')}{preview.unparsedDealNumbers.length > 5 ? '…' : ''}),
                   которую парсер не смог разобрать в сделку — вероятно, потеряна. Проверьте эти сделки в отчёте вручную и добавьте их в журнал руками, если нужно.
                 </div>
@@ -329,12 +330,12 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
                           <td>
                             <span className="font-semibold">{t.ticker}</span>
                             {c.warnings?.length > 0 && (
-                              <span title={c.warnings.join('; ')} style={{marginLeft:6, cursor:'help'}}>⚠️</span>
+                              <span title={c.warnings.join('; ')} style={{marginLeft:6, cursor:'help', display:'inline-flex', verticalAlign:'middle', color:'var(--gold)'}}><Icon name="warning" size={13} /></span>
                             )}
                           </td>
                           <td>
                             <span className={`badge ${t.direction === 'long' ? 'badge-green' : 'badge-red'}`}>
-                              {t.direction === 'long' ? '📈 Лонг' : '📉 Шорт'}
+                              {t.direction === 'long' ? 'Лонг' : 'Шорт'}
                             </span>
                           </td>
                           <td className="text-secondary" style={{whiteSpace:'nowrap'}}>{fmtRange(t)}</td>

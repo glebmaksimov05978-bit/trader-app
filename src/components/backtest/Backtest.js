@@ -268,7 +268,7 @@ export default function Backtest() {
         setHoldoutResult({ ...testResult, candles });
         setHoldoutSplitDate(candles[splitIndex]?.date || null);
         if (!trainResult.trades.length && !testResult.trades.length) {
-          toast('Ни одной сделки не найдено ни на тренировочном, ни на отложенном периоде', { icon: 'ℹ️' });
+          toast('Ни одной сделки не найдено ни на тренировочном, ни на отложенном периоде', { icon: 'ℹ' });
         }
       } else {
         const engineResult = runBacktest({
@@ -276,7 +276,7 @@ export default function Backtest() {
         });
         setResult({ ...engineResult, candles });
         if (!engineResult.trades.length) {
-          toast('Ни одной сделки не найдено — стратегия ни разу не набрала нужный % за этот период', { icon: 'ℹ️' });
+          toast('Ни одной сделки не найдено — стратегия ни разу не набрала нужный % за этот период', { icon: 'ℹ' });
         }
       }
     } catch (e) {
@@ -434,7 +434,7 @@ export default function Backtest() {
 
         {!hasConditions && (
           <div style={{marginBottom:12, color:'var(--gold)', fontSize:13}}>
-            ⚠️ У этой стратегии нет ни одного включённого условия входа — настрой её в «Капитале».
+            У этой стратегии нет ни одного включённого условия входа — настрой её в «Капитале».
           </div>
         )}
         {hasConditions && (
@@ -449,8 +449,8 @@ export default function Backtest() {
         )}
 
         <div className="flex gap-2" style={{marginBottom:12, flexWrap:'wrap'}}>
-          <button className={`btn ${instrumentType === 'future' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setInstrumentType('future')}>⚡ Фьючерс</button>
-          <button className={`btn ${instrumentType === 'stock' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setInstrumentType('stock')}>📈 Акция</button>
+          <button className={`btn ${instrumentType === 'future' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setInstrumentType('future')}>Фьючерс</button>
+          <button className={`btn ${instrumentType === 'stock' ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setInstrumentType('stock')}>Акция</button>
           <input className="input" placeholder="Тикер: IMOEXF, SBER..." value={ticker}
             onChange={(e) => setTicker(e.target.value)} style={{maxWidth:220}} />
           <div className="flex gap-2" style={{alignItems:'center'}}>
@@ -492,7 +492,7 @@ export default function Backtest() {
           <label className="flex gap-2" style={{alignItems:'center', fontSize:13, cursor:'pointer', fontWeight:600}}>
             <input type="checkbox" checked={marketRegimeFilterEnabled}
               onChange={(e) => setMarketRegimeFilterEnabled(e.target.checked)} />
-            📉 Фильтр рынка (не лонговать, когда индекс ниже своей SMA50)
+            Фильтр рынка (не лонговать, когда индекс ниже своей SMA50)
           </label>
           <div className="input-hint" style={{marginTop:4}}>Самое сильное улучшение сессии, шортов не касается.</div>
         </div>
@@ -531,10 +531,10 @@ export default function Backtest() {
         <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:6}}>Как считать доходность</div>
         <div className="flex gap-2" style={{marginBottom:8, flexWrap:'wrap'}}>
           <button type="button" className={`btn ${!realRiskEnabled ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setRealRiskEnabled(false)}>
-            📊 Теоретический максимум
+            Теоретический максимум
           </button>
           <button type="button" className={`btn ${realRiskEnabled ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setRealRiskEnabled(true)}>
-            💰 Реальные деньги (риск + ГО)
+            Реальные деньги (риск + ГО)
           </button>
         </div>
         {!realRiskEnabled && (
@@ -550,12 +550,12 @@ export default function Backtest() {
               из условий «Риск на сделку»/«Загрузка депозита» этой стратегии (если они включены), можно поправить
               только для этого прогона. Нужен реальный стоп (не «Нет») — иначе позицию нечем сайзить. Лот/шаг
               цены/ГО за контракт — введи вручную или подтяни с биржи кнопкой ниже
-              (⚠️ пока ГО за контракт = 0, «Загрузка ГО» ничего не ограничивает для фьючерса — считает только по риску).
+              (пока ГО за контракт = 0, «Загрузка ГО» ничего не ограничивает для фьючерса — считает только по риску).
               Ещё упрощение: ГО берётся СЕГОДНЯШНЕЕ и применяется на всю историю — у биржи оно меняется вместе с
               ценой инструмента, на далёкой истории может быть не совсем точным.
             </p>
             <button type="button" className="btn btn-secondary btn-sm" onClick={fetchSpecs} disabled={specsLoading} style={{marginBottom:12}}>
-              {specsLoading ? <span className="spinner" style={{width:12,height:12}}/> : '🔄'} Подтянуть с биржи
+              {specsLoading ? <span className="spinner" style={{width:12,height:12}}/> : <Icon name="refresh" size={13} />} Подтянуть с биржи
             </button>
             <div className="flex gap-3" style={{flexWrap:'wrap'}}>
               <div className="input-group" style={{width:130}}>
@@ -607,9 +607,9 @@ export default function Backtest() {
         )}
 
         <button className="btn btn-primary" onClick={run} disabled={loading}>
-          {loading ? <span className="spinner" style={{width:14,height:14}}/> : '▶️'} Запустить бэктест
+          {loading ? <span className="spinner" style={{width:14,height:14}}/> : '▶'} Запустить бэктест
         </button>
-        {error && <div style={{color:'var(--red)', marginTop:10, fontSize:13}}>⚠️ {error}</div>}
+        {error && <div style={{color:'var(--red)', marginTop:10, fontSize:13}}>{error}</div>}
       </div>
 
       {result && (
@@ -617,21 +617,21 @@ export default function Backtest() {
           {result.hadCustomConditions && (
             <div className="card" style={{marginBottom:16, borderColor:'var(--gold)'}}>
               <div style={{color:'var(--gold)', fontSize:13}}>
-                ⚠️ В стратегии есть «свои условия» (ручные галочки) — бэктест их пропустил: их некому отметить механически. Результат посчитан только по условиям из каталога.
+                В стратегии есть «свои условия» (ручные галочки) — бэктест их пропустил: их некому отметить механически. Результат посчитан только по условиям из каталога.
               </div>
             </div>
           )}
           {result.ambiguousBars > 0 && (
             <div className="card" style={{marginBottom:16, borderColor:'var(--gold)'}}>
               <div style={{color:'var(--gold)', fontSize:13}}>
-                ⚠️ На {result.ambiguousBars} {result.ambiguousBars === 1 ? 'дне' : 'днях'} условия одновременно набрали нужный % и для лонга, и для шорта — бэктест выбрал сторону с более высоким %. Признак того, что часть условий стратегии не привязана к направлению.
+                На {result.ambiguousBars} {result.ambiguousBars === 1 ? 'дне' : 'днях'} условия одновременно набрали нужный % и для лонга, и для шорта — бэктест выбрал сторону с более высоким %. Признак того, что часть условий стратегии не привязана к направлению.
               </div>
             </div>
           )}
 
           {holdoutResult && (
             <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:8}}>
-              📗 Тренировочный период {holdoutSplitDate ? `(до ${holdoutSplitDate.toLocaleDateString('ru-RU')})` : ''} — на нём можно крутить параметры
+              Тренировочный период {holdoutSplitDate ? `(до ${holdoutSplitDate.toLocaleDateString('ru-RU')})` : ''} — на нём можно крутить параметры
             </div>
           )}
           {stats ? (
@@ -654,7 +654,7 @@ export default function Backtest() {
               <div className="empty-state-text">
                 Стратегия нашла {result.trades.length} {result.trades.length === 1 ? 'сделку' : 'сделок'}, но ни одну не
                 удалось посчитать по реальному риску — проверь риск% (не 0?), стоп (не «Нет»?) и лот/шаг цены/ГО в
-                настройках выше. Переключись на «📊 Теоретический максимум», чтобы увидеть сами сделки без сайзинга.
+                настройках выше. Переключись на «Теоретический максимум», чтобы увидеть сами сделки без сайзинга.
               </div>
             </div>
           ) : result.trades?.length > 0 ? (
@@ -681,13 +681,13 @@ export default function Backtest() {
           {mtmComparison && (
             <div className="card" style={{marginBottom:16, borderColor:'var(--gold)'}}>
               <div style={{color:'var(--gold)', fontSize:13}}>
-                ⚠️ {mtmComparison.openCount} {mtmComparison.openCount === 1 ? 'позиция осталась незакрытой' : 'позиции остались незакрытыми'} до конца истории (следящий выход не нашёл, от чего "отдавать" — движение сразу пошло против входа и не вернулось). Винрейт выше ({formatNumber(stats.winrate, 1)}%) считает только закрытые сделки. Если честно учесть незакрытые по последней цене — винрейт {formatNumber(mtmComparison.mtmWinrate, 1)}%, худшая незакрытая позиция сейчас {formatNumber(mtmComparison.worstOpen, 1)}%.
+                {mtmComparison.openCount} {mtmComparison.openCount === 1 ? 'позиция осталась незакрытой' : 'позиции остались незакрытыми'} до конца истории (следящий выход не нашёл, от чего "отдавать" — движение сразу пошло против входа и не вернулось). Винрейт выше ({formatNumber(stats.winrate, 1)}%) считает только закрытые сделки. Если честно учесть незакрытые по последней цене — винрейт {formatNumber(mtmComparison.mtmWinrate, 1)}%, худшая незакрытая позиция сейчас {formatNumber(mtmComparison.worstOpen, 1)}%.
               </div>
             </div>
           )}
           {realRiskEnabled && equity.skippedCount > 0 && equity.statsTrades?.length > 0 && (
             <div style={{marginBottom:16, color:'var(--gold)', fontSize:12}}>
-              ⚠️ {equity.skippedCount} {equity.skippedCount === 1 ? 'сделка исключена' : 'сделок исключено'} из расчёта реального риска — нет стопа, нечем сайзить позицию по риску (тип выхода «Нет»).
+              {equity.skippedCount} {equity.skippedCount === 1 ? 'сделка исключена' : 'сделок исключено'} из расчёта реального риска — нет стопа, нечем сайзить позицию по риску (тип выхода «Нет»).
             </div>
           )}
 
@@ -696,7 +696,7 @@ export default function Backtest() {
             return (
               <>
                 <div style={{fontSize:13, fontWeight:700, color:'var(--text-primary)', marginBottom:8, display:'flex', alignItems:'center', gap:8}}>
-                  📕 Отложенный период {holdoutSplitDate ? `(с ${holdoutSplitDate.toLocaleDateString('ru-RU')})` : ''} — стратегия эти данные не видела при настройке
+                  Отложенный период {holdoutSplitDate ? `(с ${holdoutSplitDate.toLocaleDateString('ru-RU')})` : ''} — стратегия эти данные не видела при настройке
                 </div>
                 {h.stats ? (
                   <div className="grid-4" style={{gap:12, marginBottom:16}}>
@@ -716,9 +716,9 @@ export default function Backtest() {
                   <div className="card" style={{marginBottom:16, borderColor: (h.totalReturnPct >= 0) === (equity.totalReturnPct >= 0) ? 'var(--green)' : 'var(--red)'}}>
                     <div style={{fontSize:13}}>
                       {h.totalReturnPct >= 0 && equity.totalReturnPct >= 0
-                        ? '✅ Плюс на обоих периодах — хороший знак, стратегия не развалилась на данных, которые не участвовали в настройке.'
+                        ? 'Плюс на обоих периодах — хороший знак, стратегия не развалилась на данных, которые не участвовали в настройке.'
                         : h.totalReturnPct < 0 && equity.totalReturnPct >= 0
-                        ? '⚠️ На тренировочном плюс, на отложенном минус — характерный признак подгонки под конкретный отрезок истории, не настоящего преимущества.'
+                        ? 'На тренировочном плюс, на отложенном минус — характерный признак подгонки под конкретный отрезок истории, не настоящего преимущества.'
                         : 'Оба периода в минусе — стратегия последовательно не работает, это тоже честный и полезный результат.'}
                     </div>
                   </div>
@@ -800,7 +800,7 @@ export default function Backtest() {
                             <td>
                               <div className="flex gap-2" style={{alignItems:'center'}}>
                                 <span style={{fontSize:11, color:'var(--text-muted)', width:12, display:'inline-block'}}>{isSelected ? '▾' : '▸'}</span>
-                                <span className={`badge ${t.direction === 'long' ? 'badge-green' : 'badge-red'}`}>{t.direction === 'long' ? '📈 Лонг' : '📉 Шорт'}</span>
+                                <span className={`badge ${t.direction === 'long' ? 'badge-green' : 'badge-red'}`}>{t.direction === 'long' ? 'Лонг' : 'Шорт'}</span>
                               </div>
                             </td>
                             <td className="text-secondary">{t.entryDate.toLocaleDateString('ru-RU')}</td>

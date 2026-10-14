@@ -123,7 +123,7 @@ export default function ExitRulesEditor({ value, onChange, maxBarsEnabled, onMax
         <label className="flex gap-2" style={{alignItems:'center', fontSize:13, cursor:'pointer', fontWeight:600}}>
           <input type="checkbox" checked={!!value.trailEnabled}
             onChange={(e) => onChange({ ...value, trailEnabled: e.target.checked })} />
-          🌊 Следящий выход (едет за движением, не по фиксированной цене)
+          Следящий выход (едет за движением, не по фиксированной цене)
         </label>
         <div className="input-hint" style={{marginTop:4}}>
           Работает лучше со широким стопом (3-4%+ или «У уровня») — тесный стоп срабатывает раньше, чем следящий выход успевает включиться.
@@ -176,7 +176,7 @@ export default function ExitRulesEditor({ value, onChange, maxBarsEnabled, onMax
             <label className="flex gap-2" style={{alignItems:'center', fontSize:13, cursor:'pointer', fontWeight:600, marginTop:4}}>
               <input type="checkbox" checked={!!value.profitCaptureEnabled}
                 onChange={(e) => onChange({ ...value, profitCaptureEnabled: e.target.checked })} />
-              📈 Фиксировать прибыль по рейтингу (вместо «отдать N% от пика» выше)
+              Фиксировать прибыль по рейтингу (вместо «отдать N% от пика» выше)
             </label>
             {value.profitCaptureEnabled && (
               <div className="flex gap-2" style={{alignItems:'center', flexWrap:'wrap'}}>
@@ -205,7 +205,7 @@ export default function ExitRulesEditor({ value, onChange, maxBarsEnabled, onMax
                   // именно проверенное поведение, а не случайно другое.
                   ...(e.target.checked ? { lossScoreMode: value.lossScoreMode || 'nearBottom' } : {}),
                 })} />
-              📉 Оценивать убыток по рейтингу (вместо простого стопа/безубытка)
+              Оценивать убыток по рейтингу (вместо простого стопа/безубытка)
             </label>
             {value.trailLossRule === 'score' && (
               <div className="flex gap-2" style={{alignItems:'center', flexWrap:'wrap'}}>

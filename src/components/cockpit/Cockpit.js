@@ -1291,7 +1291,7 @@ export default function Cockpit() {
           {(trade || previewTicker) && (
             <div className="ck-verdict-actions" style={{ justifyContent: 'flex-start' }}>
               <button className={`ck-btn ${taOpen ? 'ck-btn-primary' : ''}`} onClick={() => setTaOpen((o) => !o)}>
-                📊 Технический анализ {taOpen ? '▴' : '▾'}
+                Технический анализ {taOpen ? '▴' : '▾'}
               </button>
               {!trade && (
                 <Link
@@ -1374,7 +1374,7 @@ export default function Cockpit() {
                     <div className="ck-verdict-actions" style={{ flexDirection: 'column', alignItems: 'flex-end' }}>
                       {canOrderRepeat && (
                         <button className="ck-btn ck-btn-primary" onClick={openRepeatOrder}>
-                          ⚡ Повторить реальной заявкой
+                          Повторить реальной заявкой
                         </button>
                       )}
                       {trade.repeatedAt && (
@@ -1397,7 +1397,7 @@ export default function Cockpit() {
                 return canOrderClose ? (
                   <div className="ck-verdict-actions">
                     <button className="ck-btn ck-btn-primary" onClick={() => openCloseOrder(suggestedQty)}>
-                      ⚡ Зафиксировать сейчас
+                      Зафиксировать сейчас
                     </button>
                     <button className="ck-btn" onClick={() => goToClose(trade, suggestedQty)} title="Записать в Журнал вручную, без заявки брокеру">
                       Записать вручную
@@ -1484,7 +1484,7 @@ export default function Cockpit() {
                 ) : canOrderClose ? (
                   <div className="ck-verdict-actions">
                     <button className="ck-btn ck-btn-primary" onClick={() => openCloseOrder(money.closingVol)}>
-                      ⚡ Зафиксировать {closeShare}% сейчас
+                      Зафиксировать {closeShare}% сейчас
                     </button>
                     <button className="ck-btn" onClick={() => goToClose(trade, money.closingVol)} title="Записать в Журнал вручную, без заявки брокеру">
                       Записать вручную

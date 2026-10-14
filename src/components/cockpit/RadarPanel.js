@@ -23,6 +23,7 @@ import { catalogEntry } from '../../services/marketData/instrumentCatalog';
 import CollapsibleSection from './CollapsibleSection';
 import InstrumentPicker from './InstrumentPicker';
 
+import Icon from '../shared/Icon';
 export default function RadarPanel({ filterId: filterIdProp, onFilterChange, onItems }) {
   const { user, userProfile } = useAuth();
   const navigate = useNavigate();
@@ -212,7 +213,7 @@ export default function RadarPanel({ filterId: filterIdProp, onFilterChange, onI
                   <div className="ck-radar-ticker">
                     {it.ticker}
                     {known && <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}> · {known.name}</span>}
-                    {paperTradeId && <span title="Уже торгует бумажной сделкой" style={{ marginLeft: 4 }}>📄</span>}
+                    {paperTradeId && <span title="Уже торгует бумажной сделкой" style={{ marginLeft: 4, display: 'inline-flex', verticalAlign: 'middle' }}><Icon name="file" size={12} /></span>}
                   </div>
                   <div className="ck-radar-sub">
                     {res?.error ? res.error
@@ -221,7 +222,7 @@ export default function RadarPanel({ filterId: filterIdProp, onFilterChange, onI
                   </div>
                   {it.robotCheck?.text && (
                     <div className="ck-radar-sub ck-radar-robot" title={`Робот, ${new Date(it.robotCheck.at).toLocaleString('ru-RU')}: ${it.robotCheck.text}`}>
-                      🤖 {new Date(it.robotCheck.at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} · {it.robotCheck.text}
+                      {new Date(it.robotCheck.at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })} · {it.robotCheck.text}
                     </div>
                   )}
                 </div>

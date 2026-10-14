@@ -50,7 +50,7 @@ async function getMoexPrice(ticker, type) {
   } catch { return null; }
 }
 
-const EMOTIONS = ['😊 Спокойный', '😤 Уверенный', '😰 Тревожный', '😴 Усталый', '😡 Злой', '🤔 Сомневающийся'];
+const EMOTIONS = ['Спокойный', 'Уверенный', 'Тревожный', 'Усталый', 'Злой', 'Сомневающийся'];
 
 function toLocalDatetimeInput(date) {
   const pad = (n) => String(n).padStart(2, '0');
@@ -461,7 +461,7 @@ export default function Calculator() {
         const r = await resolveFutureRoot(ticker);
         const c = r?.tradable || r?.nearest;
         if (c) {
-          toast(`${ticker} → контракт ${c.secid} (до экспирации ${c.daysLeft} дн.)`, { icon: 'ℹ️' });
+          toast(`${ticker} → контракт ${c.secid} (до экспирации ${c.daysLeft} дн.)`, { icon: 'ℹ' });
           ticker = c.secid;
           setForm((f) => ({ ...f, ticker: c.secid }));
         }
@@ -743,9 +743,9 @@ export default function Calculator() {
       const [pattern] = prevKey.split('-');
       const label = PATTERN_LABELS[pattern] || pattern;
       if ([...nowConfirmedKeys].some((k) => k.startsWith(pattern))) {
-        toast.success(`✅ Сетап «${label}» подтвердился`);
+        toast.success(`Сетап «${label}» подтвердился`);
       } else {
-        toast(`❌ Сетап «${label}» отменился — цена ушла дальше`, { icon: '⚠️' });
+        toast(`Сетап «${label}» отменился — цена ушла дальше`);
       }
     }
     formingKeysRef.current = nowForming;
@@ -866,8 +866,8 @@ export default function Calculator() {
       toast.success(overrides.status === 'pending'
         ? 'Заявка ждёт исполнения — записана в Журнал с пометкой, приложение само проверит её'
         : overrides.source === 'order'
-          ? `✅ Заявка исполнена и записана в Журнал: ${volumeFinal} × ${entryPriceFinal}`
-          : '✅ Сделка открыта в журнале');
+          ? `Заявка исполнена и записана в Журнал: ${volumeFinal} × ${entryPriceFinal}`
+          : 'Сделка открыта в журнале');
       setShowJournalModal(false);
       setJournalExtra({ setup: '', emotion: '', notes: '' });
       // The draft is meant to survive navigating away mid-plan (Журнал and back) — not
@@ -984,7 +984,7 @@ export default function Calculator() {
 
       {/* Тип инструмента */}
       <div style={{display:'flex', gap:8, marginBottom:16, flexWrap:'wrap'}}>
-        {[['future','⚡ Фьючерс'],['stock','📈 Акция']].map(([val, label]) => (
+        {[['future','Фьючерс'],['stock','Акция']].map(([val, label]) => (
           <button key={val}
             className={val === instrumentType ? 'btn btn-primary' : 'btn btn-secondary'}
             onClick={() => {
@@ -1001,7 +1001,7 @@ export default function Calculator() {
         <div style={{width:1, background:'var(--border-subtle)', margin:'0 4px'}}/>
 
         {/* Источник цены */}
-        {[['tinkoff','🏦 Т-Инвестиции'],['moex','📡 MOEX']].map(([val, label]) => (
+        {[['tinkoff','Т-Инвестиции'],['moex','MOEX']].map(([val, label]) => (
           <button key={val}
             className={val === priceSource ? 'btn btn-secondary' : 'btn btn-ghost'}
             style={{fontSize:13, border: val === priceSource ? '1px solid var(--accent-primary)' : undefined, color: val === priceSource ? 'var(--accent-primary)' : undefined}}
@@ -1017,7 +1017,7 @@ export default function Calculator() {
 
       {priceSource === 'moex' && (
         <div style={{background:'rgba(245,158,11,0.1)',border:'1px solid rgba(245,158,11,0.3)',borderRadius:10,padding:'8px 14px',marginBottom:16,fontSize:12,color:'var(--gold)'}}>
-          ⚠️ MOEX: данные с задержкой ~15 минут. Работает без токена Т-Инвестиций. Для фьючерсов ГО и шаг цены подтягиваются автоматически (если контракт сейчас торгуется), иначе — вводятся вручную.
+          MOEX: данные с задержкой ~15 минут. Работает без токена Т-Инвестиций. Для фьючерсов ГО и шаг цены подтягиваются автоматически (если контракт сейчас торгуется), иначе — вводятся вручную.
         </div>
       )}
 
@@ -1035,7 +1035,7 @@ export default function Calculator() {
                   placeholder={instrumentType === 'future' ? 'SRZ6, IMOEXF...' : 'VTBR, SBER...'}
                   style={{flex:1}} />
                 <button className="btn btn-secondary" onClick={loadInstrument} disabled={loadingPrice} style={{whiteSpace:'nowrap'}}>
-                  {loadingPrice ? <div className="spinner" style={{width:14,height:14}}/> : '🔄'} Загрузить
+                  {loadingPrice ? <div className="spinner" style={{width:14,height:14}}/> : <Icon name="refresh" size={14} />} Загрузить
                 </button>
               </div>
             </div>
@@ -1045,7 +1045,7 @@ export default function Calculator() {
                 <span className="badge badge-purple">{instrumentInfo.ticker}</span>
                 <span className="text-sm text-secondary">{instrumentInfo.name}</span>
                 {instrumentInfo.isShare
-                  ? <span className="text-xs text-muted">📈 Акция MOEX</span>
+                  ? <span className="text-xs text-muted">Акция MOEX</span>
                   : instrumentInfo.expirationDate && (
                     <span className="text-xs text-muted">
                       {/* Not new Date(...).toLocaleDateString() — a date-only ISO string
@@ -1065,7 +1065,7 @@ export default function Calculator() {
                   )
                 }
                 {priceSource === 'tinkoff' && orderType === 'market' && (
-                  <span className="text-xs" style={{color:'var(--green)'}}>🔄 авто 30с</span>
+                  <span className="text-xs" style={{color:'var(--green)'}}>авто 30с</span>
                 )}
               </div>
             )}
@@ -1104,7 +1104,7 @@ export default function Calculator() {
                 onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent-primary)'; e.currentTarget.style.color = 'var(--accent-primary)'; }}
                 onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-medium)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
               >
-                {taState.loading ? <div className="spinner" style={{width:13,height:13}}/> : '📊'} Технический анализ по тикеру
+                {taState.loading ? <div className="spinner" style={{width:13,height:13}}/> : <Icon name="chart" size={14} />} Технический анализ по тикеру
               </button>
               <button
                 onClick={() => setTaLive((v) => !v)}
@@ -1118,7 +1118,7 @@ export default function Calculator() {
                   fontFamily:'inherit', fontSize:13, fontWeight:600, whiteSpace:'nowrap',
                 }}
               >
-                {taLive ? '🔴 Live' : '⚪ Live'}
+                {taLive ? 'Live' : 'Live'}
               </button>
             </div>
             {taLive && (
@@ -1145,12 +1145,12 @@ export default function Calculator() {
                     setOrderType(val);
                     if (val === 'limit') set('entryPrice', '');
                   }}
-                >{val === 'market' ? '⚡' : '🎯'} {label}</button>
+                >{val === 'market' ? <Icon name="bolt" size={14} /> : <Icon name="target" size={14} />} {label}</button>
               ))}
             </div>
             {orderType === 'limit' && (
               <div style={{background:'color-mix(in srgb, var(--accent-primary) 8%, transparent)',border:'1px solid color-mix(in srgb, var(--accent-primary) 20%, transparent)',borderRadius:10,padding:'8px 14px',marginBottom:12,fontSize:12,color:'var(--accent-primary)'}}>
-                🎯 Лимитная: введите цену по которой хотите войти. Расчёт ведётся от неё.
+                Лимитная: введите цену по которой хотите войти. Расчёт ведётся от неё.
               </div>
             )}
 
@@ -1182,7 +1182,7 @@ export default function Calculator() {
             <div style={{display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:10, marginBottom:16}}>
               <div className="input-group">
                 <label className="input-label">
-                  {orderType === 'limit' ? '🎯 Цена заявки' : 'Цена входа'}
+                  {orderType === 'limit' ? 'Цена заявки' : 'Цена входа'}
                 </label>
                 <input className="input" type="number" value={form.entryPrice}
                   onChange={e => set('entryPrice', e.target.value)}
@@ -1263,10 +1263,10 @@ export default function Calculator() {
                   if (takePrice != null) { set('takeProfit', takePrice.toFixed(2)); }
                   else notes.push(`тейк: ${rules.takeType === 'none' ? 'не задан в стратегии' : `«${exitTypeLabel(rules.takeType, rules.takeLevelSource)}» — нет фиксированной цены`}`);
                   if (riskStopPrice == null && takePrice == null) toast.error('Ни для стопа, ни для тейка нет числа: ' + notes.join('; '));
-                  else if (notes.length) toast(`Подставлено частично — ${notes.join('; ')}`, { icon: 'ℹ️' });
+                  else if (notes.length) toast(`Подставлено частично — ${notes.join('; ')}`, { icon: 'ℹ' });
                   else toast.success('Стоп/тейк подставлены по стратегии — можно поправить руками');
                 }}>
-                  📐 Подставить по стратегии «{activeStrategy.name}»
+                  Подставить по стратегии «{activeStrategy.name}»
                 </button>
               </div>
             )}
@@ -1381,9 +1381,9 @@ export default function Calculator() {
                     <div className={`calc-metric-card ${cls}`}>
                       <div className="calc-metric-label">РИСК / ПРИБЫЛЬ</div>
                       <div style={{fontSize:28,fontWeight:800,color:rrColor}}>{displayResult.rr > 0 ? `1:${formatNumber(displayResult.rr, 1)}` : '—'}</div>
-                      {!displayResult.rrValid && displayResult.rr !== 0 ? <div style={{fontSize:11,color:'var(--red)'}}>⚠️ TP не там!</div>
-                        : rrDisplay >= 2 ? <div style={{fontSize:11,color:'var(--green)'}}>✅ Отличный</div>
-                        : rrDisplay >= 1 ? <div style={{fontSize:11,color:'var(--gold)'}}>🟡 Приемлемый</div>
+                      {!displayResult.rrValid && displayResult.rr !== 0 ? <div style={{fontSize:11,color:'var(--red)'}}>TP не там!</div>
+                        : rrDisplay >= 2 ? <div style={{fontSize:11,color:'var(--green)'}}>Отличный</div>
+                        : rrDisplay >= 1 ? <div style={{fontSize:11,color:'var(--gold)'}}>Приемлемый</div>
                         : null}
                     </div>
                   );
@@ -1403,14 +1403,14 @@ export default function Calculator() {
               {/* Кнопки */}
               <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
                 <button className="btn btn-primary" style={{flex:1, overflow:'hidden'}} onClick={handleJournalClick}>
-                  <span className={journalAnim ? 'journal-fly' : ''} style={{marginRight:4}}>📂</span>В журнал
+                  <span className={journalAnim ? 'journal-fly' : ''} style={{marginRight:6, display:'inline-flex', verticalAlign:'middle'}}><Icon name="journal" size={15} /></span>В журнал
                 </button>
                 <button className="btn btn-ai-hover" style={{flex:1,background:'linear-gradient(135deg,var(--accent-primary),var(--accent-primary))',color:'#fff',border:'none',borderRadius:12,fontWeight:600,fontSize:14}}
                   onClick={() => {
                     const p = new URLSearchParams({from:'calculator',ticker:form.ticker||'',name:instrumentInfo?.name||'',direction:displayResult.direction||'',entry:form.entryPrice||'',sl:form.stopLoss||'',tp:form.takeProfit||'',contracts:String(effectiveContracts),rr:String(displayResult.rr||''),riskAmount:String(displayResult.riskAmount||''),totalLoss:String(displayResult.totalLoss||''),totalProfit:String(displayResult.totalProfit||''),commission:String(displayResult.commission||''),breakeven:String(displayResult.breakeven||''),deposit:form.depositSize||'',type:instrumentType});
                     window.location.href = '/advisor?' + p.toString();
                   }}
-                >🤖 В AI</button>
+                >В AI</button>
                 <button
                   className="btn"
                   style={{flex:1,background:'linear-gradient(135deg,#ffdd2d,#f5a623)',color:'#1a1a1a',border:'none',borderRadius:12,fontWeight:700,fontSize:14,display:'flex',alignItems:'center',justifyContent:'center',gap:6}}
@@ -1437,7 +1437,7 @@ export default function Calculator() {
                     style={{flex:1}}
                     onClick={() => setShowOrderModal(true)}
                   >
-                    ⚡ {activeDirection === 'short' ? 'Продать' : 'Купить'} сразу
+                    {activeDirection === 'short' ? 'Продать' : 'Купить'} сразу
                   </button>
                 )}
                 {/* Real user request: no way to move a ticker being planned in the
@@ -1455,12 +1455,12 @@ export default function Calculator() {
                       toast.error('Не удалось добавить в радар');
                     }
                   }}
-                >📡 В радар</button>
+                >В радар</button>
               </div>
               {/* Кнопка «Купить/Продать сразу» скрыта — говорим почему, а не молчим. */}
               {form.ticker && orderCfgLoaded && explainOrderUnavailable(orderCfg, userProfile, form.ticker) && (
                 <div className="text-xs text-muted" style={{ marginTop: 8, lineHeight: 1.5 }}>
-                  ⚡ Купить сразу недоступно: {explainOrderUnavailable(orderCfg, userProfile, form.ticker)}
+                  Купить сразу недоступно: {explainOrderUnavailable(orderCfg, userProfile, form.ticker)}
                 </div>
               )}
 
@@ -1523,14 +1523,14 @@ export default function Calculator() {
                   <span style={{fontWeight:700,fontSize:14,color:(displayResult.marginUsagePercent||0)>50?'var(--red)':'var(--text-primary)'}}>{displayResult.marginUsagePercent||0}%</span>
                 </div>
                 <div className="text-xs text-muted" style={{marginTop:6,color:(displayResult.marginUsagePercent||0)>70?'var(--gold)':(displayResult.marginUsagePercent||0)>40?'var(--gold)':'var(--green)'}}>
-                  {(displayResult.marginUsagePercent||0)>70?'⚠️ Высокая загрузка — рискованно':(displayResult.marginUsagePercent||0)>40?'🟡 Умеренная загрузка':'✅ Нормальная загрузка'}
+                  {(displayResult.marginUsagePercent||0)>70?'Высокая загрузка — рискованно':(displayResult.marginUsagePercent||0)>40?'Умеренная загрузка':'Нормальная загрузка'}
                 </div>
               </div>
             </>
           ) : result ? (
             <div className="card" style={{textAlign:'center',padding:'48px 24px'}}>
               <div className="empty-state">
-                <div className="empty-state-icon">⚠️</div>
+                <div className="empty-state-icon"><Icon name="warning" size={40} /></div>
                 <div className="empty-state-title">Риск слишком мал для 1 контракта</div>
                 <div className="empty-state-text">
                   При таком стоп-лоссе убыток на {instrumentType === 'stock' ? 'лот' : 'контракт'} превышает сумму риска ({formatCurrency(Math.round((parseFloat(form.depositSize)||0) * (parseFloat(form.riskPercent)||0) / 100))}).
@@ -1541,7 +1541,7 @@ export default function Calculator() {
           ) : (
             <div className="card" style={{textAlign:'center',padding:'48px 24px'}}>
               <div className="empty-state">
-                <div className="empty-state-icon">🧮</div>
+                <div className="empty-state-icon"><Icon name="calculator" size={40} /></div>
                 <div className="empty-state-title">Введите параметры</div>
                 <div className="empty-state-text">Введите цену входа, стоп-лосс, размер депозита и риск — результат появится автоматически</div>
               </div>
@@ -1608,7 +1608,7 @@ export default function Calculator() {
         <div className="modal-overlay" onClick={() => setShowAtrModal(false)}>
           <div className="modal" style={{maxWidth:440}} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">📏 Волатильность (ATR)</h3>
+              <h3 className="modal-title">Волатильность (ATR)</h3>
               <button className="modal-close" onClick={() => setShowAtrModal(false)}>✕</button>
             </div>
             <div className="modal-body">
@@ -1675,7 +1675,7 @@ export default function Calculator() {
               {[
                 ['Тикер', form.ticker || '—'],
                 ['Направление', activeDirection === 'long' ? '↑ Лонг' : '↓ Шорт'],
-                ['Тип заявки', orderType === 'market' ? '⚡ По рынку' : '🎯 Лимитная'],
+                ['Тип заявки', orderType === 'market' ? 'По рынку' : 'Лимитная'],
                 ...(orderType === 'limit' ? [['Цена заявки', form.entryPrice || '—']] : []),
                 ['Контрактов', String(effectiveContracts)],
                 ['Стоп-лосс', form.stopLoss || '—'],
@@ -1705,7 +1705,7 @@ export default function Calculator() {
                         transition:'all 0.15s', whiteSpace:'nowrap',
                       }}
                     >
-                      {tinkoffCopied === label ? '✓ Скопировано' : '📋 Копировать'}
+                      {tinkoffCopied === label ? '✓ Скопировано' : 'Копировать'}
                     </button>
                   </div>
                 </div>
@@ -1760,7 +1760,7 @@ export default function Calculator() {
           <div className="calc-modal" onClick={e => e.stopPropagation()}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:20}}>
               <div>
-                <div style={{fontSize:18,fontWeight:700,color:'var(--text-primary)'}}>📂 Открыть сделку</div>
+                <div style={{fontSize:18,fontWeight:700,color:'var(--text-primary)'}}>Открыть сделку</div>
                 <div style={{fontSize:13,color:'var(--text-muted)',marginTop:2}}>
                   {form.ticker} · {activeDirection === 'long' ? '↑ Лонг' : '↓ Шорт'} · {form.entryPrice} ₽ · {effectiveContracts} шт.
                 </div>
@@ -1808,7 +1808,7 @@ export default function Calculator() {
                 Пропустить и сохранить
               </button>
               <button className="btn btn-primary" style={{flex:1}} onClick={handleSaveToJournal} disabled={savingTrade}>
-                {savingTrade ? <><div className="spinner" style={{width:14,height:14}}/> Сохранение...</> : '✅ Открыть сделку'}
+                {savingTrade ? <><div className="spinner" style={{width:14,height:14}}/> Сохранение...</> : 'Открыть сделку'}
               </button>
             </div>
           </div>
