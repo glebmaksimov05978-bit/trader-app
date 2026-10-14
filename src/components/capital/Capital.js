@@ -30,6 +30,22 @@ const CONDITION_GROUPS = [
   { id: 'plan', label: 'Условия плана (из Калькулятора)', ids: ['min_rr', 'max_risk_percent', 'max_margin_usage'], color: '#ef4444' },
 ];
 
+
+// Заголовок раздела страницы: номер, название и одна строка о том, что здесь настраивается и где
+// это потом работает. Страница объединяла четыре разные вещи в один поток, и было непонятно, что
+// перетекает куда (жалоба трейдера).
+function CapHead({ n, title, hint }) {
+  return (
+    <header className="cap-head">
+      <span className="cap-head-n">{n}</span>
+      <div>
+        <h2>{title}</h2>
+        <p>{hint}</p>
+      </div>
+    </header>
+  );
+}
+
 export default function Capital() {
   const { user, userProfile, updateUserProfile } = useAuth();
   const [trades, setTrades] = useState([]);
@@ -293,6 +309,9 @@ export default function Capital() {
         <p className="page-subtitle">Риск-менеджмент и контроль просадки</p>
       </div>
 
+      <CapHead n="1" title="Риск и депозит"
+        hint="Сколько можно рисковать и когда остановиться. Эти числа использует Калькулятор при расчёте объёма и лимиты дня." />
+
       {/* Status cards */}
       <div className="grid-4" style={{marginBottom:24}}>
         <div className={`kpi-card ${currentBalance >= deposit ? 'green' : 'red'}`}>
@@ -336,16 +355,16 @@ export default function Capital() {
           fill it (flex:1). With `alignItems:'start'` (the old value) the shorter left
           column just stopped early, leaving a chunk of empty space next to a much
           taller «Настройки риск-менеджмента» panel — real user report/screenshot. */}
-      <div className="grid-2">
+      <div className="grid-2" style={{alignItems:'start'}}>
         {/* Limits gauges */}
-        <div className="flex flex-col gap-4" style={{height:'100%'}}>
+        <div className="flex flex-col gap-4">
           {/* Daily loss gauge — flex:1 so it alone fills the column height now that the
               contracts calculator card below was removed (dead weight: never used
               anywhere else, fully duplicated the same риск% calc already in Калькулятор,
               see real user report 2026-08-17 — was already flagged confusing once
               before, adding an explanation didn't fix it because the panel itself was
               the problem, not unclear copy). */}
-          <div className="card" style={{flex:1}}>
+          <div className="card">
             <div className="section-title">
               <div className="section-title-icon"><Icon name="trendDown" size={15} /></div>
               Дневной лимит убытка
@@ -378,6 +397,13 @@ export default function Capital() {
             <div className="stat-row">
               <span className="stat-row-label">Сделок проведено сегодня</span>
               <span className="stat-row-value">{todayTrades.length} / {settings.maxDailyTrades}</span>
+            </div>
+
+            <div className="divider" />
+            <div className="capital-rules">
+              <div className="capital-rule">При риске {riskPct}% и лимите {dailyLossPct}% — макс. <strong>{maxTradesPerRisk} убыточных сделок</strong> в день</div>
+              <div className="capital-rule">Прекращать торговлю при убытке дня &gt; <strong>{formatCurrency(dailyLossRub)}</strong></div>
+              <div className="capital-rule">Остановить торговлю при просадке &gt; <strong>{ddStopPct}% ({formatCurrency(maxDdRub)})</strong></div>
             </div>
           </div>
 
@@ -429,15 +455,6 @@ export default function Capital() {
                 onChange={e => set('maxDailyTrades', e.target.value)} />
             </div>
 
-            <div className="divider" />
-
-            {/* Rules summary */}
-            <div className="capital-rules">
-              <div className="capital-rule">При риске {riskPct}% и лимите {dailyLossPct}% — макс. <strong>{maxTradesPerRisk} убыточных сделок</strong> в день</div>
-              <div className="capital-rule">Прекращать торговлю при убытке дня &gt; <strong>{formatCurrency(dailyLossRub)}</strong></div>
-              <div className="capital-rule">Остановить торговлю при просадке &gt; <strong>{ddStopPct}% ({formatCurrency(maxDdRub)})</strong></div>
-            </div>
-
             <button className="btn btn-primary" onClick={saveSettings} disabled={saving}>
               {saving ? <><div className="spinner" style={{width:14,height:14}}/> Сохранение...</> : 'Сохранить настройки'}
             </button>
@@ -445,9 +462,14 @@ export default function Capital() {
         </div>
       </div>
 
+      <div style={{marginTop:36}}>
+        <CapHead n="2" title="Стратегия: когда входить и как выходить"
+          hint="Условия входа, порог готовности и правила выхода. Работает в Калькуляторе, радаре, Сопровождении и у робота. Здесь стратегия только описывается: деньги и лимиты — в разделе 1." />
+      </div>
+
       {/* Моя стратегия — конструктор чек-листа. Считает движок из module 4/3, здесь
           только выбор условий и порогов, никакой отдельной логики оценки. */}
-      <div className="card" style={{marginTop:24}}>
+      <div className="card">
         <div className="section-title">
           <div className="section-title-icon"><Icon name="target" size={15} /></div>
           Моя стратегия
@@ -716,7 +738,13 @@ export default function Capital() {
         </button>
       </div>
 
-      <StrategyPerformanceCard trades={trades} strategies={strategies} />
+      <div style={{marginTop:36}}>
+        <CapHead n="3" title="Как стратегии торгуют и как делится капитал"
+          hint="Итоги по закрытым сделкам и портфельный режим: какая доля капитала достаётся какой стратегии. Показывает, не меняет сами стратегии." />
+      </div>
+      <div style={{marginTop:-8}}>
+        <StrategyPerformanceCard trades={trades} strategies={strategies} />
+      </div>
 
       <PortfolioCard
         userProfile={userProfile}
@@ -831,7 +859,7 @@ function StrategyPerformanceCard({ trades, strategies }) {
   const informative = rows.filter((r) => r.count >= 5);
 
   return (
-    <div className="card" style={{marginTop:24}}>
+    <div className="card" style={{marginTop:16}}>
       <div className="section-title">
         <div className="section-title-icon"><Icon name="layers" size={15} /></div>
         Как торгуют ваши стратегии

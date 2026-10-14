@@ -35,14 +35,29 @@ export default function MobileNav() {
   // открытии/закрытии — цена этого меньше, чем цена сверять открыт ли drawer через ref.
   const touchRef = useRef({ x: 0, y: 0, tracking: false });
   useEffect(() => {
-    const EDGE_PX = 24;      // с какого расстояния от левого края экрана жест ещё считается «открыть»
-    const THRESHOLD_PX = 60; // на сколько нужно провести пальцем, чтобы жест засчитался
-    const MAX_DRIFT_PX = 60; // вертикальное отклонение больше этого — трейдер скроллит страницу, не свайпает меню
+    // Зона начала жеста — левая треть экрана (раньше 24 пикселя от самого края: на телефоне туда
+    // почти невозможно попасть, а на iPhone край ещё и занят системным «назад»).
+    const edgePx = () => Math.max(48, Math.round(window.innerWidth * 0.3));
+    const THRESHOLD_PX = 56; // на сколько нужно провести пальцем, чтобы жест засчитался
+    const MAX_DRIFT_PX = 50; // вертикальное отклонение больше этого — трейдер скроллит страницу, не свайпает меню
+
+    // Жест не должен перехватывать горизонтальную прокрутку таблиц и графика: если палец начал
+    // движение внутри элемента, который сам прокручивается вбок, — это не меню.
+    const insideHScroll = (el) => {
+      for (let n = el; n && n !== document.body; n = n.parentElement) {
+        if (n.tagName === 'CANVAS' || n.hasAttribute?.('data-no-swipe')) return true;
+        if (n.scrollWidth > n.clientWidth + 2) {
+          const ox = window.getComputedStyle(n).overflowX;
+          if (ox === 'auto' || ox === 'scroll') return true;
+        }
+      }
+      return false;
+    };
 
     const onStart = (e) => {
       const t = e.touches[0];
       if (!t) return;
-      const canOpen = !drawerOpen && t.clientX <= EDGE_PX;
+      const canOpen = !drawerOpen && t.clientX <= edgePx() && !insideHScroll(e.target);
       const canClose = drawerOpen;
       touchRef.current = { x: t.clientX, y: t.clientY, tracking: canOpen || canClose };
     };
@@ -53,7 +68,7 @@ export default function MobileNav() {
       if (!t) return;
       const dx = t.clientX - st.x;
       const dy = Math.abs(t.clientY - st.y);
-      if (dy > MAX_DRIFT_PX) { st.tracking = false; return; }
+      if (dy > MAX_DRIFT_PX || (Math.abs(dx) > 12 && dy > Math.abs(dx))) { st.tracking = false; return; }
       if (!drawerOpen && dx > THRESHOLD_PX) {
         setDrawerOpen(true);
         st.tracking = false;
@@ -76,6 +91,13 @@ export default function MobileNav() {
     };
   }, [drawerOpen]);
 
+  useEffect(() => {
+    if (!drawerOpen) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setDrawerOpen(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [drawerOpen]);
+
   return (
     <>
       <div className="mobile-topbar">
@@ -87,7 +109,7 @@ export default function MobileNav() {
           <div className="mobile-drawer" onClick={(e) => e.stopPropagation()}>
             <div className="mobile-drawer-header">
               <span>Меню</span>
-              <button className="mobile-drawer-close" onClick={() => setDrawerOpen(false)}>✕</button>
+              <button className="mobile-drawer-close" onClick={() => setDrawerOpen(false)} aria-label="Закрыть меню">✕</button>
             </div>
             {items.map((item) => (
               <NavLink

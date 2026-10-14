@@ -50,6 +50,9 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [showFullReport, setShowFullReport] = useState(false);
   const [radarItems, setRadarItems] = useState([]);
+  // Радар по умолчанию свёрнут: при длинном списке инструментов он занимал полэкрана. Выбор запоминается.
+  const [radarOpen, setRadarOpen] = useState(() => { try { return localStorage.getItem('dash_radar_open') === '1'; } catch { return false; } });
+  const toggleRadar = () => setRadarOpen((v) => { const n = !v; try { localStorage.setItem('dash_radar_open', n ? '1' : '0'); } catch { /* не критично */ } return n; });
   const [radarState, setRadarState] = useState({}); // itemId -> { loading, result, error } — on-demand "Проверить" clicks only
   const [infoModal, setInfoModal] = useState(null); // { title, body } for the KPI card ⓘ modal
   // Live polling itself lives in RadarLiveProvider (mounted in AppLayout, above the
@@ -355,10 +358,27 @@ export default function Dashboard() {
           and only on demand (button per ticker), never automatically on page load */}
       {radarItems.length > 0 && (
         <div className="card" style={{marginBottom: 24}}>
-          <div className="section-title" style={{alignItems:'center'}}>
-            <div className="section-title-icon"><Icon name="radar" size={15} /></div>
-            Радар
-            {!activeStrategy?.conditions?.length ? (
+          <div className="section-title" style={{alignItems:'center', marginBottom: radarOpen ? 16 : 0}}>
+            <button
+              type="button"
+              onClick={toggleRadar}
+              aria-expanded={radarOpen}
+              style={{display:'inline-flex', alignItems:'center', gap:8, background:'none', border:'none', color:'inherit', font:'inherit', cursor:'pointer', padding:0}}
+            >
+              <div className="section-title-icon"><Icon name="radar" size={15} /></div>
+              Радар
+              <span style={{fontWeight:500, fontSize:12, color:'var(--text-muted)'}}>
+                {radarItems.length}{(() => {
+                  const hot = radarItems.filter((it) => {
+                    const r = (radarState[it.id] || radarResults?.[it.id])?.result;
+                    return r?.total && (r.passed / r.total) * 100 >= (activeStrategy?.readinessThreshold ?? 100);
+                  }).length;
+                  return hot > 0 ? ` · готово к входу: ${hot}` : '';
+                })()}
+              </span>
+              <Icon name={radarOpen ? 'chevronUp' : 'chevronDown'} size={15} style={{color:'var(--text-muted)'}} />
+            </button>
+            {radarOpen && (!activeStrategy?.conditions?.length ? (
               <span style={{fontWeight:400, fontSize:12, color:'var(--text-muted)', marginLeft:8}}>
                 стратегия не настроена — <a href="/capital" style={{color:'var(--accent-primary)'}}>задать в Капитале</a>
               </span>
@@ -376,21 +396,23 @@ export default function Dashboard() {
               >
                 {radarLive ? 'Live' : 'Live'}
               </button>
-            )}
-            {radarLive && radarUpdatedAt && (
+            ))}
+            {radarOpen && radarLive && radarUpdatedAt && (
               <span style={{fontWeight:400, fontSize:11, color:'var(--green)', marginLeft:8}}>
                 обновлено в {radarUpdatedAt.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'})}
               </span>
             )}
           </div>
-          {radarLive && (
+          {radarOpen && radarLive && (
             <div className="text-xs text-muted" style={{marginBottom:10}}>
               Автопроверка каждые 5 минут, пока открыта эта вкладка. Уведомление придёт, когда
               процент выполненных условий по тикеру достигнет порога готовности из вашей стратегии
               {activeStrategy?.readinessThreshold == null && ' (порог не задан — уведомим при 100%)'}
             </div>
           )}
-          <div className="flex flex-col gap-2">
+          {radarOpen && (<>
+          {/* Список — со своей прокруткой и видимым ползунком: при 30+ инструментах он не растягивает страницу. */}
+          <div className="flex flex-col gap-2 scroll-box" style={{maxHeight: 360, overflowY: 'auto', paddingRight: 4}}>
             {radarItems.map((item) => {
               // A manual "Проверить" click always wins if it's in flight or just
               // finished — otherwise fall back to whatever Live polling last found for
@@ -433,6 +455,7 @@ export default function Dashboard() {
             })}
           </div>
           <a href="/journal" style={{display:'inline-block', marginTop:10, fontSize:12, color:'var(--accent-primary)'}}>Все тикеры в Журнале →</a>
+          </>)}
         </div>
       )}
 

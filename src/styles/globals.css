@@ -856,3 +856,12 @@ select, input, textarea { max-width: 100%; }
   .page-header-actions { flex-wrap: wrap; }
   .card { padding: 16px; }
 }
+
+
+/* Внутренние прокручиваемые списки: ползунок виден и тянется мышкой (раньше тонкий и прозрачный,
+   «радар можно было крутить только страницей целиком»). */
+.scroll-box { scrollbar-width: thin; scrollbar-color: var(--border-medium) transparent; overscroll-behavior: contain; }
+.scroll-box::-webkit-scrollbar { width: 10px; }
+.scroll-box::-webkit-scrollbar-track { background: var(--bg-surface-2); border-radius: 5px; }
+.scroll-box::-webkit-scrollbar-thumb { background: var(--border-medium); border-radius: 5px; border: 2px solid var(--bg-surface-2); }
+.scroll-box::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }

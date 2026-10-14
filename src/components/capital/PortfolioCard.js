@@ -53,7 +53,7 @@ export default function PortfolioCard({ userProfile, strategies, trades, onSave 
   };
 
   return (
-    <div className="card" style={{ marginTop: 24 }}>
+    <div className="card" style={{ marginTop: 16 }}>
       <div className="section-title">
         <div className="section-title-icon"><Icon name="layers" size={15} /></div>
         Портфельный режим
