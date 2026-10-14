@@ -164,8 +164,8 @@ ${recentTrades || 'Нет данных'}${calcContext}
       }}>
         {/* Фоновые глоу-пятна */}
         <div style={{position:'absolute',inset:0,pointerEvents:'none',overflow:'hidden'}}>
-          <div style={{position:'absolute',top:'10%',left:'20%',width:400,height:400,borderRadius:'50%',background:'rgba(79,70,229,0.07)',filter:'blur(80px)'}}/>
-          <div style={{position:'absolute',bottom:'10%',right:'15%',width:300,height:300,borderRadius:'50%',background:'rgba(124,58,237,0.06)',filter:'blur(60px)'}}/>
+          <div style={{position:'absolute',top:'10%',left:'20%',width:400,height:400,borderRadius:'50%',background:'color-mix(in srgb, var(--accent-primary) 7%, transparent)',filter:'blur(80px)'}}/>
+          <div style={{position:'absolute',bottom:'10%',right:'15%',width:300,height:300,borderRadius:'50%',background:'color-mix(in srgb, var(--accent-primary) 6%, transparent)',filter:'blur(60px)'}}/>
         </div>
 
         <div style={{
@@ -173,7 +173,7 @@ ${recentTrades || 'Нет данных'}${calcContext}
           display:'flex', flexDirection:'column', alignItems:'center',
         }}>
           {/* Иконка */}
-          <div style={{fontSize:56,marginBottom:10,filter:'drop-shadow(0 0 24px rgba(79,70,229,0.5))'}}>🤖</div>
+          <div style={{fontSize:56,marginBottom:10,filter:'drop-shadow(0 0 24px color-mix(in srgb, var(--accent-primary) 50%, transparent))'}}>🤖</div>
 
           {/* PRO бейдж */}
           <div style={{display:'inline-flex',alignItems:'center',gap:6,background:'linear-gradient(135deg,rgba(245,158,11,0.15),rgba(251,191,36,0.1))',border:'1px solid rgba(245,158,11,0.3)',borderRadius:20,padding:'4px 14px',marginBottom:14}}>
@@ -208,8 +208,8 @@ ${recentTrades || 'Нет данных'}${calcContext}
 
           {/* Цена — все элементы одного baseline-размера */}
           <div style={{
-            background:'rgba(79,70,229,0.08)',
-            border:'1px solid rgba(79,70,229,0.2)',
+            background:'color-mix(in srgb, var(--accent-primary) 8%, transparent)',
+            border:'1px solid color-mix(in srgb, var(--accent-primary) 20%, transparent)',
             borderRadius:14, padding:'14px 24px',
             marginBottom:16, width:'100%',
             display:'flex', alignItems:'center', justifyContent:'center', gap:0,
@@ -223,9 +223,9 @@ ${recentTrades || 'Нет данных'}${calcContext}
 
           {/* Кнопка */}
           <button
-            style={{width:'100%',padding:'14px',border:'none',borderRadius:14,background:'linear-gradient(135deg,#4f46e5,#7c3aed)',color:'#fff',fontFamily:"'DM Sans',sans-serif",fontSize:15,fontWeight:700,cursor:'pointer',boxShadow:'0 8px 24px rgba(79,70,229,0.4)',transition:'transform 0.2s, box-shadow 0.2s'}}
-            onMouseEnter={e => { e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow='0 12px 32px rgba(79,70,229,0.55)'; }}
-            onMouseLeave={e => { e.currentTarget.style.transform=''; e.currentTarget.style.boxShadow='0 8px 24px rgba(79,70,229,0.4)'; }}
+            style={{width:'100%',padding:'14px',border:'none',borderRadius:14,background:'linear-gradient(135deg,var(--accent-primary),var(--accent-primary))',color:'#fff',fontFamily:"'DM Sans',sans-serif",fontSize:15,fontWeight:700,cursor:'pointer',boxShadow:'0 8px 24px color-mix(in srgb, var(--accent-primary) 40%, transparent)',transition:'transform 0.2s, box-shadow 0.2s'}}
+            onMouseEnter={e => { e.currentTarget.style.transform='translateY(-2px)'; e.currentTarget.style.boxShadow='0 12px 32px color-mix(in srgb, var(--accent-primary) 55%, transparent)'; }}
+            onMouseLeave={e => { e.currentTarget.style.transform=''; e.currentTarget.style.boxShadow='0 8px 24px color-mix(in srgb, var(--accent-primary) 40%, transparent)'; }}
             onClick={() => alert('Оплата скоро будет доступна! Напишите в поддержку для активации Pro.')}
           >
             ⚡ Перейти на Pro — 299 ₽/мес
@@ -290,7 +290,7 @@ ${recentTrades || 'Нет данных'}${calcContext}
 
       {/* Карточка калькулятора */}
       {mode === 'calculator' && calcData && (
-        <div style={{padding:'14px 18px',background:'rgba(79,70,229,0.08)',border:'1px solid rgba(79,70,229,0.25)',borderRadius:16,marginBottom:12}}>
+        <div style={{padding:'14px 18px',background:'color-mix(in srgb, var(--accent-primary) 8%, transparent)',border:'1px solid color-mix(in srgb, var(--accent-primary) 25%, transparent)',borderRadius:16,marginBottom:12}}>
           <div style={{fontSize:12,color:'var(--accent-primary)',fontWeight:700,marginBottom:10,letterSpacing:'0.5px'}}>🧮 ДАННЫЕ ИЗ КАЛЬКУЛЯТОРА</div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(180px,1fr))',gap:'6px 20px',fontSize:13}}>
             {[

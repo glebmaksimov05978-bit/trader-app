@@ -85,7 +85,7 @@ function CustomDatePicker({ value, onChange }) {
           color: displayValue ? 'var(--text-primary)' : 'var(--text-muted)',
           transition:'border-color 0.2s, box-shadow 0.2s',
           userSelect:'none',
-          boxShadow: open ? '0 0 0 3px rgba(79,70,229,0.15)' : 'none',
+          boxShadow: open ? '0 0 0 3px color-mix(in srgb, var(--accent-primary) 15%, transparent)' : 'none',
           width:'100%',
         }}
       >
@@ -161,19 +161,19 @@ function CustomDatePicker({ value, onChange }) {
                   cursor: d ? 'pointer' : 'default',
                   fontWeight: isSelected(d) ? 700 : 400,
                   background: isSelected(d)
-                    ? 'linear-gradient(135deg, #4f46e5, #7c3aed)'
-                    : isToday(d) ? 'rgba(79,70,229,0.18)' : 'transparent',
+                    ? 'linear-gradient(135deg, var(--accent-primary), var(--accent-primary))'
+                    : isToday(d) ? 'color-mix(in srgb, var(--accent-primary) 18%, transparent)' : 'transparent',
                   color: isSelected(d) ? '#fff'
                     : isToday(d) ? 'var(--accent-primary)'
                     : d ? 'var(--text-primary)' : 'transparent',
-                  boxShadow: isSelected(d) ? '0 2px 8px rgba(79,70,229,0.4)' : 'none',
+                  boxShadow: isSelected(d) ? '0 2px 8px color-mix(in srgb, var(--accent-primary) 40%, transparent)' : 'none',
                   transition:'background 0.12s, color 0.12s',
                 }}
                 onMouseEnter={e => {
                   if (d && !isSelected(d)) e.currentTarget.style.background = 'var(--bg-surface-3)';
                 }}
                 onMouseLeave={e => {
-                  if (d && !isSelected(d)) e.currentTarget.style.background = isToday(d) ? 'rgba(79,70,229,0.18)' : 'transparent';
+                  if (d && !isSelected(d)) e.currentTarget.style.background = isToday(d) ? 'color-mix(in srgb, var(--accent-primary) 18%, transparent)' : 'transparent';
                 }}
               >
                 {d || ''}

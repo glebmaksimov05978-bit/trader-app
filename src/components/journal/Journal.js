@@ -1038,8 +1038,8 @@ export default function Journal() {
             <div className="modal-body" style={{paddingTop:20, paddingBottom:8}}>
               {/* Инфо о сделке */}
               <div style={{
-                background:'rgba(79,70,229,0.08)',
-                border:'1px solid rgba(79,70,229,0.2)',
+                background:'color-mix(in srgb, var(--accent-primary) 8%, transparent)',
+                border:'1px solid color-mix(in srgb, var(--accent-primary) 20%, transparent)',
                 borderRadius:12,
                 padding:'12px 16px',
                 marginBottom:20,
@@ -1081,9 +1081,9 @@ export default function Journal() {
                 <div style={{
                   display:'flex', alignItems:'center',
                   background:'var(--bg-surface-2)',
-                  border:'1px solid rgba(79,70,229,0.4)',
+                  border:'1px solid color-mix(in srgb, var(--accent-primary) 40%, transparent)',
                   borderRadius:10, overflow:'hidden',
-                  boxShadow:'0 0 0 2px rgba(79,70,229,0.1)',
+                  boxShadow:'0 0 0 2px color-mix(in srgb, var(--accent-primary) 10%, transparent)',
                 }}>
                   <input
                     type="number"
@@ -1149,8 +1149,8 @@ export default function Journal() {
                         onClick={() => setCloseQty(share === 100 ? '' : String(qty))}
                         style={{
                           padding:'0 10px', fontSize:11, fontWeight:700, borderRadius:8,
-                          border:`1px solid ${active ? 'rgba(79,70,229,0.6)' : 'var(--border-medium)'}`,
-                          background: active ? 'rgba(79,70,229,0.18)' : 'transparent',
+                          border:`1px solid ${active ? 'color-mix(in srgb, var(--accent-primary) 60%, transparent)' : 'var(--border-medium)'}`,
+                          background: active ? 'color-mix(in srgb, var(--accent-primary) 18%, transparent)' : 'transparent',
                           color: active ? 'var(--text-primary)' : 'var(--text-muted)',
                         }}
                       >

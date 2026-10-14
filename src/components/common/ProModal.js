@@ -34,7 +34,7 @@ export default function ProModal({ onClose }) {
           borderRadius:28, padding:'40px 36px',
           width:'100%', maxWidth:480,
           position:'relative',
-          boxShadow:'0 40px 100px rgba(0,0,0,0.6), 0 0 0 1px rgba(79,70,229,0.2)',
+          boxShadow:'0 40px 100px rgba(0,0,0,0.6), 0 0 0 1px color-mix(in srgb, var(--accent-primary) 20%, transparent)',
           animation:'proModalIn 0.35s cubic-bezier(0.16,1,0.3,1)',
         }}
         onClick={e => e.stopPropagation()}
@@ -102,8 +102,8 @@ export default function ProModal({ onClose }) {
 
         {/* Цена и кнопка */}
         <div style={{
-          background:'linear-gradient(135deg,rgba(79,70,229,0.1),rgba(124,58,237,0.08))',
-          border:'1px solid rgba(79,70,229,0.25)',
+          background:'linear-gradient(135deg,color-mix(in srgb, var(--accent-primary) 10%, transparent),color-mix(in srgb, var(--accent-primary) 8%, transparent))',
+          border:'1px solid color-mix(in srgb, var(--accent-primary) 25%, transparent)',
           borderRadius:18, padding:'20px 24px', marginBottom:16, textAlign:'center',
         }}>
           <div style={{display:'flex', alignItems:'baseline', justifyContent:'center', gap:4, marginBottom:4}}>
@@ -118,14 +118,14 @@ export default function ProModal({ onClose }) {
 
         <button style={{
           width:'100%', padding:16, border:'none', borderRadius:16,
-          background:'linear-gradient(135deg,#4f46e5,#7c3aed)',
+          background:'linear-gradient(135deg,var(--accent-primary),var(--accent-primary))',
           color:'#fff', fontFamily:"'DM Sans',sans-serif",
           fontSize:15, fontWeight:700, cursor:'pointer',
-          boxShadow:'0 8px 24px rgba(79,70,229,0.45)',
+          boxShadow:'0 8px 24px color-mix(in srgb, var(--accent-primary) 45%, transparent)',
           transition:'transform 0.2s, box-shadow 0.2s',
         }}
-          onMouseEnter={e => { e.target.style.transform='translateY(-2px)'; e.target.style.boxShadow='0 12px 32px rgba(79,70,229,0.6)'; }}
-          onMouseLeave={e => { e.target.style.transform=''; e.target.style.boxShadow='0 8px 24px rgba(79,70,229,0.45)'; }}
+          onMouseEnter={e => { e.target.style.transform='translateY(-2px)'; e.target.style.boxShadow='0 12px 32px color-mix(in srgb, var(--accent-primary) 60%, transparent)'; }}
+          onMouseLeave={e => { e.target.style.transform=''; e.target.style.boxShadow='0 8px 24px color-mix(in srgb, var(--accent-primary) 45%, transparent)'; }}
           onClick={() => {
             // TODO: подключить платёжную систему
             alert('Оплата скоро будет доступна! Напишите в поддержку для активации Pro.');

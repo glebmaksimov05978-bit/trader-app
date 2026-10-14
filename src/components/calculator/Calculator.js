@@ -928,7 +928,7 @@ export default function Calculator() {
         input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
         input[type=number] { -moz-appearance: textfield; }
         .btn-ai-hover { transition: transform 0.2s, box-shadow 0.2s; }
-        .btn-ai-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(124,58,237,0.4); }
+        .btn-ai-hover:hover { transform: translateY(-2px); box-shadow: 0 8px 20px color-mix(in srgb, var(--accent-primary) 40%, transparent); }
         @keyframes flyToJournal {
           0%   { transform: scale(1) translate(0, 0); opacity: 1; }
           30%  { transform: scale(1.3) translate(-5px, -8px); opacity: 1; }
@@ -1052,7 +1052,7 @@ export default function Calculator() {
                   style={{
                     padding:'4px 10px', borderRadius:8, fontSize:11, fontFamily:'inherit', cursor:'pointer',
                     border: `1px solid ${taTimeframe === tf.key ? 'var(--accent-primary)' : 'var(--border-subtle)'}`,
-                    background: taTimeframe === tf.key ? 'rgba(79,70,229,0.12)' : 'transparent',
+                    background: taTimeframe === tf.key ? 'color-mix(in srgb, var(--accent-primary) 12%, transparent)' : 'transparent',
                     color: taTimeframe === tf.key ? 'var(--accent-primary)' : 'var(--text-muted)',
                   }}
                 >{tf.label}</button>
@@ -1123,7 +1123,7 @@ export default function Calculator() {
               ))}
             </div>
             {orderType === 'limit' && (
-              <div style={{background:'rgba(79,70,229,0.08)',border:'1px solid rgba(79,70,229,0.2)',borderRadius:10,padding:'8px 14px',marginBottom:12,fontSize:12,color:'var(--accent-primary)'}}>
+              <div style={{background:'color-mix(in srgb, var(--accent-primary) 8%, transparent)',border:'1px solid color-mix(in srgb, var(--accent-primary) 20%, transparent)',borderRadius:10,padding:'8px 14px',marginBottom:12,fontSize:12,color:'var(--accent-primary)'}}>
                 🎯 Лимитная: введите цену по которой хотите войти. Расчёт ведётся от неё.
               </div>
             )}
@@ -1161,7 +1161,7 @@ export default function Calculator() {
                 <input className="input" type="number" value={form.entryPrice}
                   onChange={e => set('entryPrice', e.target.value)}
                   placeholder={orderType === 'limit' ? 'Ваша цена' : '0'}
-                  style={{borderColor: orderType === 'limit' ? 'rgba(79,70,229,0.5)' : undefined}} />
+                  style={{borderColor: orderType === 'limit' ? 'color-mix(in srgb, var(--accent-primary) 50%, transparent)' : undefined}} />
               </div>
               <div className="input-group">
                 <label className="input-label">
@@ -1379,7 +1379,7 @@ export default function Calculator() {
                 <button className="btn btn-primary" style={{flex:1, overflow:'hidden'}} onClick={handleJournalClick}>
                   <span className={journalAnim ? 'journal-fly' : ''} style={{marginRight:4}}>📂</span>В журнал
                 </button>
-                <button className="btn btn-ai-hover" style={{flex:1,background:'linear-gradient(135deg,#7c3aed,#4f46e5)',color:'#fff',border:'none',borderRadius:12,fontWeight:600,fontSize:14}}
+                <button className="btn btn-ai-hover" style={{flex:1,background:'linear-gradient(135deg,var(--accent-primary),var(--accent-primary))',color:'#fff',border:'none',borderRadius:12,fontWeight:600,fontSize:14}}
                   onClick={() => {
                     const p = new URLSearchParams({from:'calculator',ticker:form.ticker||'',name:instrumentInfo?.name||'',direction:displayResult.direction||'',entry:form.entryPrice||'',sl:form.stopLoss||'',tp:form.takeProfit||'',contracts:String(effectiveContracts),rr:String(displayResult.rr||''),riskAmount:String(displayResult.riskAmount||''),totalLoss:String(displayResult.totalLoss||''),totalProfit:String(displayResult.totalProfit||''),commission:String(displayResult.commission||''),breakeven:String(displayResult.breakeven||''),deposit:form.depositSize||'',type:instrumentType});
                     window.location.href = '/advisor?' + p.toString();
@@ -1490,7 +1490,7 @@ export default function Calculator() {
               <div className="card" style={{flex:1, display:'flex', flexDirection:'column', justifyContent:'flex-start'}}>
                 <div className="section-title"><div className="section-title-icon">⚡</div>Использование капитала</div>
                 <div className="risk-gauge-bar">
-                  <div className="risk-gauge-fill" style={{width:`${Math.min(displayResult.marginUsagePercent||0,100)}%`,background:(displayResult.marginUsagePercent||0)>50?'linear-gradient(90deg,#f59e0b,#ef4444)':(displayResult.marginUsagePercent||0)>25?'linear-gradient(90deg,#4f46e5,#f59e0b)':'linear-gradient(90deg,#4f46e5,#10b981)'}}/>
+                  <div className="risk-gauge-fill" style={{width:`${Math.min(displayResult.marginUsagePercent||0,100)}%`,background:(displayResult.marginUsagePercent||0)>50?'linear-gradient(90deg,#f59e0b,#ef4444)':(displayResult.marginUsagePercent||0)>25?'linear-gradient(90deg,var(--accent-primary),#f59e0b)':'linear-gradient(90deg,var(--accent-primary),#10b981)'}}/>
                 </div>
                 <div className="risk-gauge-labels">
                   <span className="text-sm text-secondary">{instrumentType==='stock'?'Позиция':'ГО'}: {formatCurrency(instrumentType==='stock'?displayResult.positionValue:displayResult.totalMargin)}</span>
@@ -1761,7 +1761,7 @@ export default function Calculator() {
                 <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
                   {EMOTIONS.map(e => (
                     <button key={e}
-                      style={{padding:'6px 12px',borderRadius:20,border:'1px solid var(--border-subtle)',background:journalExtra.emotion===e?'rgba(79,70,229,0.2)':'var(--bg-surface-2)',color:journalExtra.emotion===e?'var(--accent-primary)':'var(--text-secondary)',cursor:'pointer',fontSize:12,fontFamily:'inherit',transition:'all 0.15s'}}
+                      style={{padding:'6px 12px',borderRadius:20,border:'1px solid var(--border-subtle)',background:journalExtra.emotion===e?'color-mix(in srgb, var(--accent-primary) 20%, transparent)':'var(--bg-surface-2)',color:journalExtra.emotion===e?'var(--accent-primary)':'var(--text-secondary)',cursor:'pointer',fontSize:12,fontFamily:'inherit',transition:'all 0.15s'}}
                       onClick={() => setJournalExtra(p => ({...p, emotion: p.emotion === e ? '' : e}))}
                     >{e}</button>
                   ))}

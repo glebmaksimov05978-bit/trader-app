@@ -52,10 +52,10 @@
 }
 
 .advisor-mode-btn.active {
-  border-color: rgba(79,70,229,0.6);
-  background: rgba(79,70,229,0.15);
+  border-color: color-mix(in srgb, var(--accent-primary) 60%, transparent);
+  background: color-mix(in srgb, var(--accent-primary) 15%, transparent);
   color: #818cf8;
-  box-shadow: 0 0 0 1px rgba(79,70,229,0.3);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-primary) 30%, transparent);
 }
 
 /* ── Панель действий ── */
@@ -137,8 +137,8 @@
   font-size: 14px; line-height: 1.6;
 }
 .advisor-message.user .advisor-message-bubble {
-  background: rgba(79,70,229,0.12);
-  border-color: rgba(79,70,229,0.2);
+  background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent-primary) 20%, transparent);
 }
 
 .advisor-message-content h1,

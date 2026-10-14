@@ -360,7 +360,7 @@ export default function Capital() {
                 <div className="capital-gauge-fill" style={{
                   width:`${todayLimitUsedPct}%`,
                   background: todayLimitUsedPct > 80 ? 'linear-gradient(90deg,#f59e0b,#ef4444)' :
-                    todayLimitUsedPct > 50 ? 'linear-gradient(90deg,#4f46e5,#f59e0b)' : 'var(--accent-gradient)'
+                    todayLimitUsedPct > 50 ? 'linear-gradient(90deg,var(--accent-primary),#f59e0b)' : 'var(--accent-gradient)'
                 }}/>
               </div>
               {todayLimitUsedPct >= 100 && (
@@ -512,7 +512,7 @@ export default function Capital() {
                 {PRIVATE_STRATEGY_PRESETS.map((preset) => (
                   <button
                     key={preset.id} className="btn btn-sm"
-                    style={{background:'rgba(79,70,229,0.12)', border:'1px solid rgba(79,70,229,0.3)', color:'var(--accent-primary)'}}
+                    style={{background:'color-mix(in srgb, var(--accent-primary) 12%, transparent)', border:'1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent)', color:'var(--accent-primary)'}}
                     onClick={() => loadPrivatePreset(preset)}
                   >
                     🔒 {preset.name}
@@ -599,8 +599,8 @@ export default function Capital() {
                     <div key={def.id} style={{
                       display:'flex', alignItems:'center', justifyContent:'space-between', gap:12,
                       padding:'10px 14px', borderRadius:10,
-                      background: enabled ? 'rgba(79,70,229,0.08)' : 'var(--bg-surface-2)',
-                      border: `1px solid ${enabled ? 'rgba(79,70,229,0.3)' : 'var(--border-subtle)'}`,
+                      background: enabled ? 'color-mix(in srgb, var(--accent-primary) 8%, transparent)' : 'var(--bg-surface-2)',
+                      border: `1px solid ${enabled ? 'color-mix(in srgb, var(--accent-primary) 30%, transparent)' : 'var(--border-subtle)'}`,
                     }}>
                       <label style={{display:'flex', alignItems:'center', gap:10, cursor:'pointer', flex:1}}>
                         <input type="checkbox" checked={enabled} onChange={() => toggleCondition(def.id)} />
