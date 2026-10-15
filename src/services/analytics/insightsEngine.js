@@ -603,7 +603,9 @@ export function detectGivebackFromPeak(trades) {
     detail: sampleSize === 0
       ? 'Пока нет сделок с разбором — он считается при закрытии, так что данные начнут копиться со следующих закрытых сделок.'
       : `В типичной сделке вы доходите до ${median(eligible.map((t) => t.peakPct)).toFixed(1)}% прибыли, `
-        + `а закрываете, отдав ${medianShare.toFixed(0)}% от этого максимума`
+        + (medianShare > 100
+          ? `а закрываете в минусе: отдаёте весь максимум и ещё столько же сверху (${medianShare.toFixed(0)}% от пика — это значит, что цена в итоге ушла ниже входа)`
+          : `а закрываете, отдав ${medianShare.toFixed(0)}% от этого максимума`)
         + (example ? `. Худший случай — ${example.ticker}: пик ${example.peakPct.toFixed(1)}%, отдано ${example.givebackPct.toFixed(1)} п.п.` : '.'),
   };
 }

@@ -68,6 +68,8 @@ export default function TaSettingsCard({ value, onChange, onSave, saving, dirty 
         чем пользуется эта стратегия.
       </p>
 
+      <div className="ta-set-cols">
+        <div>
       <div className="ta-set-groups">
         {groups.map((g) => (
           <div key={g} className="ta-set-group">
@@ -92,9 +94,14 @@ export default function TaSettingsCard({ value, onChange, onSave, saving, dirty 
         <span className="text-xs text-muted">показано блоков: {n} из {TA_SECTIONS.length}</span>
       </div>
 
+        </div>
+        <div>
       <div className="ta-set-preview">
         <div className="ta-set-preview-head">Пример — так будет выглядеть плашка (цифры условные)</div>
         <TechnicalAnalysisBlock state={SAMPLE} title="Технический анализ" view={view} onRefresh={() => {}} />
+      </div>
+
+        </div>
       </div>
 
       <div style={{ marginTop: 14 }}>

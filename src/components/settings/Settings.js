@@ -145,7 +145,7 @@ export default function Settings() {
         <p className="page-subtitle">Профиль и интеграции</p>
       </div>
 
-      <div style={{maxWidth: 600}}>
+      <div style={{maxWidth: 1040}} className="settings-wrap">
         <div className="card" style={{marginBottom:20}}>
           <div className="section-title">
             <div className="section-title-icon"><Icon name="user" size={15} /></div>
