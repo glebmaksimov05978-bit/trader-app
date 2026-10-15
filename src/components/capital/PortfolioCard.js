@@ -10,7 +10,7 @@
 import React, { useEffect, useState } from 'react';
 import { computeBaskets, getPortfolio } from '../../services/analytics/portfolio';
 import { classifyStrategy, kindBadge } from '../../services/analytics/strategyKind';
-import { formatCurrency } from '../../utils/calculator';
+import { formatCurrency, formatPercent } from '../../utils/money';
 
 import Icon from '../shared/Icon';
 const rub = (v) => `${v >= 0 ? '+' : '−'}${formatCurrency(Math.abs(Math.round(v)))}`;

@@ -16,7 +16,8 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, Cell
 } from 'recharts';
-import { formatCurrency, formatNumber } from '../../utils/calculator';
+import { formatNumber } from '../../utils/calculator';
+import { formatCurrency, formatPercent } from '../../utils/money';
 import toast from 'react-hot-toast';
 
 import Icon from '../shared/Icon';

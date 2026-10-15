@@ -1,6 +1,6 @@
 // src/components/journal/TradeModal.js
 import React, { useState, useEffect, useRef } from 'react';
-import { formatCurrency } from '../../utils/calculator';
+import { formatCurrency, formatPercent } from '../../utils/money';
 import './Journal.css';
 
 import Icon from '../shared/Icon';

@@ -1318,7 +1318,7 @@ export default function Calculator() {
               </div>
             </div>
 
-            <div className="divider" />
+            <div className="divider" style={{margin:'24px 0'}} />
 
             {/* Параметры контракта */}
             <div className="calc-section-title">Параметры контракта</div>

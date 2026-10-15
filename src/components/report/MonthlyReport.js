@@ -17,7 +17,7 @@ import { buildDecisionJournal } from '../../services/analytics/decisionJournal';
 import { buildMonthlyReport, reportVerdict } from '../../services/analytics/monthlyReport';
 import { buildPeriodReport, listPeriods, SCOPES } from '../../services/analytics/periodReport';
 import { buildEntryStats } from '../../services/analytics/entryStats';
-import { formatCurrency } from '../../utils/calculator';
+import { formatCurrency, formatPercent } from '../../utils/money';
 import { computeClosePnl } from '../../services/tradeClose';
 import { MIN_SAMPLE } from '../../services/analytics/insightsEngine';
 import './MonthlyReport.css';

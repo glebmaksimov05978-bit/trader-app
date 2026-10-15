@@ -4,7 +4,8 @@ import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, calcStats, computeLiveBalance } from '../../services/trades';
 import { computeClosePnl } from '../../services/tradeClose';
 import { realizedOnDay, openedOnDay } from '../../services/analytics/realized';
-import { formatCurrency, formatNumber } from '../../utils/calculator';
+import { formatNumber } from '../../utils/calculator';
+import { formatCurrency, formatPercent } from '../../utils/money';
 import { CONDITION_CATALOG, defaultStrategy, getStrategies, STRATEGY_TEMPLATES, CUSTOM_CONDITION_PRESETS } from '../../services/analytics/strategy';
 import { classifyStrategy, kindBadge, strategyPerformance } from '../../services/analytics/strategyKind';
 import { PRIVATE_STRATEGY_PRESETS } from '../../services/analytics/privateStrategyPresets';
@@ -338,17 +339,17 @@ export default function Capital() {
 
       {/* Status cards */}
       <div className="grid-4" style={{marginBottom:24}}>
-        <div className={`kpi-card ${currentBalance >= deposit ? 'green' : 'red'}`}>
+        <div className="kpi-card blue">
           <div className="kpi-label">Текущий депозит</div>
-          <div className="kpi-value" style={{color: currentBalance >= deposit ? 'var(--green)' : 'var(--red)', fontSize:22}}>
+          <div className="kpi-value" style={{fontSize:22}}>
             {formatCurrency(Math.round(currentBalance))}
           </div>
           <div className="kpi-sub">{currentBalance >= deposit ? '+' : ''}{formatCurrency(Math.round(currentBalance - deposit))}</div>
         </div>
 
-        <div className={`kpi-card ${todayPnl >= 0 ? 'green' : todayLossUsed >= dailyLossRub * 0.8 ? 'red' : 'gold'}`}>
+        <div className={`kpi-card ${Math.round(todayPnl) === 0 ? 'blue' : todayPnl > 0 ? 'green' : todayLossUsed >= dailyLossRub * 0.8 ? 'red' : 'gold'}`}>
           <div className="kpi-label">P&L сегодня</div>
-          <div className="kpi-value" style={{color: todayPnl >= 0 ? 'var(--green)' : 'var(--red)', fontSize:22}}>
+          <div className="kpi-value" style={{color: Math.round(todayPnl) === 0 ? undefined : todayPnl > 0 ? 'var(--green)' : 'var(--red)', fontSize:22}}>
             {todayPnl >= 0 ? '+' : ''}{formatCurrency(Math.round(todayPnl))}
           </div>
           <div className="kpi-sub">{todayTrades.length} открыто сегодня{todayRealized.partialPnl !== 0 ? ` · из них фиксация частями ${todayRealized.partialPnl > 0 ? "+" : ""}${formatCurrency(Math.round(todayRealized.partialPnl))}` : ""}</div>
@@ -428,6 +429,25 @@ export default function Capital() {
               <div className="capital-rule">При риске {riskPct}% и лимите {dailyLossPct}% — макс. <strong>{maxTradesPerRisk} убыточных сделок</strong> в день</div>
               <div className="capital-rule">Прекращать торговлю при убытке дня &gt; <strong>{formatCurrency(dailyLossRub)}</strong></div>
               <div className="capital-rule">Остановить торговлю при просадке &gt; <strong>{ddStopPct}% ({formatCurrency(maxDdRub)})</strong></div>
+            </div>
+
+            <div className="divider" />
+            <div className="capital-gauge">
+              <div className="capital-gauge-labels">
+                <span className="text-sm text-secondary">Просадка от пика: {formatCurrency(Math.round(currentDd))}</span>
+                <span className="text-sm font-semibold">{currentDdPct.toFixed(1)}% / Лимит: {ddStopPct}%</span>
+              </div>
+              <div className="capital-gauge-bar">
+                <div className="capital-gauge-fill" style={{ width: `${Math.min(100, ddStopPct > 0 ? (currentDdPct / ddStopPct) * 100 : 0)}%`, background: currentDdPct >= ddStopPct ? '#ef4444' : 'var(--accent-gradient)' }} />
+              </div>
+            </div>
+            <div className="stat-row">
+              <span className="stat-row-label">Риск на сделку</span>
+              <span className="stat-row-value">{riskPct}% · {formatCurrency(Math.round(riskPerTrade))}</span>
+            </div>
+            <div className="stat-row">
+              <span className="stat-row-label">Остаток лимита дня</span>
+              <span className="stat-row-value">{formatCurrency(Math.max(0, Math.round(dailyLossRub - todayLossUsed)))}</span>
             </div>
           </div>
 

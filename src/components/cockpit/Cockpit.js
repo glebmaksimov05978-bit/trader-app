@@ -23,14 +23,14 @@ import { computeMarketContextAtEntry } from '../../services/analytics/marketCont
 import { catalogEntry } from '../../services/marketData/instrumentCatalog';
 import TechnicalAnalysisBlock from '../shared/TechnicalAnalysisBlock';
 import StrategyChecklist from '../shared/StrategyChecklist';
-import { getActiveStrategy, getStrategies, evaluateStrategy } from '../../services/analytics/strategy';
+import { getActiveStrategy, getStrategies, evaluateStrategy, CONDITION_CATALOG } from '../../services/analytics/strategy';
 import { classifyStrategy, kindBadge } from '../../services/analytics/strategyKind';
 import { followedStrategies, setObserve, isObserved } from '../../services/analytics/strategyMeta';
 import { resolveTaView, chartLayersFor } from '../../services/analytics/taView';
 import { userLevelsForChart } from '../../services/chartDrawings';
 import { commissionRateFor, DEFAULT_TARIFF } from '../../services/analytics/commission';
 import { computeBaskets, getPortfolio } from '../../services/analytics/portfolio';
-import { formatCurrency } from '../../utils/calculator';
+import { formatCurrency, formatPercent } from '../../utils/money';
 import { computeBothLines, computeLiveState } from '../../services/backtest/livePosition';
 import { computeProfitBreakdown, computeLossBreakdown } from '../../services/backtest/engine';
 import { evaluateAlerts, DEFAULT_ALERT_PREFS } from '../../services/alerts';
@@ -1217,6 +1217,35 @@ export default function Cockpit() {
                 pending={pendingByStrategy}
                 single={scopeId !== 'all'}
               />
+              {scopeId !== 'all' && (() => {
+                const st = strategies.find((x) => x.id === scopeId);
+                if (!st) return null;
+                const on = (st.conditions || []).filter((c) => c.enabled);
+                const label = (c) => {
+                  const def = CONDITION_CATALOG.find((d) => d.id === c.id);
+                  const p = c.param ?? def?.defaultParam;
+                  return def ? (p != null ? def.label.replace('X', p) : def.label) : c.id;
+                };
+                const er = st.exitRules || {};
+                const exits = [er.trailEnabled && 'следящий выход', er.profitCaptureEnabled && 'профит-система', er.trailLossRule === 'score' && 'лосс-система'].filter(Boolean);
+                return (
+                  <section className="ck-panel">
+                    <h3 style={{ marginTop: 0 }}>Как торгует «{st.name || 'стратегия'}»</h3>
+                    <div className="ck-line-sub" style={{ marginBottom: 8 }}>
+                      Порог готовности к входу: {st.readinessThreshold != null ? `${st.readinessThreshold}%` : 'не задан'} · выход: {exits.length ? exits.join(', ') : 'не настроен'}
+                    </div>
+                    {on.length || (st.customConditions || []).length ? (
+                      <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7, fontSize: 13 }}>
+                        {on.map((c) => <li key={c.id}>{label(c)}</li>)}
+                        {(st.customConditions || []).map((c) => <li key={c.id}>{c.label} <span className="ck-line-sub">(отмечается вручную)</span></li>)}
+                      </ul>
+                    ) : <div className="ck-line-sub">Условий входа нет — <Link to="/capital">добавьте в Капитале</Link>.</div>}
+                    <div className="ck-line-sub" style={{ marginTop: 8 }}>
+                      Радар слева и список сделок сейчас показывают только тикеры и сделки этой стратегии. Если там пусто — к ней ещё не привязан ни один тикер радара (при добавлении тикера выбирается стратегия).
+                    </div>
+                  </section>
+                );
+              })()}
               <div className="ck-hint-line">
                 Нажмите инструмент в радаре слева, чтобы открыть график, технический анализ и готовность к входу.
                 Своя сделка — в <Link to="/journal">Журнале</Link> или <Link to="/calculator">Калькуляторе</Link>.

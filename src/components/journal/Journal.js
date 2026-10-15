@@ -4,7 +4,8 @@ import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, addTrade, updateTrade, deleteTrade, calcStats, resolveOpenedAt, resolveClosedAt } from '../../services/trades';
 import { fetchTradeLegs, resolveAccountId } from '../../services/positionSync';
-import { formatCurrency, formatNumber } from '../../utils/calculator';
+import { formatNumber } from '../../utils/calculator';
+import { formatCurrency, formatPercent } from '../../utils/money';
 import { fetchMarketPrice } from '../../services/marketData/lastPrice';
 import { reconcilePendingTrades } from '../../services/pendingOrders';
 import { fetchOrderState } from '../../services/broker';
@@ -697,7 +698,7 @@ export default function Journal() {
                     <td>
                       {trade.pnl !== undefined && trade.pnl !== null ? (
                         <span style={{color: trade.pnl >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 600}}>
-                          {trade.pnl >= 0 ? '+' : ''}{formatCurrency(Math.round(trade.pnl))}
+                          {trade.pnl > 0 ? '+' : ''}{formatCurrency(trade.pnl)}
                         </span>
                       ) : trade.pnlNeedsSpecs ? (
                         <span className="text-muted" title="Биржа не дала параметры контракта — раскройте сделку, чтобы ввести вручную">—</span>
@@ -709,7 +710,7 @@ export default function Journal() {
                           color: trade.pnl >= 0 ? 'var(--green)' : 'var(--red)',
                           fontWeight: 600, fontSize: 13,
                         }}>
-                          {trade.pnl >= 0 ? '+' : ''}{((trade.pnl / deposit) * 100).toFixed(2)}%
+                          {formatPercent((trade.pnl / deposit) * 100)}
                         </span>
                       ) : <span className="text-muted">—</span>}
                     </td>
@@ -726,7 +727,7 @@ export default function Journal() {
                       <div className="flex flex-col gap-1" style={{width:92}}>
                         <div className="flex gap-2" style={{width:'100%'}}>
                           <button className="btn btn-ghost btn-sm" style={{flex:1, padding:'6px 0'}} onClick={() => openEdit(trade)} title="Редактировать"><Icon name="edit" size={15} /></button>
-                          <button className="btn btn-ghost btn-sm" style={{flex:1, padding:'6px 0', color:'var(--red)'}} onClick={() => handleDelete(trade.id)} title="Удалить"></button>
+                          <button className="btn btn-ghost btn-sm" style={{flex:1, padding:'6px 0', color:'var(--red)'}} onClick={() => handleDelete(trade.id)} title="Удалить"><Icon name="trash" size={15} /></button>
                         </div>
                         {/* Below ✏️/🗑, not above — user report: the extra button should
                             sit under the pair, not push it down. */}
