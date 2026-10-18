@@ -139,11 +139,15 @@ export default function Dashboard() {
   const recentTrades = trades
     .filter(t => (t.status === 'closed' || t.status === 'partial') && t.pnl !== undefined && t.pnl !== null)
     .slice(0, 10);
-  const barData = recentTrades.reverse().map((t, i) => ({
+  const barData0 = recentTrades.reverse().map((t, i) => ({
     name: t.ticker || `#${i+1}`,
     pnl: t.pnl,
     fill: t.pnl >= 0 ? '#10b981' : '#ef4444',
   }));
+  // Крошечный результат (−1 ₽ рядом с +5 000 ₽) на столбце не виден — рисуем минимальную полоску не меньше
+  // 3% от самого большого; настоящая сумма остаётся в подсказке.
+  const maxAbs = Math.max(1, ...barData0.map((d) => Math.abs(d.pnl)));
+  const barData = barData0.map((d) => ({ ...d, pnlShown: Math.abs(d.pnl) < maxAbs * 0.03 ? (d.pnl < 0 ? -1 : 1) * maxAbs * 0.03 : d.pnl }));
 
   const instrumentPnl = detectPnlByInstrumentType(trades);
   // Правила активной стратегии нужны детектору когорт: разрез «снимали часть или нет»
@@ -340,9 +344,9 @@ export default function Dashboard() {
                   tickFormatter={(v) => `${(v/1000).toFixed(0)}k`} domain={['auto','auto']} width={44}/>
                 <Tooltip
                   contentStyle={{background:'var(--bg-surface-3)', border:'1px solid var(--border-medium)', borderRadius:12, fontSize:12}}
-                  formatter={(v) => [formatCurrency(v), 'P&L']}
+                  formatter={(v, n, item) => [formatCurrency(item?.payload?.pnl ?? v), 'P&L']}
                 />
-                <Bar dataKey="pnl" radius={[4,4,0,0]}>
+                <Bar dataKey="pnlShown" radius={[4,4,0,0]}>
                   {barData.map((entry, i) => (
                     <Cell key={i} fill={entry.pnl >= 0 ? 'url(#barGreen)' : 'url(#barRed)'} />
                   ))}

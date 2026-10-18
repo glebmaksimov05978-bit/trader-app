@@ -6,8 +6,8 @@ import { computeClosePnl } from '../../services/tradeClose';
 import { realizedOnDay, openedOnDay } from '../../services/analytics/realized';
 import { formatNumber } from '../../utils/calculator';
 import { formatCurrency, formatPercent } from '../../utils/money';
-import { CONDITION_CATALOG, defaultStrategy, getStrategies, STRATEGY_TEMPLATES, CUSTOM_CONDITION_PRESETS } from '../../services/analytics/strategy';
-import { classifyStrategy, kindBadge, strategyPerformance } from '../../services/analytics/strategyKind';
+import { CONDITION_CATALOG, defaultStrategy, getStrategies, CUSTOM_CONDITION_PRESETS } from '../../services/analytics/strategy';
+import { classifyStrategy, kindBadge } from '../../services/analytics/strategyKind';
 import { PRIVATE_STRATEGY_PRESETS } from '../../services/analytics/privateStrategyPresets';
 import { TRUSTED_UIDS } from '../../constants/trustedUids';
 import PortfolioCard from './PortfolioCard';
@@ -38,6 +38,28 @@ const CONDITION_GROUPS = [
 // Заголовок раздела страницы: номер, название и одна строка о том, что здесь настраивается и где
 // это потом работает. Страница объединяла четыре разные вещи в один поток, и было непонятно, что
 // перетекает куда (жалоба трейдера).
+// Поле числа с запятой или точкой. Раньше значение сразу превращалось в число, и «1,» или «1.» стирались
+// (парсер отбрасывал разделитель) — цифры пропадали при вводе. Теперь пока вы печатаете, хранится текст.
+function ParamInput({ value, onCommit }) {
+  const [text, setText] = useState(String(value ?? ''));
+  useEffect(() => {
+    const cur = parseFloat(String(text).replace(',', '.'));
+    if (cur !== Number(value)) setText(String(value ?? ''));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+  return (
+    <input className="input" type="text" inputMode="decimal" value={text}
+      style={{width:70, padding:'4px 8px', fontSize:13}}
+      onChange={(e) => {
+        const t = e.target.value;
+        if (!/^-?\d*[.,]?\d*$/.test(t)) return;
+        setText(t);
+        const n = parseFloat(t.replace(',', '.'));
+        if (Number.isFinite(n)) onCommit(n);
+      }} />
+  );
+}
+
 function CapHead({ n, title, hint }) {
   return (
     <header className="cap-head">
@@ -63,6 +85,7 @@ export default function Capital() {
   const [strategies, setStrategies] = useState(() => getStrategies(userProfile));
   const [activeStrategyId, setActiveStrategyId] = useState(userProfile?.activeStrategyId || null);
   const [editingId, setEditingId] = useState(null);
+  const [editorOpen, setEditorOpen] = useState(false); // конструктор скрыт, пока не нажали «Условия» или «Новая стратегия»
   const [savingStrategy, setSavingStrategy] = useState(false);
   const [confirmTemplate, setConfirmTemplate] = useState(null); // template pending overwrite confirmation
   const [confirmDeleteStrategyId, setConfirmDeleteStrategyId] = useState(null);
@@ -89,6 +112,7 @@ export default function Capital() {
     const next = defaultStrategy();
     setStrategies((list) => [...list, next]);
     setEditingId(next.id);
+    setEditorOpen(true);
   };
   const renameStrategy = (id, name) => setStrategies((list) => list.map((s) => (s.id === id ? { ...s, name } : s)));
   const deleteStrategy = (id) => {
@@ -214,10 +238,6 @@ export default function Capital() {
   // rest of the app's own themed modals, and (caught live, testing) hangs anything
   // driving the browser programmatically. Same custom-confirm pattern as Journal.js's
   // delete-trade dialog.
-  const loadTemplate = (tpl) => {
-    if (strategy.conditions.length > 0) { setConfirmTemplate(tpl); return; }
-    applyTemplate(tpl);
-  };
 
   // Приватные пресеты (см. privateStrategyPresets.js) несут ещё и exitRules — обычный
   // applyTemplate этого не делает, шаблоны для всех аккаунтов правил выхода не задают.
@@ -266,6 +286,7 @@ export default function Capital() {
   };
   const editStrategyConditions = (id) => {
     setEditingId(id);
+    setEditorOpen(true);
     setTimeout(() => {
       try { document.getElementById('cap-strategy-editor')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch { /* не критично */ }
     }, 30);
@@ -460,7 +481,7 @@ export default function Capital() {
             Настройки риск-менеджмента
           </div>
 
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col" style={{gap:8}}>
             <div className="input-group">
               <label className="input-label">Размер депозита (₽)</label>
               <input className="input" type="number" value={settings.depositSize}
@@ -518,15 +539,24 @@ export default function Capital() {
         onPersist={persistStrategies}
         onSetActive={(id) => setActiveStrategyId(id)}
         onEdit={editStrategyConditions}
+        onAdd={addStrategy}
         saving={savingStrategy}
       />
 
       {/* Моя стратегия — конструктор чек-листа. Считает движок из module 4/3, здесь
           только выбор условий и порогов, никакой отдельной логики оценки. */}
-      <div className="card" id="cap-strategy-editor">
-        <div className="section-title">
-          <div className="section-title-icon"><Icon name="target" size={15} /></div>
-          Моя стратегия
+      {!editorOpen && (
+        <div className="text-xs text-muted" style={{margin:'-4px 4px 16px'}}>
+          Чтобы изменить условия стратегии, нажмите «Условия» у нужной строки; новая стратегия — «Новая стратегия».
+        </div>
+      )}
+      {editorOpen && <div className="card" id="cap-strategy-editor">
+        <div className="section-title" style={{justifyContent:'space-between'}}>
+          <span style={{display:'inline-flex', alignItems:'center', gap:8}}>
+            <div className="section-title-icon"><Icon name="target" size={15} /></div>
+            Построение стратегии: «{strategy.name || 'Без названия'}»
+          </span>
+          <button className="btn btn-ghost btn-sm" onClick={() => setEditorOpen(false)}>Свернуть</button>
         </div>
         <p className="text-sm text-secondary" style={{marginBottom:16}}>
           Выберите условия, которые важны для вашей стратегии. Счётчик «N из M» появится в Калькуляторе
@@ -562,19 +592,6 @@ export default function Capital() {
         </div>
 
         <div style={{marginBottom:20}}>
-          <div className="text-xs text-muted" style={{marginBottom:8}}>
-            Шаблоны — стартовый черновик, не проверенная временем формула. Загрузите один, дальше правьте
-            под себя как обычно; со временем раздел «3 привычки недели» покажет, помогает ли выбранный
-            порог готовности на ваших реальных сделках.
-          </div>
-          <div className="flex gap-2" style={{flexWrap:'wrap'}}>
-            {STRATEGY_TEMPLATES.map(tpl => (
-              <button key={tpl.id} className="btn btn-secondary btn-sm" title={tpl.description} onClick={() => loadTemplate(tpl)}>
-                {tpl.label}
-              </button>
-            ))}
-          </div>
-
           {/* Только на этом аккаунте: точные условия входа + профит-/лосс-система из
               эталонного дневного прогона (тот же, что даёт «что было дальше в похожих
               ситуациях» в Сопровождении). Не публичные шаблоны — своя наработка, в
@@ -688,10 +705,7 @@ export default function Capital() {
                       {enabled && def.paramLabel && (
                         <div style={{display:'flex', alignItems:'center', gap:6, flexShrink:0}}>
                           <span className="text-xs text-muted">{def.paramLabel}</span>
-                          <input className="input" type="number" step="any"
-                            value={cond?.param ?? def.defaultParam}
-                            onChange={e => setConditionParam(def.id, parseFloat(e.target.value))}
-                            style={{width:70, padding:'4px 8px', fontSize:13}} />
+                          <ParamInput value={cond?.param ?? def.defaultParam} onCommit={(v) => setConditionParam(def.id, v)} />
                         </div>
                       )}
                       {enabled && def.category === 'market' && (
@@ -790,14 +804,11 @@ export default function Capital() {
         <button className="btn btn-primary" onClick={saveStrategy} disabled={savingStrategy}>
           {savingStrategy ? <><div className="spinner" style={{width:14,height:14}}/> Сохранение...</> : 'Сохранить стратегии'}
         </button>
-      </div>
+      </div>}
 
       <div style={{marginTop:36}}>
-        <CapHead n="3" title="Как стратегии торгуют и как делится капитал"
-          hint="Итоги по закрытым сделкам и портфельный режим: какая доля капитала достаётся какой стратегии. Показывает, не меняет сами стратегии." />
-      </div>
-      <div style={{marginTop:-8}}>
-        <StrategyPerformanceCard trades={trades} strategies={strategies} />
+        <CapHead n="3" title="Как делится капитал"
+          hint="Портфельный режим: какая доля капитала достаётся какой стратегии. Итоги стратегий по сделкам — в Отчёте." />
       </div>
 
       <PortfolioCard
@@ -903,63 +914,3 @@ function StrategyKindCard({ strategy }) {
   );
 }
 
-// Как стратегии торговали на самом деле. Сделка помнит стратегию, по которой открыта, —
-// поэтому это не «как задумано», а факт из журнала. Сделки без записанной стратегии
-// (старые или заведённые руками) идут отдельной группой: приписать их активной сегодня
-// было бы удобно и неверно.
-function StrategyPerformanceCard({ trades, strategies }) {
-  const rows = strategyPerformance(trades, strategies);
-  if (rows.length < 1) return null;
-  const informative = rows.filter((r) => r.count >= 5);
-
-  return (
-    <div className="card" style={{marginTop:16}}>
-      <div className="section-title">
-        <div className="section-title-icon"><Icon name="layers" size={15} /></div>
-        Как торгуют ваши стратегии
-      </div>
-      <p className="text-sm text-secondary" style={{marginBottom:16}}>
-        По закрытым сделкам из журнала — какая стратегия сколько принесла на деле. Сравнивать
-        честно можно только строки с достаточным числом сделок: на пяти сделках разница между
-        стратегиями — это удача, а не качество.
-      </p>
-      <div className="table-wrapper">
-        <table className="table table-compact">
-          <thead>
-            <tr>
-              <th>Стратегия</th><th>Тип</th><th>Сделок</th><th>Прибыльных</th>
-              <th style={{textAlign:'right'}}>Итог</th><th style={{textAlign:'right'}}>В среднем</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.key} style={{opacity: r.count >= 5 ? 1 : 0.6}}>
-                <td style={{fontWeight:600}}>
-                  {r.name}
-                  {!r.exists && r.key !== '__none__' && (
-                    <span className="text-xs text-muted" style={{fontWeight:400}}> · удалена</span>
-                  )}
-                </td>
-                <td className="text-xs text-muted">{r.classification ? kindBadge(r.classification) : '—'}</td>
-                <td>{r.count}{r.count < 5 && <span className="text-xs text-muted"> мало</span>}</td>
-                <td>{Math.round(r.winrate)}%</td>
-                <td style={{textAlign:'right', fontWeight:600, color: r.pnl >= 0 ? 'var(--green)' : 'var(--red)'}}>
-                  {formatCurrency(Math.round(r.pnl))}
-                </td>
-                <td style={{textAlign:'right', color: r.avgPnl >= 0 ? 'var(--green)' : 'var(--red)'}}>
-                  {formatCurrency(Math.round(r.avgPnl))}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {informative.length < 2 && (
-        <div className="text-xs text-muted" style={{marginTop:12, lineHeight:1.6}}>
-          Сравнивать пока не с чем: нужно минимум две стратегии, у каждой хотя бы по 5 закрытых
-          сделок. Стратегия записывается в сделку, когда вы заводите её из Калькулятора.
-        </div>
-      )}
-    </div>
-  );
-}

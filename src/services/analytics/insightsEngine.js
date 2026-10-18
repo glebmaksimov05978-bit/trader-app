@@ -575,17 +575,21 @@ function rubPerPercentOf(t) {
   return t.pnl / pctMove;
 }
 
+const GIVEBACK_MIN_PEAK_PCT = 1;      // пик ниже 1% не анализируем: это шум
+const GIVEBACK_MIN_TRADES = 3;
 const GIVEBACK_SHARE_THRESHOLD = 40; // отдано больше 40% от пика — уже привычка, а не шум
 
 export function detectGivebackFromPeak(trades) {
+  // Только сделки, где пик был заметным: при пике 0,3% «отдано 200% от максимума» — это шум рынка, а не
+  // привычка. Меньше трёх таких сделок — привычку не объявляем вовсе.
   const eligible = trades.filter((t) => hasRealizedPnl(t)
-    && t.peakPct != null && t.givebackPct != null && t.peakPct > 0);
+    && t.peakPct != null && t.givebackPct != null && t.peakPct >= GIVEBACK_MIN_PEAK_PCT);
   const sampleSize = eligible.length;
   const confidence = sampleSize >= MIN_SAMPLE ? 'confirmed' : 'hypothesis';
 
   const shares = eligible.map((t) => (t.givebackPct / t.peakPct) * 100);
   const medianShare = median(shares);
-  const triggered = sampleSize > 0 && medianShare >= GIVEBACK_SHARE_THRESHOLD;
+  const triggered = sampleSize >= GIVEBACK_MIN_TRADES && medianShare >= GIVEBACK_SHARE_THRESHOLD;
 
   // Цена привычки — сколько рублей «дошло до пика, но не дошло до выхода».
   let costRub = 0;
@@ -601,7 +605,7 @@ export function detectGivebackFromPeak(trades) {
     sampleSize, confidence, triggered, costRub,
     example,
     detail: sampleSize === 0
-      ? 'Пока нет сделок с разбором — он считается при закрытии, так что данные начнут копиться со следующих закрытых сделок.'
+      ? 'Пока нет сделок с заметным пиком (от 1% прибыли) — анализировать нечего: меньшие движения — шум.'
       : `В типичной сделке вы доходите до ${median(eligible.map((t) => t.peakPct)).toFixed(1)}% прибыли, `
         + (medianShare > 100
           ? `а закрываете в минусе: отдаёте весь максимум и ещё столько же сверху (${medianShare.toFixed(0)}% от пика — это значит, что цена в итоге ушла ниже входа)`

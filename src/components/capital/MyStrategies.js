@@ -18,7 +18,7 @@ import {
 
 const ALL_TF = Object.keys(TF_INFO);
 
-export default function MyStrategies({ strategies, activeStrategyId, editingId, onPersist, onSetActive, onEdit, saving }) {
+export default function MyStrategies({ strategies, activeStrategyId, editingId, onPersist, onSetActive, onEdit, onAdd, saving }) {
   const [formFor, setFormFor] = useState(null); // id стратегии, для которой открыта форма
   const [draft, setDraft] = useState({ horizon: null, timeframe: null, observe: false });
 
@@ -170,6 +170,10 @@ export default function MyStrategies({ strategies, activeStrategyId, editingId, 
           );
         })}
       </div>
+
+      {onAdd && (
+        <button className="btn btn-ghost btn-sm" style={{marginTop:10}} onClick={onAdd}><Icon name="plus" size={13} /> Новая стратегия</button>
+      )}
 
       {followedCount === 0 && (
         <div className="ms-empty">
