@@ -15,7 +15,7 @@ import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import {
   drawingsFor, withDrawings, newDrawing, addDrawing, removeDrawing, rulerStats, rulerText, snapPrice, atrOf,
-  TWO_POINT, PALETTE, TOOL_LABELS,
+  TWO_POINT, PALETTE, TOOL_LABELS, moveDrawing, movePoint,
 } from '../../services/chartDrawings';
 import { DrawingsPrimitive } from './chartDrawingsPrimitive';
 import ChartDrawingToolbar from './ChartDrawingToolbar';
@@ -317,7 +317,7 @@ export default function CandleChart({
   const commitDrawings = (list) => { setDrawings(list); persistDrawings(list); };
   drawRef.current = {
     tool, color: drawColor, magnet, label: textLabel, draft: draftPoint, drawings, selectedId, ticker, timeframe,
-    commit: commitDrawings,
+    commit: commitDrawings, setDraw: setDrawings,
   };
 
   const [layers, setLayers] = useState(() =>
@@ -417,7 +417,7 @@ export default function CandleChart({
     chart.subscribeCrosshairMove(onMove);
 
     // ---- рисование: примитив на ряду свечей, клик и предпросмотр ----
-    let onDrawClick = null, onDrawMove = null;
+    let onDrawClick = null, onDrawMove = null, onPtrDown = null, onPtrMove = null, onPtrUp = null;
     if (drawingTools) {
       const prim = new DrawingsPrimitive();
       seriesRef.current.candles.attachPrimitive(prim);
@@ -446,6 +446,7 @@ export default function CandleChart({
       };
 
       onDrawClick = (param) => {
+        if (Date.now() < (prim._ignoreClick || 0)) return; // клик после перетаскивания — не выбор
         const st = drawRef.current;
         const pt = pointFrom(param);
         if (!pt) return;
@@ -494,9 +495,57 @@ export default function CandleChart({
       };
       chart.subscribeClick(onDrawClick);
       chart.subscribeCrosshairMove(onDrawMove);
+
+      // Перетаскивание: за ручку — переставляет точку, за линию — двигает рисунок целиком.
+      // Пока тянем, прокрутка графика выключена (иначе он ехал бы вместе с рисунком).
+      const el = containerRef.current;
+      let drag = null;
+      const rel = (e) => { const r = el.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+      onPtrDown = (e) => {
+        const st = drawRef.current;
+        if (st.tool !== 'cursor' || (e.button != null && e.button > 0)) return;
+        const { x, y } = rel(e);
+        const handle = prim.hitHandle(x, y);
+        const id = handle?.id || prim.hitTest(x, y);
+        if (!id) return;
+        const d = st.drawings.find((q) => q.id === id);
+        const start = prim.pointAt(x, y);
+        if (!d || !start) return;
+        drag = { id, which: handle?.which || null, start, orig: d, moved: false, list: null };
+        setSelectedId(id);
+        chart.applyOptions({ handleScroll: false, handleScale: false });
+      };
+      onPtrMove = (e) => {
+        if (!drag) return;
+        const { x, y } = rel(e);
+        const pt = prim.pointAt(x, y);
+        if (!pt) return;
+        drag.moved = true;
+        const next = drag.which
+          ? movePoint(drag.orig, drag.which, pt)
+          : moveDrawing(drag.orig, pt.time - drag.start.time, pt.price - drag.start.price);
+        drag.list = drawRef.current.drawings.map((q) => (q.id === drag.id ? next : q));
+        drawRef.current.setDraw(drag.list);
+      };
+      onPtrUp = () => {
+        if (!drag) return;
+        chart.applyOptions({ handleScroll: true, handleScale: true });
+        if (drag.moved && drag.list) { drawRef.current.commit(drag.list); prim._ignoreClick = Date.now() + 250; }
+        drag = null;
+      };
+      el.addEventListener('pointerdown', onPtrDown, true);
+      window.addEventListener('pointermove', onPtrMove);
+      window.addEventListener('pointerup', onPtrUp);
+      window.addEventListener('pointercancel', onPtrUp);
     }
 
     return () => {
+      if (onPtrDown) {
+        containerRef.current?.removeEventListener('pointerdown', onPtrDown, true);
+        window.removeEventListener('pointermove', onPtrMove);
+        window.removeEventListener('pointerup', onPtrUp);
+        window.removeEventListener('pointercancel', onPtrUp);
+      }
       if (onDrawClick) chart.unsubscribeClick(onDrawClick);
       if (onDrawMove) chart.unsubscribeCrosshairMove(onDrawMove);
       primRef.current = null;
@@ -895,7 +944,7 @@ export default function CandleChart({
           count={drawings.length}
           onClearAll={() => { if (drawings.length) { commitDrawings([]); setSelectedId(null); } }}
           hint={
-            tool === 'cursor' ? 'Кликните по рисунку, чтобы выбрать его: цвет меняется сразу, Delete — удалить.'
+            tool === 'cursor' ? 'Кликните по рисунку, чтобы выбрать его; тяните за линию — двигаете целиком, за кружок — меняете точку. Цвет меняется сразу, Delete — удалить.'
               : draftPoint ? `${TOOL_LABELS[tool]}: кликните по второй точке (Esc — отмена).`
                 : tool === 'ruler' ? 'Линейка: кликните по двум точкам — покажет ход в рублях, процентах, барах и ATR.'
                   : tool === 'hline' || tool === 'vline' ? `${TOOL_LABELS[tool]}: один клик по графику.`

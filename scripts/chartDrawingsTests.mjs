@@ -1,7 +1,7 @@
 // Проверка модели и математики рисунков на графике (npm run test:drawings).
 import {
   chartKey, normalizeDrawings, newDrawing, addDrawing, removeDrawing, drawingsFor, withDrawings,
-  fibLevels, rulerStats, rulerText, snapPrice, lineValueAt, userLevelsFrom, nearestLevel, distToSegment, atrOf,
+  fibLevels, rulerStats, rulerText, snapPrice, lineValueAt, userLevelsFrom, nearestLevel, distToSegment, atrOf, moveDrawing, movePoint,
   MAX_PER_CHART, MAX_CHARTS, PALETTE,
 } from '../src/services/chartDrawings.js';
 import fs from 'fs';
@@ -126,6 +126,18 @@ const flat = Array.from({ length: 30 }, () => ({ high: 102, low: 98, close: 100 
 ok('ATR ровного ряда с размахом 4 = 4', near(atrOf(flat), 4));
 ok('ATR: мало свечей → null', atrOf(flat.slice(0, 10)) === null && atrOf(null) === null);
 ok('ATR учитывает гэпы', atrOf([...flat.slice(0, 15), { high: 112, low: 110, close: 111 }, ...flat.slice(0, 15).map(() => ({ high: 112, low: 108, close: 110 }))]) > 4);
+
+// ---- перемещение ----
+const tl = { id: 't', type: 'trend', p1: { time: 100, price: 10 }, p2: { time: 200, price: 20 }, color: '#6485d8', width: 1 };
+const mv = moveDrawing(tl, 50, 5);
+ok('линия целиком: обе точки сдвинуты', mv.p1.time === 150 && mv.p1.price === 15 && mv.p2.time === 250 && mv.p2.price === 25);
+ok('исходный рисунок не изменён', tl.p1.time === 100);
+const hl = { id: 'h', type: 'hline', p1: { time: 100, price: 10 }, color: '#6485d8', width: 1 };
+ok('горизонталь двигается только по цене', moveDrawing(hl, 999, 3).p1.time === 100 && moveDrawing(hl, 999, 3).p1.price === 13);
+const vl = { id: 'v', type: 'vline', p1: { time: 100, price: 10 }, color: '#6485d8', width: 1 };
+ok('вертикаль — только по времени', moveDrawing(vl, 7, 999).p1.time === 107 && moveDrawing(vl, 7, 999).p1.price === 10);
+ok('одна точка линии переставляется, другая остаётся', (() => { const r = movePoint(tl, 'p2', { time: 300, price: 40 }); return r.p2.time === 300 && r.p2.price === 40 && r.p1.time === 100; })());
+ok('у горизонтали точка меняет только цену', movePoint(hl, 'p1', { time: 5, price: 50 }).p1.time === 100 && movePoint(hl, 'p1', { time: 5, price: 50 }).p1.price === 50);
 
 // ---- попадание клика ----
 ok('точка на отрезке — 0', distToSegment(5, 0, 0, 0, 10, 0) === 0);

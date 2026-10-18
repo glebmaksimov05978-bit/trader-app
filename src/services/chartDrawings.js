@@ -264,3 +264,26 @@ export function userLevelsForChart(profile, ticker, timeframe, candles) {
   const barSeconds = prev != null && Number.isFinite(prev) && last > prev ? last - prev : 0;
   return userLevelsFrom(list, last, { barSeconds });
 }
+
+/**
+ * Сдвинуть рисунок целиком на dt секунд и dp по цене. Горизонталь двигается только по цене,
+ * вертикаль — только по времени (иначе линия «уезжала» бы в сторону, где у неё нет смысла).
+ */
+export function moveDrawing(d, dt, dp) {
+  const shift = (p) => ({
+    time: d.type === 'hline' ? p.time : p.time + dt,
+    price: d.type === 'vline' ? p.price : p.price + dp,
+  });
+  return { ...d, p1: shift(d.p1), ...(d.p2 ? { p2: shift(d.p2) } : {}) };
+}
+
+/** Переставить одну из двух точек (p1/p2) в новое место. Для линий с одной точкой — единственную. */
+export function movePoint(d, which, pt) {
+  const key = which === 'p2' && d.p2 ? 'p2' : 'p1';
+  const cur = d[key];
+  const next = {
+    time: d.type === 'hline' ? cur.time : pt.time,
+    price: d.type === 'vline' ? cur.price : pt.price,
+  };
+  return { ...d, [key]: next };
+}

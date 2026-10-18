@@ -195,6 +195,18 @@ export class DrawingsPrimitive {
     return best ? best.id : null;
   }
 
+  /** Ручка выбранного рисунка под точкой экрана: { id, which: 'p1'|'p2' } или null. */
+  hitHandle(x, y, tol = 11) {
+    const d = this._s.drawings.find((q) => q.id === this._s.selectedId);
+    if (!d) return null;
+    const sh = this._shapes(d, this._width || 0, this._height || 0);
+    const pts = d.type === 'hline' || d.type === 'vline' || d.type === 'text' ? [['p1', sh.handles[0]]] : [['p1', sh.handles[0]], ['p2', sh.handles[1]]];
+    for (const [which, h] of pts) {
+      if (h && Math.hypot(h.x - x, h.y - y) <= tol) return { id: d.id, which };
+    }
+    return null;
+  }
+
   // ---- отрисовка ----
   _draw(target) {
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
