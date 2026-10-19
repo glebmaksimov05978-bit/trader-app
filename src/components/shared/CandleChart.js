@@ -6,7 +6,7 @@
 // Journal (frozen "as of entry" view with fill markers), and Radar. Data always comes
 // from the same `fetchDailyCandles` used for indicators — this component doesn't know or
 // care whether it's MOEX or Tinkoff behind it.
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createChart, CrosshairMode, CandlestickSeries, LineSeries, AreaSeries, HistogramSeries, BaselineSeries, createSeriesMarkers } from 'lightweight-charts';
 import { ema, bollingerSeries, rsi, macd } from '../../services/analytics/indicators';
@@ -279,6 +279,19 @@ export default function CandleChart({
   const seriesRef = useRef({});
   const fillsByBarRef = useRef(new Map());
   const isTrade = entryPrice != null;
+  const slotRef = useRef(null);
+  const hostRef = useRef(null);
+  if (!hostRef.current && typeof document !== 'undefined') hostRef.current = document.createElement('div');
+  const hostEl = hostRef.current;
+  useLayoutEffect(() => {
+    const target = fullscreen ? document.body : slotRef.current;
+    if (target && hostEl && hostEl.parentNode !== target) target.appendChild(hostEl);
+    const t = setTimeout(() => {
+      if (chartRef.current && containerRef.current) chartRef.current.resize(containerRef.current.clientWidth, containerRef.current.clientHeight);
+    }, 30);
+    return () => clearTimeout(t);
+  }, [fullscreen, hostEl]);
+  useEffect(() => () => { hostEl?.parentNode?.removeChild(hostEl); }, [hostEl]);
 
   // ---- рисование ----
   const { userProfile, updateUserProfile } = useAuth();
@@ -970,5 +983,13 @@ export default function CandleChart({
   // поэтому рисовалось ПОВЕРХ полноэкранного графика и закрывало его левый край: кнопки
   // «Уровни S/R», EMA9 и EMA13 просто уходили под меню, а ряд начинался с осиротевшего
   // кружка выбора цвета (реальная жалоба со скриншотом — «индикаторы уезжают за край»).
-  return fullscreen ? createPortal(content, document.body) : content;
+  // Содержимое всегда живёт в одном и том же DOM-узле (host) и просто переносится: в <body> при полном
+  // экране, обратно на место — при выходе. Раньше при переключении React пересоздавал контейнер, а график
+  // оставался привязан к старому (удалённому) — поэтому после входа/выхода из полного экрана было пусто.
+  return (
+    <>
+      <div ref={slotRef} />
+      {createPortal(content, hostEl)}
+    </>
+  );
 }

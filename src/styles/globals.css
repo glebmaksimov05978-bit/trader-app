@@ -42,11 +42,11 @@
 }
 
 [data-theme="light"] {
-  --bg-primary: #f3f4f7;
-  --bg-surface: #ffffff;
-  --bg-surface-2: #f6f7f9;
-  --bg-surface-3: #eceef2;
-  --bg-overlay: rgba(243, 244, 247, 0.9);
+  --bg-primary: #e7eaf0;
+  --bg-surface: #f7f8fb;
+  --bg-surface-2: #edf0f5;
+  --bg-surface-3: #e0e4ec;
+  --bg-overlay: rgba(231, 234, 240, 0.92);
 
   --accent-primary: #4a6cc4;
   --accent-secondary: #4a6cc4;
@@ -55,10 +55,10 @@
 
   --text-primary: #161a22;
   --text-secondary: #4b5565;
-  --text-muted: #77818f;
+  --text-muted: #6a7482;
 
-  --border-subtle: rgba(15, 23, 42, 0.08);
-  --border-medium: rgba(15, 23, 42, 0.16);
+  --border-subtle: rgba(15, 23, 42, 0.12);
+  --border-medium: rgba(15, 23, 42, 0.22);
 
   --gold: #b9852a;
   --green: #1f8a64;
@@ -84,7 +84,7 @@
 
 [data-theme="light"] .card,
 [data-theme="light"] .kpi-card {
-  background: #fff;
+  background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-card);
 }
