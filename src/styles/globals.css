@@ -865,3 +865,40 @@ select, input, textarea { max-width: 100%; }
 .scroll-box::-webkit-scrollbar-track { background: var(--bg-surface-2); border-radius: 5px; }
 .scroll-box::-webkit-scrollbar-thumb { background: var(--border-medium); border-radius: 5px; border: 2px solid var(--bg-surface-2); }
 .scroll-box::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+/* ---------- Светлая тема: глубина вместо плоской белизны ----------
+   Фон — мягкий перелив (светлее слева-сверху), карточки приподняты слоёными тенями, боковое меню темнее
+   страницы, у карточек показателей — тонкая цветная кромка сверху, поля ввода «утоплены». */
+[data-theme="light"] body {
+  background:
+    radial-gradient(900px 500px at 12% -8%, rgba(100, 133, 216, 0.14), transparent 60%),
+    radial-gradient(700px 420px at 100% 0%, rgba(31, 138, 100, 0.07), transparent 60%),
+    var(--bg-primary);
+  background-attachment: fixed;
+}
+[data-theme="light"] .card,
+[data-theme="light"] .kpi-card {
+  border: 1px solid rgba(15, 23, 42, 0.07);
+  box-shadow: 0 1px 1px rgba(15, 23, 42, 0.04), 0 2px 4px rgba(15, 23, 42, 0.04), 0 10px 24px -10px rgba(15, 23, 42, 0.18);
+}
+[data-theme="light"] .kpi-card { border-top: 3px solid var(--accent-primary); }
+[data-theme="light"] .kpi-card.green { border-top-color: var(--green); }
+[data-theme="light"] .kpi-card.red { border-top-color: var(--red); }
+[data-theme="light"] .kpi-card.gold { border-top-color: var(--gold); }
+[data-theme="light"] .sidebar {
+  background: linear-gradient(180deg, #dfe4ee 0%, #d6dce8 100%);
+  border-right: 1px solid rgba(15, 23, 42, 0.12);
+  box-shadow: 2px 0 14px -8px rgba(15, 23, 42, 0.25);
+}
+[data-theme="light"] .input,
+[data-theme="light"] select.input,
+[data-theme="light"] textarea.input {
+  background: #fff;
+  border: 1px solid rgba(15, 23, 42, 0.16);
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+[data-theme="light"] .input:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(74, 108, 196, 0.18);
+}
+[data-theme="light"] .btn-primary { box-shadow: 0 1px 2px rgba(15, 23, 42, 0.2), 0 6px 14px -6px rgba(74, 108, 196, 0.6); }
