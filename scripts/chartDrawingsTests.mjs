@@ -1,7 +1,7 @@
 // Проверка модели и математики рисунков на графике (npm run test:drawings).
 import {
   chartKey, normalizeDrawings, newDrawing, addDrawing, removeDrawing, drawingsFor, withDrawings,
-  fibLevels, rulerStats, rulerText, snapPrice, lineValueAt, userLevelsFrom, nearestLevel, distToSegment, atrOf, moveDrawing, movePoint,
+  fibLevels, rulerStats, rulerText, snapPrice, lineValueAt, userLevelsFrom, nearestLevel, distToSegment, atrOf, moveDrawing, movePoint, patternToDrawings,
   MAX_PER_CHART, MAX_CHARTS, PALETTE,
 } from '../src/services/chartDrawings.js';
 import fs from 'fs';
@@ -138,6 +138,26 @@ const vl = { id: 'v', type: 'vline', p1: { time: 100, price: 10 }, color: '#6485
 ok('вертикаль — только по времени', moveDrawing(vl, 7, 999).p1.time === 107 && moveDrawing(vl, 7, 999).p1.price === 10);
 ok('одна точка линии переставляется, другая остаётся', (() => { const r = movePoint(tl, 'p2', { time: 300, price: 40 }); return r.p2.time === 300 && r.p2.price === 40 && r.p1.time === 100; })());
 ok('у горизонтали точка меняет только цену', movePoint(hl, 'p1', { time: 5, price: 50 }).p1.time === 100 && movePoint(hl, 'p1', { time: 5, price: 50 }).p1.price === 50);
+
+// ---- фигура алгоритма → рисунки ----
+const D0 = (i) => new Date(Date.UTC(2026, 0, 1 + i));
+const dirs = { bullish: ['wedge_falling', 'double_bottom'], bearish: ['double_top', 'head_shoulders_top'] };
+const wedge = { pattern: 'wedge_falling', points: [
+  { index: 10, date: D0(10), price: 110, type: 'high' }, { index: 14, date: D0(14), price: 98, type: 'low' },
+  { index: 18, date: D0(18), price: 106, type: 'high' }, { index: 22, date: D0(22), price: 97, type: 'low' }, { index: 26, date: D0(26), price: 102, type: 'high' }],
+  boundaries: { upper: { slope: -0.5, intercept: 115 }, lower: { slope: -0.2, intercept: 100.8 } } };
+const wd = patternToDrawings(wedge, dirs);
+ok('клин: две трендовые линии', wd.length === 2 && wd.every((d) => d.type === 'trend'));
+ok('клин бычий — зелёный', wd[0].color === '#3fb68b');
+ok('верхняя граница идёт по подогнанной линии: 115 − 0,5×10 = 110 в первой точке', near(wd[0].p1.price, 110) && near(wd[0].p2.price, 115 - 0.5 * 26));
+ok('нижняя граница — от первого до последнего минимума', wd[1].p1.time === Math.floor(D0(14).getTime() / 1000) && wd[1].p2.time === Math.floor(D0(22).getTime() / 1000));
+const dt = patternToDrawings({ pattern: 'double_top', points: [
+  { index: 5, date: D0(5), price: 120, type: 'high' }, { index: 9, date: D0(9), price: 110, type: 'low' }, { index: 13, date: D0(13), price: 120, type: 'high' }] }, dirs);
+ok('двойная вершина: две линии ломаной, красные', dt.length === 2 && dt[0].color === '#e0584f');
+const hs = patternToDrawings({ pattern: 'head_shoulders_top', neckline: 100, points: [0, 1, 2, 3, 4].map((k) => ({ index: k, date: D0(k), price: 100 + k, type: k % 2 ? 'low' : 'high' })) }, dirs);
+ok('голова-плечи: 4 звена и линия шеи', hs.length === 5 && hs.filter((d) => d.type === 'hline').length === 1 && hs.find((d) => d.type === 'hline').p1.price === 100);
+ok('без точек (свечная фигура) — рисовать нечего', patternToDrawings({ pattern: 'engulfing_bullish' }, dirs).length === 0 && patternToDrawings(null).length === 0);
+ok('нейтральная — синяя', patternToDrawings({ pattern: 'triangle_symmetric', points: [{ index: 1, date: D0(1), price: 1, type: 'high' }, { index: 5, date: D0(5), price: 2, type: 'low' }] }, dirs)[0].color === '#6485d8');
 
 // ---- попадание клика ----
 ok('точка на отрезке — 0', distToSegment(5, 0, 0, 0, 10, 0) === 0);

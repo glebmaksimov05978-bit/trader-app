@@ -169,6 +169,12 @@ export default function Cockpit() {
   // набор блоков — личные настройки). С призмой остаются только индикаторы и уровни, которыми
   // стратегия реально пользуется, и рядом видны её пороги.
   const [taLensId, setTaLensId] = useState('');
+  // «Показать фигуру на графике»: список рисунков уходит в график и прокручивает страницу к нему.
+  const [drawReq, setDrawReq] = useState(null);
+  const showPatternOnChart = (list) => {
+    setDrawReq({ key: Date.now(), list });
+    setTimeout(() => { try { document.getElementById('ck-chart')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch { /* не критично */ } }, 60);
+  };
   const [taTf, setTaTf] = useState(null);
   const [taState, setTaState] = useState({ loading: false, data: null, error: null });
   const [previewDir, setPreviewDir] = useState(null); // 'long' | 'short' | null = какая ближе
@@ -1403,6 +1409,7 @@ export default function Cockpit() {
                 title="Технический анализ сейчас"
                 view={taView}
                 lensName={taLensStrategy?.name || null}
+                onDrawPattern={showPatternOnChart}
               />
             </section>
           )}
@@ -1523,7 +1530,7 @@ export default function Cockpit() {
 
           {/* ---------- график ---------- */}
           {(trade || previewTicker) && (
-          <section className="ck-panel ck-chart">
+          <section className="ck-panel ck-chart" id="ck-chart">
             <div className="ck-lens">
               <span className="ck-k">Смотреть график и анализ</span>
               <select className="ck-lens-sel" value={taLensId} onChange={(e) => setTaLensId(e.target.value)}>
@@ -1539,6 +1546,7 @@ export default function Cockpit() {
             {(trade ? candles : taState.data?.candles)?.length ? (
               <CandleChart
                 drawingTools
+                drawRequest={drawReq}
                 candles={trade ? candles : taState.data.candles}
                 patterns={trade ? patterns : taState.data.patterns}
                 height={390}

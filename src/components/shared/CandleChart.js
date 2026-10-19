@@ -270,6 +270,7 @@ export default function CandleChart({
   trades,      // Бэктест: [{ direction, entryDate, exitDate, status, pnlPct }, ...] — ALL trades on one chart, overrides legs/entryMarker/exitMarker
   systemMarkers, // [{ date, text }] — где система (движок) закрыла бы позицию; только у открытых сделок в Сопровождении
   layerPreset, // ['sr','rsi',…] | null — «призма» стратегии: ровно эти индикаторные слои включены; null — как выбрал трейдер
+  drawRequest = null, // { key, list } — нарисовать готовые рисунки (например, найденную фигуру) и открыть панель
   drawingTools = false, // true — панель «Рисование» и сохранение рисунков по паре «тикер + таймфрейм» в профиле
   height,      // px, необязательный — переопределяет высоту графика вне полноэкранного режима (по умолчанию 300 + панели RSI/MACD)
 }) {
@@ -600,6 +601,19 @@ export default function CandleChart({
       ...(!draftPoint ? { preview: null } : {}),
     });
   }, [drawings, selectedId, candles, timeframe, rulerDone, draftPoint]);
+
+  // Запрос на рисование снаружи: «Показать фигуру на графике».
+  const lastReqKey = useRef(null);
+  useEffect(() => {
+    if (!drawingTools || !drawRequest || drawRequest.key === lastReqKey.current) return;
+    lastReqKey.current = drawRequest.key;
+    let list = drawings;
+    for (const d of drawRequest.list || []) list = addDrawing(list, d);
+    commitDrawings(list);
+    setDrawOpen(true);
+    setSelectedId(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drawRequest]);
 
   // Клавиши: Delete — удалить выбранное, Esc — отменить начатое и вернуться к курсору.
   useEffect(() => {

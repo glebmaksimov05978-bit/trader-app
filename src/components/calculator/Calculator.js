@@ -126,6 +126,7 @@ export default function Calculator() {
   const [showJournalModal, setShowJournalModal] = useState(false);
   // Вопрос «почему вошли?» после сохранения сделки: { tradeId, ticker, direction, papers } или null.
   const [decisionAsk, setDecisionAsk] = useState(null);
+  const [drawReq, setDrawReq] = useState(null); // «Показать фигуру на графике»
   const [showTinkoffModal, setShowTinkoffModal] = useState(false);
   const [showAtrModal, setShowAtrModal] = useState(false);
   const [tinkoffCopied, setTinkoffCopied] = useState('');
@@ -1578,6 +1579,7 @@ export default function Calculator() {
           {taState.data?.candles?.length > 0 && (
             <CandleChart
               drawingTools
+              drawRequest={drawReq}
               candles={taState.data.candles}
               patterns={taState.data.patterns}
               ticker={form.ticker.toUpperCase()}
@@ -1594,6 +1596,7 @@ export default function Calculator() {
           <TechnicalAnalysisBlock
             state={taState}
             onRefresh={() => loadAnalysis()}
+            onDrawPattern={(list) => { setDrawReq({ key: Date.now(), list }); setTimeout(() => { try { document.querySelector('.cc-draw')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch { /* не критично */ } }, 60); }}
             title={`На данный момент (${TIMEFRAMES[taTimeframe]?.label || taTimeframe})${taUpdatedAt ? ` · обновлено в ${taUpdatedAt.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'})}` : ''}`}
           />
         </div>

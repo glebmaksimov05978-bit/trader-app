@@ -866,42 +866,58 @@ select, input, textarea { max-width: 100%; }
 .scroll-box::-webkit-scrollbar-thumb { background: var(--border-medium); border-radius: 5px; border: 2px solid var(--bg-surface-2); }
 .scroll-box::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
-/* ---------- Светлая тема: контраст «тёмное меню — светлая рабочая область» ----------
-   Боковое меню остаётся тёмным (как в тёмной теме), страница холодно-голубоватая, карточки чисто белые
-   с тонкой рамкой и мягкой тенью, показатели — пастельные плашки по смыслу, заголовки блоков с акцентом. */
-[data-theme="light"] .sidebar {
-  --text-primary: #e8ecf4; --text-secondary: #aab3c5; --text-muted: #7d879b;
-  --bg-surface-2: rgba(255,255,255,0.06); --bg-surface-3: rgba(255,255,255,0.11);
-  --border-subtle: rgba(255,255,255,0.08); --border-medium: rgba(255,255,255,0.16);
-  --accent-primary: #8fa8ec;
-  background: #1a2030;
-  border-right: none;
-  box-shadow: 4px 0 18px -8px rgba(15, 23, 42, 0.45);
+/* ---------- Светлая тема: глубина и объём ----------
+   Всё светлое, но слои различимы: страница голубовато-серая, меню и карточки приподняты слоёными тенями
+   и тонким бликом сверху (мини-объём), показатели — пастельные плашки по смыслу, кнопки слегка выпуклые. */
+[data-theme="light"] body {
+  background: linear-gradient(180deg, #e6ecf5 0%, #e9eef6 100%);
+  background-attachment: fixed;
 }
 [data-theme="light"] .card {
-  border: 1px solid rgba(30, 50, 90, 0.09);
-  box-shadow: 0 1px 2px rgba(30, 50, 90, 0.05), 0 6px 18px -8px rgba(30, 50, 90, 0.16);
+  background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
+  border: 1px solid rgba(30, 50, 90, 0.10);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 1px 2px rgba(30, 50, 90, 0.06),
+    0 4px 8px -2px rgba(30, 50, 90, 0.07),
+    0 14px 28px -12px rgba(30, 50, 90, 0.20);
+}
+[data-theme="light"] .card:hover {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    0 2px 4px rgba(30, 50, 90, 0.07),
+    0 8px 14px -4px rgba(30, 50, 90, 0.10),
+    0 20px 36px -14px rgba(30, 50, 90, 0.26);
 }
 [data-theme="light"] .kpi-card {
-  border: 1px solid rgba(30, 50, 90, 0.07);
+  border: 1px solid rgba(30, 50, 90, 0.08);
   border-left: 4px solid var(--accent-primary);
-  background: #eaf0fb;
-  box-shadow: 0 1px 2px rgba(30, 50, 90, 0.05);
+  background: linear-gradient(180deg, #f2f6fd 0%, #e8eefa 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.8), 0 1px 2px rgba(30,50,90,0.06), 0 8px 16px -8px rgba(30,50,90,0.18);
 }
-[data-theme="light"] .kpi-card.green { background: #e9f6f0; border-left-color: var(--green); }
-[data-theme="light"] .kpi-card.red { background: #fbecec; border-left-color: var(--red); }
-[data-theme="light"] .kpi-card.gold { background: #fbf3e1; border-left-color: var(--gold); }
-[data-theme="light"] .kpi-card.purple { background: #f0ecfa; border-left-color: #7a62c8; }
+[data-theme="light"] .kpi-card.green { background: linear-gradient(180deg, #f0faf5 0%, #e3f4ec 100%); border-left-color: var(--green); }
+[data-theme="light"] .kpi-card.red { background: linear-gradient(180deg, #fdf3f3 0%, #f9e6e6 100%); border-left-color: var(--red); }
+[data-theme="light"] .kpi-card.gold { background: linear-gradient(180deg, #fdf8ea 0%, #f8eed6 100%); border-left-color: var(--gold); }
+[data-theme="light"] .kpi-card.purple { background: linear-gradient(180deg, #f5f1fc 0%, #ebe5f8 100%); border-left-color: #7a62c8; }
 [data-theme="light"] .section-title { color: #1f2a44; }
-[data-theme="light"] .section-title-icon { background: #e3eafa; color: var(--accent-primary); }
+[data-theme="light"] .section-title-icon { background: #e3eafa; color: var(--accent-primary); box-shadow: inset 0 1px 0 #fff, 0 1px 2px rgba(30,50,90,0.12); }
 [data-theme="light"] .input,
 [data-theme="light"] select.input,
 [data-theme="light"] textarea.input {
   background: #fff;
-  border: 1px solid rgba(30, 50, 90, 0.18);
+  border: 1px solid rgba(30, 50, 90, 0.20);
+  box-shadow: inset 0 1px 2px rgba(30, 50, 90, 0.08);
 }
 [data-theme="light"] .input:focus {
   border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px rgba(74, 108, 196, 0.18);
+  box-shadow: inset 0 1px 2px rgba(30,50,90,0.06), 0 0 0 3px rgba(74, 108, 196, 0.20);
 }
-[data-theme="light"] .btn-primary { box-shadow: 0 1px 2px rgba(30, 50, 90, 0.25); }
+[data-theme="light"] .btn-primary {
+  background: linear-gradient(180deg, #5878d2 0%, #4562b8 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.25), 0 1px 2px rgba(30,50,90,0.3), 0 6px 12px -6px rgba(69,98,184,0.7);
+}
+[data-theme="light"] .btn-secondary {
+  background: linear-gradient(180deg, #ffffff 0%, #f2f5fa 100%);
+  border: 1px solid rgba(30,50,90,0.16);
+  box-shadow: inset 0 1px 0 #fff, 0 1px 2px rgba(30,50,90,0.10);
+}

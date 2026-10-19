@@ -12,6 +12,7 @@ import './TechnicalAnalysisBlock.css';
 import { markStrongestLevel, PATTERN_LABELS, STATUS_LABELS, PATTERN_DIRECTIONS } from '../../services/analytics/patterns';
 import { useAuth } from '../../context/AuthContext';
 import { resolveTaView } from '../../services/analytics/taView';
+import { patternToDrawings } from '../../services/chartDrawings';
 
 // Re-exported for existing callers (Calculator.js, Capital.js) that import these from
 // here — the definitions themselves moved to patterns.js so strategy.js (a service
@@ -131,7 +132,7 @@ function Chip({ tone, children, strong }) {
 // `view` — что показывать (см. services/analytics/taView.js): блоки, подписи порогов стратегии и
 // признак «призмы». Не передан — берутся личные настройки из профиля (Настройки → Технический
 // анализ). Передаётся явно в окне настроек (живой пример) и в Сопровождении (призма стратегии).
-export default function TechnicalAnalysisBlock({ state, onRefresh, title, view: viewProp = null, lensName = null }) {
+export default function TechnicalAnalysisBlock({ state, onRefresh, title, view: viewProp = null, lensName = null, onDrawPattern = null }) {
   let profileView = null;
   const auth = useAuth();
   if (!viewProp) profileView = resolveTaView({ prefs: auth?.userProfile?.taPrefs });
@@ -311,6 +312,12 @@ export default function TechnicalAnalysisBlock({ state, onRefresh, title, view: 
                             </span>
                           </div>
                           <div className="ta-row-detail">{c.detail}</div>
+                          {onDrawPattern && patternToDrawings(c, PATTERN_DIRECTIONS).length > 0 && (
+                            <button type="button" className="ta-refresh" style={{ marginTop: 8 }}
+                              onClick={() => onDrawPattern(patternToDrawings(c, PATTERN_DIRECTIONS), c)}>
+                              <Icon name="chart" size={13} /> Показать на графике
+                            </button>
+                          )}
                         </div>
                       ))}
                     </div>

@@ -287,3 +287,45 @@ export function movePoint(d, which, pt) {
   };
   return { ...d, [key]: next };
 }
+
+const secOf = (d) => Math.floor(new Date(d).getTime() / 1000);
+
+/**
+ * Фигура, найденная алгоритмом → набор наших рисунков, чтобы её было видно на графике.
+ *  • у фигуры есть границы (клин, треугольник, флаг) — две линии по касаниям верхней и нижней границы;
+ *  • иначе точки соединяются ломаной (двойная вершина, голова-плечи, волны), а линия шеи — горизонталью;
+ *  • у свечных фигур (поглощение, пин-бар) точек нет — рисовать нечего, вернётся пустой список.
+ * Цвет: бычья — зелёная, медвежья — красная, нейтральная — синяя.
+ * @param {object} cand — кандидат из computePatternsAtEntry: { pattern, points:[{index,date,price,type}], boundaries, neckline }
+ * @param {{bullish?:string[], bearish?:string[]}} directions — PATTERN_DIRECTIONS приложения
+ */
+export function patternToDrawings(cand, directions = {}) {
+  const pts = (cand?.points || []).filter((p) => p && p.date != null && Number.isFinite(p.price));
+  if (pts.length < 2) return [];
+  const color = (directions.bullish || []).includes(cand.pattern) ? '#3fb68b'
+    : (directions.bearish || []).includes(cand.pattern) ? '#e0584f' : '#6485d8';
+  const out = [];
+  const add = (d) => { try { out.push(newDrawing({ color, ...d })); } catch { /* пропускаем непригодную точку */ } };
+
+  if (cand.boundaries && (cand.boundaries.upper || cand.boundaries.lower)) {
+    for (const [side, type] of [['upper', 'high'], ['lower', 'low']]) {
+      const fit = cand.boundaries[side];
+      const own = pts.filter((p) => p.type === type);
+      if (!fit || own.length < 2) continue;
+      const a = own[0], b = own[own.length - 1];
+      add({
+        type: 'trend', width: 2,
+        p1: { time: secOf(a.date), price: fit.slope * a.index + fit.intercept },
+        p2: { time: secOf(b.date), price: fit.slope * b.index + fit.intercept },
+      });
+    }
+    return out;
+  }
+  for (let i = 0; i < pts.length - 1; i++) {
+    add({ type: 'trend', width: 1, p1: { time: secOf(pts[i].date), price: pts[i].price }, p2: { time: secOf(pts[i + 1].date), price: pts[i + 1].price } });
+  }
+  if (Number.isFinite(cand.neckline)) {
+    add({ type: 'hline', width: 1, p1: { time: secOf(pts[0].date), price: cand.neckline } });
+  }
+  return out;
+}
