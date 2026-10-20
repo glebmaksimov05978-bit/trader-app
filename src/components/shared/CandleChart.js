@@ -284,14 +284,6 @@ export default function CandleChart({
   const hostRef = useRef(null);
   if (!hostRef.current && typeof document !== 'undefined') hostRef.current = document.createElement('div');
   const hostEl = hostRef.current;
-  useLayoutEffect(() => {
-    const target = fullscreen ? document.body : slotRef.current;
-    if (target && hostEl && hostEl.parentNode !== target) target.appendChild(hostEl);
-    const t = setTimeout(() => {
-      if (chartRef.current && containerRef.current) chartRef.current.resize(containerRef.current.clientWidth, containerRef.current.clientHeight);
-    }, 30);
-    return () => clearTimeout(t);
-  }, [fullscreen, hostEl]);
   useEffect(() => () => { hostEl?.parentNode?.removeChild(hostEl); }, [hostEl]);
 
   // ---- рисование ----
@@ -339,6 +331,14 @@ export default function CandleChart({
   );
   const [colors, setColors] = useState(() => ({ ...DEFAULT_COLOR_FALLBACKS, ...loadSavedColors() }));
   const [fullscreen, setFullscreen] = useState(false);
+  useLayoutEffect(() => {
+    const target = fullscreen ? document.body : slotRef.current;
+    if (target && hostEl && hostEl.parentNode !== target) target.appendChild(hostEl);
+    const t = setTimeout(() => {
+      if (chartRef.current && containerRef.current) chartRef.current.resize(containerRef.current.clientWidth, containerRef.current.clientHeight);
+    }, 30);
+    return () => clearTimeout(t);
+  }, [fullscreen, hostEl]);
   // На телефоне ряд бейджей индикаторов сворачивается в кнопку (см. CandleChart.css) —
   // это её состояние. На широком экране CSS-медиазапрос саму кнопку прячет, а ряд
   // всегда открыт, так что состояние там ни на что не влияет.

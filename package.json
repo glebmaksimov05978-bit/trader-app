@@ -42,7 +42,7 @@
     "test:decisions": "node scripts/decisionJournalTests.mjs",
     "test:drawings": "node scripts/chartDrawingsTests.mjs",
     "test:primitive": "node scripts/chartPrimitiveTests.mjs",
-    "test:smoke": "react-scripts test --watchAll=false src/components/smoke.test.js",
+    "test:smoke": "react-scripts test --watchAll=false src/components/smoke.test.js src/components/chartmount.test.js",
     "test:papergroups": "node scripts/paperGroupsTests.mjs",
     "test:fillsclose": "node scripts/fillsCloseTest.mjs",
     "test:period": "node scripts/periodReportTests.mjs",

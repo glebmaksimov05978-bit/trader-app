@@ -42,11 +42,11 @@
 }
 
 [data-theme="light"] {
-  --bg-primary: #edf1f7;
+  --bg-primary: #f3f4f7;
   --bg-surface: #ffffff;
-  --bg-surface-2: #f3f6fb;
-  --bg-surface-3: #e6ebf3;
-  --bg-overlay: rgba(231, 234, 240, 0.92);
+  --bg-surface-2: #f6f7f9;
+  --bg-surface-3: #eceef2;
+  --bg-overlay: rgba(243, 244, 247, 0.9);
 
   --accent-primary: #4a6cc4;
   --accent-secondary: #4a6cc4;
@@ -55,10 +55,10 @@
 
   --text-primary: #161a22;
   --text-secondary: #4b5565;
-  --text-muted: #6a7482;
+  --text-muted: #77818f;
 
-  --border-subtle: rgba(15, 23, 42, 0.12);
-  --border-medium: rgba(15, 23, 42, 0.22);
+  --border-subtle: rgba(15, 23, 42, 0.08);
+  --border-medium: rgba(15, 23, 42, 0.16);
 
   --gold: #b9852a;
   --green: #1f8a64;
@@ -84,7 +84,7 @@
 
 [data-theme="light"] .card,
 [data-theme="light"] .kpi-card {
-  background: var(--bg-surface);
+  background: #fff;
   border: 1px solid var(--border-subtle);
   box-shadow: var(--shadow-card);
 }
@@ -865,59 +865,3 @@ select, input, textarea { max-width: 100%; }
 .scroll-box::-webkit-scrollbar-track { background: var(--bg-surface-2); border-radius: 5px; }
 .scroll-box::-webkit-scrollbar-thumb { background: var(--border-medium); border-radius: 5px; border: 2px solid var(--bg-surface-2); }
 .scroll-box::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
-
-/* ---------- Светлая тема: глубина и объём ----------
-   Всё светлое, но слои различимы: страница голубовато-серая, меню и карточки приподняты слоёными тенями
-   и тонким бликом сверху (мини-объём), показатели — пастельные плашки по смыслу, кнопки слегка выпуклые. */
-[data-theme="light"] body {
-  background: linear-gradient(180deg, #e6ecf5 0%, #e9eef6 100%);
-  background-attachment: fixed;
-}
-[data-theme="light"] .card {
-  background: linear-gradient(180deg, #ffffff 0%, #fbfcfe 100%);
-  border: 1px solid rgba(30, 50, 90, 0.10);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.9),
-    0 1px 2px rgba(30, 50, 90, 0.06),
-    0 4px 8px -2px rgba(30, 50, 90, 0.07),
-    0 14px 28px -12px rgba(30, 50, 90, 0.20);
-}
-[data-theme="light"] .card:hover {
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.9),
-    0 2px 4px rgba(30, 50, 90, 0.07),
-    0 8px 14px -4px rgba(30, 50, 90, 0.10),
-    0 20px 36px -14px rgba(30, 50, 90, 0.26);
-}
-[data-theme="light"] .kpi-card {
-  border: 1px solid rgba(30, 50, 90, 0.08);
-  border-left: 4px solid var(--accent-primary);
-  background: linear-gradient(180deg, #f2f6fd 0%, #e8eefa 100%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.8), 0 1px 2px rgba(30,50,90,0.06), 0 8px 16px -8px rgba(30,50,90,0.18);
-}
-[data-theme="light"] .kpi-card.green { background: linear-gradient(180deg, #f0faf5 0%, #e3f4ec 100%); border-left-color: var(--green); }
-[data-theme="light"] .kpi-card.red { background: linear-gradient(180deg, #fdf3f3 0%, #f9e6e6 100%); border-left-color: var(--red); }
-[data-theme="light"] .kpi-card.gold { background: linear-gradient(180deg, #fdf8ea 0%, #f8eed6 100%); border-left-color: var(--gold); }
-[data-theme="light"] .kpi-card.purple { background: linear-gradient(180deg, #f5f1fc 0%, #ebe5f8 100%); border-left-color: #7a62c8; }
-[data-theme="light"] .section-title { color: #1f2a44; }
-[data-theme="light"] .section-title-icon { background: #e3eafa; color: var(--accent-primary); box-shadow: inset 0 1px 0 #fff, 0 1px 2px rgba(30,50,90,0.12); }
-[data-theme="light"] .input,
-[data-theme="light"] select.input,
-[data-theme="light"] textarea.input {
-  background: #fff;
-  border: 1px solid rgba(30, 50, 90, 0.20);
-  box-shadow: inset 0 1px 2px rgba(30, 50, 90, 0.08);
-}
-[data-theme="light"] .input:focus {
-  border-color: var(--accent-primary);
-  box-shadow: inset 0 1px 2px rgba(30,50,90,0.06), 0 0 0 3px rgba(74, 108, 196, 0.20);
-}
-[data-theme="light"] .btn-primary {
-  background: linear-gradient(180deg, #5878d2 0%, #4562b8 100%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.25), 0 1px 2px rgba(30,50,90,0.3), 0 6px 12px -6px rgba(69,98,184,0.7);
-}
-[data-theme="light"] .btn-secondary {
-  background: linear-gradient(180deg, #ffffff 0%, #f2f5fa 100%);
-  border: 1px solid rgba(30,50,90,0.16);
-  box-shadow: inset 0 1px 0 #fff, 0 1px 2px rgba(30,50,90,0.10);
-}

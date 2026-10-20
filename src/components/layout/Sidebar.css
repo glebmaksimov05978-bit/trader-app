@@ -345,28 +345,24 @@
   .mobile-drawer-overlay { display: block; }
 }
 
-/* ---------- Светлая тема: приподнятое светлое меню ---------- */
+/* ---------- Light theme: премиальный сайдбар ---------- */
 [data-theme="light"] .sidebar {
-  background: linear-gradient(180deg, #ffffff 0%, #f1f5fb 100%);
-  border-right: 1px solid rgba(30,50,90,0.12);
-  box-shadow: 6px 0 24px -10px rgba(30,50,90,0.22), inset -1px 0 0 rgba(255,255,255,0.9);
+  background: linear-gradient(180deg, #ffffff 0%, #fafaff 100%);
+  border-right: 1px solid rgba(15,23,42,0.07);
+  box-shadow: 4px 0 24px -12px rgba(15,23,42,0.10);
 }
 [data-theme="light"] .sidebar::before { background: none; }
-[data-theme="light"] .logo-icon { box-shadow: 0 2px 6px rgba(30,50,90,0.2); }
-[data-theme="light"] .nav-item:hover { background: #e9eff9; }
-[data-theme="light"] .nav-item.active {
-  background: linear-gradient(180deg, #ffffff 0%, #eef3fc 100%);
-  color: var(--accent-primary);
-  box-shadow: inset 3px 0 0 var(--accent-primary), 0 1px 2px rgba(30,50,90,0.10), 0 4px 10px -4px rgba(30,50,90,0.18);
-}
-[data-theme="light"] .profile-btn { background: linear-gradient(180deg,#fff,#f3f6fb); border-color: rgba(30,50,90,0.14); box-shadow: 0 1px 2px rgba(30,50,90,0.10); }
-[data-theme="light"] .profile-btn:hover { background: #fff; }
+[data-theme="light"] .logo-icon { box-shadow: none; }
+[data-theme="light"] .nav-item:hover { background: #f3f4fb; }
+[data-theme="light"] .nav-item.active { background: var(--bg-surface-2); color: var(--text-primary); box-shadow: inset 2px 0 0 var(--accent-primary); }
+[data-theme="light"] .profile-btn { background: #fff; border-color: rgba(15,23,42,0.09); box-shadow: 0 1px 2px rgba(15,23,42,0.05); }
+[data-theme="light"] .profile-btn:hover { background: #fafaff; }
 [data-theme="light"] .profile-dropdown {
   background: #fff;
-  border-color: rgba(30,50,90,0.10);
-  box-shadow: 0 16px 40px -8px rgba(30,50,90,0.25);
+  border-color: rgba(15,23,42,0.08);
+  box-shadow: 0 16px 40px -8px rgba(15,23,42,0.18);
 }
-[data-theme="light"] .dropdown-item:hover { background: #eef3fb; }
+[data-theme="light"] .dropdown-item:hover { background: #f4f5fb; }
 [data-theme="light"] .mobile-topbar { background: rgba(255,255,255,0.88); }
 [data-theme="light"] .mobile-drawer { background: #fff; }
 [data-theme="light"] .mobile-hamburger { background: #fff; }
