@@ -40,7 +40,7 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -50,6 +50,23 @@ jobs:
 
       - name: Установить firebase-admin
         run: npm install firebase-admin@12 --no-save
+
+      # Утренняя сводка в Telegram (стоит В НАЧАЛЕ задания: она дешёвая, а длинные шаги ниже раньше упирались в лимит времени и до неё не доходили) — один раз в сутки при первом проходе после 8:00 МСК
+      # (час и выключатель — в Настройках). Отметка «сегодня слали» хранится в профиле, поэтому три
+      # будильника сообщение не дублируют.
+      - name: Утренняя сводка
+        continue-on-error: true
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ALERT_UIDS: ${{ secrets.ALERT_UIDS }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ "${{ github.event.inputs.paper_dry }}" = "true" ]; then
+            node scripts/alerts/morningDigest.mjs --dry
+          else
+            node scripts/alerts/morningDigest.mjs
+          fi
 
       - name: Проверить позиции и отправить уведомления
         env:
@@ -185,21 +202,4 @@ jobs:
             node scripts/paper/syncActions.mjs --dry
           else
             node scripts/paper/syncActions.mjs
-          fi
-
-      # Восьмой шаг: утренняя сводка в Telegram — один раз в сутки при первом проходе после 8:00 МСК
-      # (час и выключатель — в Настройках). Отметка «сегодня слали» хранится в профиле, поэтому три
-      # будильника сообщение не дублируют.
-      - name: Утренняя сводка
-        continue-on-error: true
-        env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          ALERT_UIDS: ${{ secrets.ALERT_UIDS }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          if [ "${{ github.event.inputs.paper_dry }}" = "true" ]; then
-            node scripts/alerts/morningDigest.mjs --dry
-          else
-            node scripts/alerts/morningDigest.mjs
           fi

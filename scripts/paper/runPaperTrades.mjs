@@ -171,6 +171,15 @@ function strategiesFor(item, profile) {
   return { list: one ? [one] : [], multi: false };
 }
 
+// Одни и те же свечи нужны нескольким стратегиям (тикер + таймфрейм совпадают): грузим один раз за проход.
+// Без этого две стратегии на сопровождении удваивали время робота, и задание упиралось в лимит времени.
+const candleCache = new Map();
+function cachedCandles(args) {
+  const key = `${args.ticker}|${args.instrumentType}|${args.timeframe}|${args.lookbackDays}`;
+  if (!candleCache.has(key)) candleCache.set(key, fetchDailyCandles(args).catch((e) => { candleCache.delete(key); throw e; }));
+  return candleCache.get(key);
+}
+
 async function checkItem({ db, uid, profile, item, openTickers, allTrades, strategy: strategyOverride, multi = false }) {
   const strategy = strategyOverride || strategyFor(item, profile);
   // Ключ «уже открыта»: в одностратегийном режиме — тикер, в многостратегийном — тикер+стратегия.
@@ -204,7 +213,7 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades, strat
   // Рабочий таймфрейм стратегии (если задан при постановке на сопровождение) важнее таймфрейма записи радара.
   const tfKey = timeframeFor(strategy, item, profile, DEFAULT_TIMEFRAME);
   const tf = TIMEFRAMES[tfKey] || TIMEFRAMES[DEFAULT_TIMEFRAME];
-  const candles = await fetchDailyCandles({
+  const candles = await cachedCandles({
     ticker: item.ticker,
     instrumentType,
     toDate: new Date(),

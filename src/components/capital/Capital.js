@@ -401,16 +401,16 @@ export default function Capital() {
           fill it (flex:1). With `alignItems:'start'` (the old value) the shorter left
           column just stopped early, leaving a chunk of empty space next to a much
           taller «Настройки риск-менеджмента» panel — real user report/screenshot. */}
-      <div className="grid-2" style={{alignItems:'start'}}>
+      <div className="grid-2" style={{alignItems:'stretch'}}>
         {/* Limits gauges */}
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4" style={{height:'100%'}}>
           {/* Daily loss gauge — flex:1 so it alone fills the column height now that the
               contracts calculator card below was removed (dead weight: never used
               anywhere else, fully duplicated the same риск% calc already in Калькулятор,
               see real user report 2026-08-17 — was already flagged confusing once
               before, adding an explanation didn't fix it because the panel itself was
               the problem, not unclear copy). */}
-          <div className="card">
+          <div className="card" style={{flex:1}}>
             <div className="section-title">
               <div className="section-title-icon"><Icon name="trendDown" size={15} /></div>
               Дневной лимит убытка

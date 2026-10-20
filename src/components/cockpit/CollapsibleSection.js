@@ -6,6 +6,7 @@
 // пустым. Здесь колонка всегда одной ширины, а сворачивается именно контент внутри
 // секции — поэтому места реально освобождается, а не просто прячется текст.
 import React, { useState } from 'react';
+import Icon from '../shared/Icon';
 
 export default function CollapsibleSection({ title, badge, actions, defaultOpen = true, children }) {
   const [open, setOpen] = useState(defaultOpen);
@@ -13,7 +14,7 @@ export default function CollapsibleSection({ title, badge, actions, defaultOpen 
     <div className="ck-panel ck-section">
       <div className="ck-section-head">
         <button className="ck-section-toggle" onClick={() => setOpen((o) => !o)}>
-          <span className={`ck-section-chevron ${open ? 'open' : ''}`}>›</span>
+          <span className={`ck-section-chevron ${open ? 'open' : ''}`}><Icon name="chevronRight" size={14} /></span>
           <h3>{title}</h3>
           {badge != null && <span className="ck-cnt">{badge}</span>}
         </button>

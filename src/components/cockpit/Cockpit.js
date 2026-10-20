@@ -43,7 +43,7 @@ import CandleChart from '../shared/CandleChart';
 import RadarPanel from './RadarPanel';
 import StrategyOverview from './StrategyOverview';
 import PaperActions from './PaperActions';
-import { summarizeDecisions } from '../../services/analytics/actionMatch';
+import { summarizeDecisions, statusLine } from '../../services/analytics/actionMatch';
 import { useRadarLive } from '../../context/RadarLiveContext';
 import CollapsibleSection from './CollapsibleSection';
 import OrderModal from '../calculator/OrderModal';
@@ -231,6 +231,7 @@ export default function Cockpit() {
   const chooseScope = (id) => {
     setScopeId(id);
     setPaperFilter(id);
+    setTaLensId(id === 'all' ? '' : id);
     if (id !== 'all') setStrategyId(id);
     // Выбранная сделка могла быть чужой стратегии — сбрасываем, чтобы режим не показывал лишнего.
     setActiveId(null);
@@ -459,6 +460,9 @@ export default function Cockpit() {
     }
   }, [trade, timeframe, exitRules, userProfile?.tinkoffToken]);
 
+  // Выбрали другую сделку — сразу убираем свечи и расчёт предыдущей. Раньше они висели, пока грузятся новые,
+  // и итог, «грязными» и число контрактов считались по чужим свечам: цифры мелькали и были неверными.
+  useEffect(() => { setCandles(null); setState(null); setPatterns(null); }, [activeId]);
   useEffect(() => { recompute(); }, [recompute]);
 
   // Раз в минуту обновляем позицию сами, пока вкладка на виду, — раньше цены и итог
@@ -1236,7 +1240,42 @@ export default function Cockpit() {
                 const exits = [er.trailEnabled && 'следящий выход', er.profitCaptureEnabled && 'профит-система', er.trailLossRule === 'score' && 'лосс-система'].filter(Boolean);
                 return (
                   <section className="ck-panel">
-                    <h3 style={{ marginTop: 0 }}>Как торгует «{st.name || 'стратегия'}»</h3>
+                    {(() => {
+                      const g = paperGroups.groups.find((x) => x.key === st.id);
+                      const rd = radarByStrategy[st.id] || { total: 0, hot: 0 };
+                      const mine = paperTrades.filter((t) => paperStrategyKey(t) === st.id);
+                      const pnlCls = g && g.closed ? (g.pnl >= 0 ? 'up' : 'down') : '';
+                      return (
+                        <>
+                          <div className="ss-stats">
+                            <div className="ss-stat"><b>{g?.open ?? 0}</b><span>открыто</span></div>
+                            <div className="ss-stat"><b>{g?.closed ?? 0}</b><span>закрыто</span></div>
+                            <div className="ss-stat"><b className={pnlCls}>{g && g.closed ? fmtRub(g.pnl) : '—'}</b><span>итог закрытых</span></div>
+                            <div className="ss-stat"><b>{g && g.closed ? `${Math.round(g.winrate)}%` : '—'}</b><span>прибыльных</span></div>
+                            <div className="ss-stat"><b>{rd.total}</b><span>в радаре · готово {rd.hot}</span></div>
+                          </div>
+                          <h3 style={{ marginTop: 0 }}>Открытые бумажные сделки</h3>
+                          {mine.length ? (
+                            <table className="ss-table">
+                              <thead><tr><th>Инструмент</th><th>Сторона</th><th>Вход</th><th>Объём</th><th>Ваша отметка</th></tr></thead>
+                              <tbody>
+                                {mine.map((t) => (
+                                  <tr key={t.id} className="ss-row" onClick={() => selectTrade(t.id)}>
+                                    <td style={{ fontWeight: 600 }}>{t.ticker}</td>
+                                    <td className={t.direction === 'short' ? 'down' : 'up'} style={{ color: t.direction === 'short' ? 'var(--red)' : 'var(--green)' }}>{t.direction === 'short' ? 'шорт' : 'лонг'}</td>
+                                    <td>{fmtNum(t.entryPrice)}</td>
+                                    <td>{fmtNum(parseFloat(t.volume) || 0, 0)}</td>
+                                    <td>{statusLine(t) || <span className="ck-line-sub">не отмечено</span>}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          ) : <div className="ck-line-sub" style={{ marginBottom: 6 }}>Открытых бумажных сделок сейчас нет.</div>}
+                          <h3 style={{ margin: '16px 0 6px' }}>Условия входа</h3>
+                        </>
+                      );
+                    })()}
+                    <h3 style={{ margin: "0 0 6px", fontSize: 12, color: "var(--text-muted)" }}>Правила «{st.name || 'стратегия'}»</h3>
                     <div className="ck-line-sub" style={{ marginBottom: 8 }}>
                       Порог готовности к входу: {st.readinessThreshold != null ? `${st.readinessThreshold}%` : 'не задан'} · выход: {exits.length ? exits.join(', ') : 'не настроен'}
                     </div>

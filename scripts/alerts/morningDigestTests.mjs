@@ -12,7 +12,7 @@ const strip = (t) => String(t).replace(/<[^>]+>/g, '');
 // Москва = UTC+3. 2026-10-14 08:05 МСК = 05:05 UTC.
 const T0805 = Date.parse('2026-10-14T05:05:00Z');
 const T0759 = Date.parse('2026-10-14T04:59:00Z');
-const T1210 = Date.parse('2026-10-14T09:10:00Z');
+const T1210 = Date.parse('2026-10-14T11:10:00Z');
 const T2330 = Date.parse('2026-10-13T20:30:00Z'); // 23:30 МСК 13-го
 
 // ---- время ----
@@ -23,7 +23,7 @@ ok('через полночь по UTC в Москве уже новый ден�
 // ---- когда слать ----
 ok('в 8:05 — слать', shouldSendDigest({ prefs: {}, nowMs: T0805 }).send === true);
 ok('в 7:59 — рано', shouldSendDigest({ prefs: {}, nowMs: T0759 }).send === false);
-ok('в 12:10 — утро прошло', shouldSendDigest({ prefs: {}, nowMs: T1210 }).send === false);
+ok('в 14:10 — утро прошло', shouldSendDigest({ prefs: {}, nowMs: T1210 }).send === false);
 ok('сегодня уже слали', shouldSendDigest({ prefs: {}, digestSentOn: '2026-10-14', nowMs: T0805 }).send === false);
 ok('вчера слали — сегодня можно', shouldSendDigest({ prefs: {}, digestSentOn: '2026-10-13', nowMs: T0805 }).send === true);
 ok('выключена в Настройках', shouldSendDigest({ prefs: { morningDigest: false }, nowMs: T0805 }).send === false);

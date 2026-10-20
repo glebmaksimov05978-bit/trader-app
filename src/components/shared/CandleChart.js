@@ -482,6 +482,7 @@ export default function CandleChart({
           const d = newDrawing({ type: st.tool, p1: pt, color: st.color, label: st.label.trim() });
           st.commit(addDrawing(st.drawings, d));
           setSelectedId(d.id);
+          setTool('cursor'); // как на привычных графиках: после рисования — режим выбора, у линии видны кружки
           return;
         }
         if (TWO_POINT.has(st.tool)) {
@@ -491,6 +492,7 @@ export default function CandleChart({
           st.commit(addDrawing(st.drawings, d));
           setDraftPoint(null);
           setSelectedId(d.id);
+          setTool('cursor');
         }
       };
 

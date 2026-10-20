@@ -57,7 +57,7 @@ export function shouldSendDigest({ prefs = {}, digestSentOn = null, nowMs, force
   const { date, hour } = moscowParts(nowMs);
   const from = Number.isFinite(Number(prefs.digestHour)) ? Number(prefs.digestHour) : 8;
   if (hour < from) return { send: false, reason: `ещё рано (${hour}:00 МСК, нужно с ${from}:00)` };
-  if (hour >= 12) return { send: false, reason: 'утро прошло' };
+  if (hour >= 14) return { send: false, reason: 'утро прошло' };
   if (digestSentOn === date) return { send: false, reason: 'сегодня уже отправлена' };
   return { send: true };
 }
