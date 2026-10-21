@@ -210,7 +210,7 @@ export default function Dashboard() {
               хватает данных по контракту для расчёта, сюда не входят.</>,
           })}
           front={<>
-            <div className="kpi-label">Сделок всего</div>
+            <div className="kpi-label">Сделок с результатом</div>
             <div className="kpi-value" style={{color:'var(--gold)'}}>{stats?.total || 0}</div>
             <div className="kpi-sub">{stats?.wins || 0} прибыльных / {stats?.losses || 0} убыточных</div>
           </>}

@@ -34,3 +34,12 @@ export function plural(n, forms) {
   return forms[2];
 }
 export const tradesWord = (n) => `${n} ${plural(n, ['сделка', 'сделки', 'сделок'])}`;
+
+/** Цена: без лишних нулей, но и без потери копеек у дешёвых бумаг (0,0215 не превращается в 0,0). */
+export function formatPrice(v) {
+  const n = Number(v);
+  if (v == null || v === '' || !Number.isFinite(n)) return '—';
+  const abs = Math.abs(n);
+  const max = abs >= 1000 ? 2 : abs >= 1 ? 4 : 6;
+  return n.toLocaleString('ru-RU', { minimumFractionDigits: 0, maximumFractionDigits: max });
+}

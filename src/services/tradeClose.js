@@ -10,6 +10,7 @@ import { updateTrade, resolveOpenedAt } from './trades';
 import { computeTradePostmortem } from './tradePostmortem';
 import { getStrategies, getActiveStrategy } from './analytics/strategy';
 import { commissionRateFor, DEFAULT_TARIFF } from './analytics/commission';
+import { moveRub, positionValueRub } from './contractMath';
 
 /**
  * P&L и комиссия закрываемого куска — та же формула, что и раньше в Journal.js
@@ -18,23 +19,14 @@ import { commissionRateFor, DEFAULT_TARIFF } from './analytics/commission';
 export function computeClosePnl({ trade, exitPrice, qty, commRate }) {
   const entry = parseFloat(trade?.entryPrice);
   const vol = qty || 1;
-  const lot = parseFloat(trade?.lot) || 1;
-  const step = parseFloat(trade?.minStep) || 1;
-  const stepAmt = parseFloat(trade?.minStepAmount) || 0;
   const rate = commRate ?? commissionRateFor(trade?.__tariff || DEFAULT_TARIFF, trade?.instrumentType || 'stock').rate;
-  const dir = trade?.direction;
 
   if (!exitPrice || !entry) return null;
 
-  let pnl;
-  if (step && stepAmt) {
-    const ticks = (exitPrice - entry) / step;
-    pnl = (dir === 'long' ? ticks : -ticks) * stepAmt * vol * lot;
-  } else {
-    pnl = (dir === 'long' ? (exitPrice - entry) : (entry - exitPrice)) * vol * lot;
-  }
-
-  const commission = entry * vol * lot * rate * 2;
+  // Рубли за пункт — из contractMath: у фьючерса стоимость шага уже включает лот, у акции — лот.
+  const pnl = moveRub(trade, entry, exitPrice, vol);
+  // Комиссия берётся с каждой стороны по её цене: вход по цене входа, выход по цене выхода.
+  const commission = (positionValueRub(trade, entry, vol) + positionValueRub(trade, exitPrice, vol)) * rate;
   const net = pnl - commission;
   return { pnl: Math.round(net * 100) / 100, commission: Math.round(commission * 100) / 100 };
 }

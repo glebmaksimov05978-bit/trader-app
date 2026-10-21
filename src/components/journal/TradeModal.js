@@ -1,6 +1,7 @@
 // src/components/journal/TradeModal.js
 import React, { useState, useEffect, useRef } from 'react';
 import { formatCurrency, formatPercent } from '../../utils/money';
+import { positionValueRub } from '../../services/contractMath';
 import './Journal.css';
 
 import Icon from '../shared/Icon';
@@ -287,7 +288,8 @@ export default function TradeModal({ trade, onSave, onClose, defaultDeposit, def
         pnl = form.direction === 'long' ? (exit - entry) * vol * lot : (entry - exit) * vol * lot;
       }
 
-      const commission = entry * vol * lot * commRate * 2;
+      const commission = (positionValueRub({ instrumentType: form.instrumentType, lot, minStep: step, minStepAmount: stepAmt }, entry, vol)
+        + positionValueRub({ instrumentType: form.instrumentType, lot, minStep: step, minStepAmount: stepAmt }, exit, vol)) * commRate;
       const netPnl = pnl - commission;
 
       setAutoPnl({ pnl: Math.round(netPnl * 100) / 100, commission: Math.round(commission * 100) / 100 });

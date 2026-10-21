@@ -64,6 +64,7 @@ const candlesUrl = esmify(path.join(repoRoot, 'src/services/marketData/candles.j
 const rollUrl = esmify(path.join(repoRoot, 'src/services/marketData/futuresRoll.js'));
 // Осторожно: общий шаг esmify() выше уже сам дописывает ".js" к путям без расширения —
 // заменять нужно ПОСЛЕ этого дописывания, иначе строка для поиска не совпадёт ни с чем.
+esmify(path.join(repoRoot, 'src/services/contractMath.js')); // формула рублей за пункт — её импортирует tradeClose.js
 const closeUrl = esmify(path.join(repoRoot, 'src/services/tradeClose.js'), [
   ["from './trades.js'", "from './trades.js'"], ["from './tradePostmortem.js'", "from './tradePostmortem.js'"],
   ["from './analytics/strategy.js'", "from './strategy.js'"], ["from './analytics/commission.js'", "from './commission.js'"],

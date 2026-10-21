@@ -63,7 +63,8 @@ check('В закрытую сделку записан максимальный 
 check('…и максимальный ход против (1%)', takePlan.patch?.maxAdversePct, (v) => v === 1);
 check('Закрыто по цене цели, а не по цене бара', takePlan.patch?.exitPrice, (v) => v === 110);
 // (110 − 100) × 10 = 100 грязными, комиссия 100 × 10 × 0.0005 × 2 = 1 → 99 чистыми.
-check('P&L посчитан той же формулой, что и в Журнале', takePlan.patch?.pnl, (v) => Math.abs(v - 99) < 1e-6);
+// Комиссия берётся с каждой стороны по её цене: (100×10 + 110×10) × 0.0005 = 1.05 → 100 − 1.05 = 98.95
+check('P&L посчитан той же формулой, что и в Журнале', takePlan.patch?.pnl, (v) => Math.abs(v - 98.95) < 1e-6);
 check('Записана одна закрывающая ступень', (takePlan.patch?.legs || []).filter((l) => l.type === 'close').length, (v) => v === 1);
 
 // --- ГЛАВНОЕ: повторный проход по уже закрытой сделке ничего не добавляет ---
@@ -78,7 +79,8 @@ const stopCandles = [...warmup(), bar(LAST, 100, 101, 94, 96)];
 const stopPlan = planPaperUpdate({ trade: stopTrade, rules: RULES, candles: stopCandles, entryIndex: 0, commRate: COMM });
 check('Стоп задет — сделка закрыта', stopPlan.patch?.status, (v) => v === 'closed');
 // (95 − 100) × 10 = −50, минус комиссия 1 → −51.
-check('Убыток посчитан с комиссией', stopPlan.patch?.pnl, (v) => Math.abs(v - (-51)) < 1e-6);
+// (1000 + 950) × 0.0005 = 0.975 → −50 − 0.975 = −50.975 → до копеек −50.97
+check('Убыток посчитан с комиссией', stopPlan.patch?.pnl, (v) => Math.abs(v - (-50.97)) < 1e-6);
 
 // --- ничего не произошло: робот не должен трогать базу ---
 const quietCandles = warmup(42);
@@ -91,7 +93,8 @@ const shortCandles = [...warmup(), bar(LAST, 100, 101, 88, 89)];
 const shortPlan = planPaperUpdate({ trade: shortTrade, rules: RULES, candles: shortCandles, entryIndex: 0, commRate: COMM });
 check('Шорт: цель ниже входа — сделка закрыта', shortPlan.patch?.status, (v) => v === 'closed');
 // Шорт: (100 − 90) × 10 = 100 грязными, минус та же комиссия 1 → 99.
-check('Шорт: прибыль считается в обратную сторону', shortPlan.patch?.pnl, (v) => Math.abs(v - 99) < 1e-6);
+// (1000 + 900) × 0.0005 = 0.95 → 100 − 0.95 = 99.05
+check('Шорт: прибыль считается в обратную сторону', shortPlan.patch?.pnl, (v) => Math.abs(v - 99.05) < 1e-6);
 
 // --- экспирация фьючерса: закрытие остатка по последней цене ---
 const futTrade = { ...baseTrade, instrumentType: 'future', ticker: 'BRX6', direction: 'long', volume: 4, remainingVolume: 4 };

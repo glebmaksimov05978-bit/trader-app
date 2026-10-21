@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { getUserTrades, addTrade, updateTrade, deleteTrade, calcStats, resolveOpenedAt, resolveClosedAt } from '../../services/trades';
 import { fetchTradeLegs, resolveAccountId } from '../../services/positionSync';
 import { formatNumber } from '../../utils/calculator';
-import { formatCurrency, formatPercent } from '../../utils/money';
+import { formatCurrency, formatPercent, formatPrice } from '../../utils/money';
 import { fetchMarketPrice } from '../../services/marketData/lastPrice';
 import { reconcilePendingTrades } from '../../services/pendingOrders';
 import { fetchOrderState } from '../../services/broker';
@@ -580,7 +580,7 @@ export default function Journal() {
       {view === 'trades' && stats && (
         <div className="grid-4" style={{marginBottom:24}}>
           <div className="kpi-card green">
-            <div className="kpi-label">Всего сделок</div>
+            <div className="kpi-label">Сделок с результатом</div>
             <div className="kpi-value" style={{color:'var(--green)'}}>{stats.total}</div>
             <div className="kpi-sub">Открытых: {trades.filter(t=>t.status==='open').length}</div>
           </div>
@@ -688,8 +688,8 @@ export default function Journal() {
                         {trade.direction === 'long' ? 'Лонг' : 'Шорт'}
                       </span>
                     </td>
-                    <td>{formatNumber(trade.entryPrice, 1)}</td>
-                    <td>{trade.exitPrice ? formatNumber(trade.exitPrice, 1) : <span className="text-muted">—</span>}</td>
+                    <td>{formatPrice(trade.entryPrice)}</td>
+                    <td>{trade.exitPrice ? formatPrice(trade.exitPrice) : <span className="text-muted">—</span>}</td>
                     <td>
                       {isPartial
                         ? <span title="Осталось открыто / всего было">{formatNumber(trade.remainingVolume, 0)} / {formatNumber(trade.volume, 0)}</span>

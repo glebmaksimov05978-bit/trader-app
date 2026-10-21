@@ -5,7 +5,7 @@ import { getUserTrades, calcStats, computeLiveBalance } from '../../services/tra
 import { computeClosePnl } from '../../services/tradeClose';
 import { realizedOnDay, openedOnDay } from '../../services/analytics/realized';
 import { formatNumber } from '../../utils/calculator';
-import { formatCurrency, formatPercent } from '../../utils/money';
+import { formatCurrency, formatPercent, plural } from '../../utils/money';
 import { CONDITION_CATALOG, defaultStrategy, getStrategies, CUSTOM_CONDITION_PRESETS } from '../../services/analytics/strategy';
 import { classifyStrategy, kindBadge } from '../../services/analytics/strategyKind';
 import { PRIVATE_STRATEGY_PRESETS } from '../../services/analytics/privateStrategyPresets';
@@ -447,7 +447,11 @@ export default function Capital() {
 
             <div className="divider" />
             <div className="capital-rules">
-              <div className="capital-rule">При риске {riskPct}% и лимите {dailyLossPct}% — макс. <strong>{maxTradesPerRisk} убыточных сделок</strong> в день</div>
+              {maxTradesPerRisk >= 1 ? (
+                <div className="capital-rule">При риске {riskPct}% и лимите {dailyLossPct}% — макс. <strong>{maxTradesPerRisk} {plural(maxTradesPerRisk, ['убыточная сделка', 'убыточные сделки', 'убыточных сделок'])}</strong> в день</div>
+              ) : (
+                <div className="capital-rule" style={{color:'var(--red)'}}>Риск одной сделки ({riskPct}%) больше дневного лимита ({dailyLossPct}%): уже одна убыточная сделка превысит лимит дня. Уменьшите риск на сделку или поднимите лимит.</div>
+              )}
               <div className="capital-rule">Прекращать торговлю при убытке дня &gt; <strong>{formatCurrency(dailyLossRub)}</strong></div>
               <div className="capital-rule">Остановить торговлю при просадке &gt; <strong>{ddStopPct}% ({formatCurrency(maxDdRub)})</strong></div>
             </div>

@@ -42,6 +42,7 @@ fs.writeFileSync(path.join(tmp, 'tradePostmortem.js'), 'export async function co
 for (const f of ['strategy', 'commission', 'exitRules', 'indicators', 'candlestickPatterns', 'patterns', 'marketContext']) {
   esmify(path.join(repoRoot, `src/services/analytics/${f}.js`));
 }
+esmify(path.join(repoRoot, 'src/services/contractMath.js')); // формула рублей за пункт — её импортирует tradeClose.js
 const closeUrl = esmify(path.join(repoRoot, 'src/services/tradeClose.js'), [
   ["from './analytics/strategy.js'", "from './strategy.js'"], ["from './analytics/commission.js'", "from './commission.js'"],
 ]);

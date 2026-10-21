@@ -17,6 +17,7 @@ if (!stub) { console.log('✗ заглушка trades.js не найдена в 
 fs.writeFileSync(path.join(tmp, 'trades.js'), stub[1]);
 fs.writeFileSync(path.join(tmp, 'tradePostmortem.js'), 'export async function computeTradePostmortem() { return null; }\n');
 for (const f of ['strategy', 'commission', 'exitRules', 'indicators', 'candlestickPatterns', 'patterns', 'marketContext']) esmify(path.join(repoRoot, `src/services/analytics/${f}.js`));
+esmify(path.join(repoRoot, 'src/services/contractMath.js')); // формула рублей за пункт — её импортирует tradeClose.js
 const { applyTradeClose } = await import(esmify(path.join(repoRoot, 'src/services/tradeClose.js'), [["from './analytics/strategy.js'", "from './strategy.js'"], ["from './analytics/commission.js'", "from './commission.js'"]]));
 const { captured } = await import(pathToFileURL(path.join(tmp, 'trades.js')).href);
 
@@ -29,7 +30,7 @@ captured.length = 0;
 let res = await applyTradeClose({ trade, exitPrice: 310, qty: 10, closedAtDate: new Date('2026-10-07T10:00:00Z'), userProfile: {}, source: 'telegram' });
 ok('полное закрытие: патч перехвачен', captured.length === 1 && captured[0].id === 'T1');
 ok('статус closed, остаток 0', captured[0].patch.status === 'closed' && captured[0].patch.remainingVolume === 0);
-ok('P&L = (310−300)×10 лот.×10 шт = 1000 минус комиссия 30 → 970', Math.abs(captured[0].patch.pnl - 970) < 0.01);
+ok('P&L = (310−300)×10 лот.×10 шт = 1000 минус комиссия (30 000 + 31 000) × 0.05% = 30.5 → 969.5', Math.abs(captured[0].patch.pnl - 969.5) < 0.01);
 ok('ступень закрытия добавлена с источником telegram', captured[0].patch.legs.at(-1).type === 'close' && captured[0].patch.legs.at(-1).source === 'telegram');
 ok('ступень входа восстановлена, когда legs не было', captured[0].patch.legs[0].type === 'open' && captured[0].patch.legs[0].quantity === 10);
 

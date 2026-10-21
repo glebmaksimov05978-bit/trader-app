@@ -38,11 +38,21 @@ export function calcTrade({
   if (instrumentType === 'stock') {
     // Акция: убыток = (разница цен) × лотность
     lossPerContract = Math.abs(entry - sl) * l;
+  } else if (stepAmt > 0) {
+    // Фьючерс, известна реальная "стоимость шага" (STEPPRICE с MOEX): это цена ОДНОГО
+    // тика для ВСЕГО контракта целиком, лот уже заложен внутрь этого числа биржей.
+    // Проверено на реальных спецификациях: GAZPF 0.01×100=1, CNYRUBF 0.001×1000=1,
+    // IMOEXF 0.5×10=5 — во всех случаях step×lot точно равен STEPPRICE. Умножение на
+    // `l` ещё раз (как было раньше) задирало убыток на контракт в `l` раз — контракт
+    // ГАЗПРОМА для риск-сайзинга считался в 100 раз дороже, чем есть на самом деле,
+    // валютные фьючерсы (лот 1000) — в 1000 раз. Реальный баг, найден 2026-08-27 при
+    // проверке капитал-эффективности фьючерсов, где это давало абсурдные значения ГО.
+    lossPerContract = ticksToSL * stepAmt;
   } else {
-    // Фьючерс: убыток = тики × стоимость шага × лот
-    lossPerContract = stepAmt > 0
-      ? ticksToSL * stepAmt * l
-      : ticksToSL * step * l;
+    // Запасной путь, когда биржа не прислала реальную STEPPRICE (в частности мини-
+    // контракты без apiTradeAvailableFlag) — тут `step` это цена за ЕДИНИЦУ базового
+    // актива, поэтому лот действительно нужно умножить отдельно.
+    lossPerContract = ticksToSL * step * l;
   }
 
   // Количество по риску — учитывает и будущую комиссию (круглый рейс: вход + выход), не
@@ -52,7 +62,12 @@ export function calcTrade({
   // контрактов — только вычиталась из итога после: при риске, скажем, 1000₽, реальный
   // максимальный убыток получался немного БОЛЬШЕ 1000₽ (риск% + комиссия), а не ровно
   // заявленный риск (реальная находка трейдера/Клода при разборе точности бэктеста).
-  const commissionPerContract = entry * l * commissionRate * 2;
+  // Рубли за 1 пункт цены на одну единицу объёма — та же формула, что в services/contractMath.js:
+  // у фьючерса со стоимостью шага это «стоимость шага / шаг» (лот уже внутри), иначе — лот.
+  // Комиссия считается от стоимости позиции в рублях: раньше у фьючерсов брали цену в пунктах
+  // (у Brent 80 вместо 60 000 ₽ за контракт) и комиссия выходила в сотни раз меньше настоящей.
+  const rubPerPt = instrumentType !== 'stock' && stepAmt > 0 && step > 0 ? stepAmt / step : l;
+  const commissionPerContract = entry * rubPerPt * commissionRate * 2;
   const effectiveLossPerContract = lossPerContract + commissionPerContract;
   const contractsByRisk = effectiveLossPerContract > 0
     ? Math.floor(riskAmount / effectiveLossPerContract)
@@ -76,7 +91,7 @@ export function calcTrade({
   );
 
   const totalMargin    = instrumentType === 'future' ? contracts * iMargin : 0;
-  const positionValue  = Math.round(entry * contracts * l);
+  const positionValue  = Math.round(entry * contracts * rubPerPt);
   const notional       = positionValue;
   const commission     = notional * commissionRate * 2;
 
@@ -95,10 +110,11 @@ export function calcTrade({
   let profitPerContract;
   if (instrumentType === 'stock') {
     profitPerContract = Math.abs(tp - entry) * l;
+  } else if (stepAmt > 0) {
+    // Same fix as lossPerContract above — STEPPRICE already includes the lot.
+    profitPerContract = ticksToTP * stepAmt;
   } else {
-    profitPerContract = stepAmt > 0
-      ? ticksToTP * stepAmt * l
-      : ticksToTP * step * l;
+    profitPerContract = ticksToTP * step * l;
   }
 
   const totalProfit = profitPerContract * contracts - commission;

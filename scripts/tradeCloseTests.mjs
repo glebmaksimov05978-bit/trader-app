@@ -44,6 +44,7 @@ fs.writeFileSync(path.join(tmp, 'tradePostmortem.js'), 'export async function co
 for (const f of ['indicators', 'candlestickPatterns', 'patterns', 'marketContext', 'strategy', 'exitRules', 'commission']) {
   esmify(path.join(repoRoot, `src/services/analytics/${f}.js`));
 }
+esmify(path.join(repoRoot, 'src/services/contractMath.js')); // формула рублей за пункт — её импортирует tradeClose.js
 const closeUrl = esmify(path.join(repoRoot, 'src/services/tradeClose.js'), [
   ["from './analytics/strategy.js'", "from './strategy.js'"],
   ["from './analytics/commission.js'", "from './commission.js'"],
@@ -56,19 +57,37 @@ const ok = (c, m) => { if (!c) { console.log('  ПРОВАЛ:', m); fails++; } }
 // --- computeClosePnl: та же формула, что была в Journal.js calcQuickPnl -------------
 const longTrade = { entryPrice: 100, direction: 'long', lot: 1 };
 const r1 = computeClosePnl({ trade: longTrade, exitPrice: 110, qty: 5, commRate: 0.0005 });
-// pnl = (110-100)*5*1 = 50; commission = 100*5*1*0.0005*2 = 0.5; net = 49.5
-ok(Math.abs(r1.pnl - 49.5) < 1e-9, `лонг в плюс: ожидали 49.5, получили ${r1.pnl}`);
-ok(Math.abs(r1.commission - 0.5) < 1e-9, `комиссия: ожидали 0.5, получили ${r1.commission}`);
+// pnl = (110-100)*5*1 = 50; комиссия берётся с КАЖДОЙ стороны по её цене: (100*5 + 110*5) * 0.0005 = 0.525;
+// net = 49.475 → округление до копеек 49.48
+ok(Math.abs(r1.pnl - 49.48) < 1e-9, `лонг в плюс: ожидали 49.48, получили ${r1.pnl}`);
+ok(Math.abs(r1.commission - 0.53) < 1e-9, `комиссия: ожидали 0.53, получили ${r1.commission}`);
 
 const shortTrade = { entryPrice: 100, direction: 'short', lot: 1 };
 const r2 = computeClosePnl({ trade: shortTrade, exitPrice: 90, qty: 5, commRate: 0.0005 });
-// шорт: pnl = (100-90)*5 = 50, та же комиссия
-ok(Math.abs(r2.pnl - 49.5) < 1e-9, `шорт в плюс: ожидали 49.5, получили ${r2.pnl}`);
+// шорт: pnl = (100-90)*5 = 50, комиссия (500 + 450) * 0.0005 = 0.475 → 49.525 → 49.53
+ok(Math.abs(r2.pnl - 49.53) < 1e-9, `шорт в плюс: ожидали 49.53, получили ${r2.pnl}`);
 
-const futTrade = { entryPrice: 100, direction: 'long', lot: 1, minStep: 5, minStepAmount: 10 };
+const futTrade = { entryPrice: 100, direction: 'long', lot: 1, minStep: 5, minStepAmount: 10, instrumentType: 'future' };
 const r3 = computeClosePnl({ trade: futTrade, exitPrice: 115, qty: 2, commRate: 0.0004 });
-// шаг цены 5 = 10 руб: (115-100)/5 = 3 шага * 10 * 2 конт. = 60; commission = 100*2*1*0.0004*2 = 0.16
-ok(Math.abs(r3.pnl - (60 - 0.16)) < 1e-9, `фьючерс по шагу цены: ожидали ${60 - 0.16}, получили ${r3.pnl}`);
+// шаг цены 5 = 10 руб → 2 руб за пункт: (115-100)*2*2 конт. = 60;
+// комиссия от стоимости контрактов в рублях: (100*2*2 + 115*2*2) * 0.0004 = 0.344 → 59.656 → 59.66
+ok(Math.abs(r3.pnl - 59.66) < 1e-9, `фьючерс по шагу цены: ожидали 59.66, получили ${r3.pnl}`);
+
+// Brent: шаг 0,01 $, стоимость шага 7,5 ₽ — она УЖЕ за весь контракт (лот 10 баррелей внутри).
+// Ход 80 → 78 в шорт на 2 контрактах: 200 шагов * 7,5 * 2 = 3000 ₽. Раньше умножалось ещё на лот 10 → 30 000.
+const br = { entryPrice: 80, direction: 'short', lot: 10, minStep: 0.01, minStepAmount: 7.5, instrumentType: 'future' };
+const r4 = computeClosePnl({ trade: br, exitPrice: 78, qty: 2, commRate: 0.0004 });
+// стоимость контракта: 80 / 0.01 * 7.5 = 60 000 ₽; комиссия (120 000 + 117 000) * 0.0004 = 94.8
+ok(Math.abs(r4.commission - 94.8) < 1e-6, `Brent: комиссия от стоимости контракта 94.8, получили ${r4.commission}`);
+ok(Math.abs(r4.pnl - (3000 - 94.8)) < 1e-6, `Brent: результат 3000 − 94.8 (лот не умножается второй раз), получили ${r4.pnl}`);
+
+// Старая сделка без пометки типа, но со стоимостью шага — считается как фьючерс
+const legacy = { entryPrice: 80, direction: 'short', lot: 10, minStep: 0.01, minStepAmount: 7.5 };
+ok(Math.abs(computeClosePnl({ trade: legacy, exitPrice: 78, qty: 2, commRate: 0 }).pnl - 3000) < 1e-6, 'старая фьючерсная сделка без instrumentType — тоже без двойного лота');
+
+// Акция: лот 10, шаг и стоимость шага, если вдруг записаны, не используются
+const stock = { entryPrice: 300, direction: 'long', lot: 10, minStep: 0.01, minStepAmount: 0.1, instrumentType: 'stock' };
+ok(Math.abs(computeClosePnl({ trade: stock, exitPrice: 306, qty: 10, commRate: 0 }).pnl - 600) < 1e-6, 'акция: (306−300) × 10 лотов × 10 шт = 600');
 
 ok(computeClosePnl({ trade: longTrade, exitPrice: 0, qty: 5 }) === null, 'нулевая цена выхода — null, не NaN');
 ok(computeClosePnl({ trade: { direction: 'long' }, exitPrice: 100, qty: 5 }) === null, 'нет цены входа — null');

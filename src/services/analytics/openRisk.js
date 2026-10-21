@@ -16,10 +16,14 @@ const isOpen = (t) => t && (t.status === 'open' || t.status === 'partial');
 
 /** Рубли на единицу цены для одной позиции: «сколько стоит ход цены на 1 пункт». */
 function rubPerPriceUnit(t) {
+  // То же правило, что в services/contractMath.js (здесь продублировано, чтобы модуль оставался без
+  // зависимостей для роботов): у фьючерса стоимость шага уже включает лот, у акции — лот.
   const lot = num(t.lot) || 1;
-  const step = num(t.minStep) || 1;
+  const step = num(t.minStep) || 0;
   const stepAmt = num(t.minStepAmount) || 0;
-  if (step && stepAmt) return (stepAmt / step) * lot; // фьючерс: рубли на 1.0 пункта цены на контракт
+  const future = t.instrumentType === 'future' || t.isFuture === true
+    || (t.instrumentType !== 'stock' && t.instrumentType !== 'currency' && step > 0 && stepAmt > 0);
+  if (future && step > 0 && stepAmt > 0) return stepAmt / step;
   return lot;
 }
 

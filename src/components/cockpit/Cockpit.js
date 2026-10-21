@@ -36,6 +36,7 @@ import { computeProfitBreakdown, computeLossBreakdown } from '../../services/bac
 import { evaluateAlerts, DEFAULT_ALERT_PREFS } from '../../services/alerts';
 import { loadBacktestSample, findSimilar, probabilityOfGoal } from '../../services/backtest/similarTrades';
 import { applyTradeClose } from '../../services/tradeClose';
+import { moveRub, positionValueRub } from '../../services/contractMath';
 import { fetchOrderConfig, fetchOrderState } from '../../services/broker';
 import { reconcilePendingTrades } from '../../services/pendingOrders';
 import { updateTrade } from '../../services/trades';
@@ -526,23 +527,21 @@ export default function Cockpit() {
     const price = candles[candles.length - 1].close;
     const volume = parseFloat(trade.volume) || 1;
     const lot = parseFloat(trade.lot) || 1;
-    const step = parseFloat(trade.minStep) || 0;
-    const stepAmount = parseFloat(trade.minStepAmount) || 0;
     // У сделки обычно уже есть своя ставка (сохранена при открытии) — используем её,
     // как и Журнал при закрытии. Запасной вариант — тариф из Настроек, а не выдуманное
     // 0.0006, которое не совпадает ни с одним реальным тарифом Т-Банка.
     const commRate = parseFloat(trade.commissionRate)
       || commissionRateFor(userProfile?.brokerTariff || DEFAULT_TARIFF, trade.instrumentType || 'stock').rate;
     const entry = parseFloat(trade.entryPrice);
-    const dir = trade.direction === 'short' ? -1 : 1;
 
     const remainingVol = (parseFloat(trade.remainingVolume ?? trade.volume) || 0);
-    const closingVol = remainingVol * (closeShare / 100);
-    const perUnit = step && stepAmount
-      ? ((price - entry) / step) * stepAmount * dir
-      : (price - entry) * dir;
-    const gross = perUnit * closingVol * lot;
-    const commission = entry * closingVol * lot * commRate * 2;
+    // Закрыть можно только целое число лотов/контрактов: 25% от трёх — это один, а не 0,75.
+    const closingVol = remainingVol >= 1
+      ? Math.min(remainingVol, Math.max(1, Math.round(remainingVol * (closeShare / 100))))
+      : remainingVol;
+    // Одна формула с Журналом (services/contractMath.js): у фьючерса стоимость шага уже включает лот.
+    const gross = moveRub(trade, entry, price, closingVol);
+    const commission = (positionValueRub(trade, entry, closingVol) + positionValueRub(trade, price, closingVol)) * commRate;
     return {
       price, remainingVol, closingVol, lot,
       gross, commission,
@@ -724,7 +723,7 @@ export default function Cockpit() {
         minStep: parseFloat(trade.minStep) || null,
         minStepAmount: parseFloat(trade.minStepAmount) || null,
         commissionRate: commRate,
-        commission: Math.round(executedPrice * lotsExecuted * lot * commRate * 2),
+        commission: Math.round(positionValueRub({ ...trade, lot }, executedPrice, lotsExecuted) * commRate),
         depositSize: parseFloat(userProfile?.depositSize) || 0,
         pnl: null,
         source: 'paper-repeat',

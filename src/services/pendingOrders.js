@@ -1,3 +1,4 @@
+import { positionValueRub } from './contractMath.js';
 // src/services/pendingOrders.js
 //
 // Заявки, которые брокер принял, но не исполнил сразу (лимитная, ждущая цены, или рыночная вне
@@ -49,7 +50,7 @@ export function planPendingUpdate(trade, state, now = new Date()) {
         remainingVolume: vol,
         openedAt: at,
         date: at.split('T')[0],
-        commission: price ? Math.round(price * vol * lot * rate * 2) : trade.commission ?? null,
+        commission: price ? Math.round(positionValueRub({ ...trade, lot }, price, vol) * rate * 2) : trade.commission ?? null,
         pendingOrder: { ...po, filledLots: vol, filledAt: at },
         legs: [{
           type: 'open', side: trade.direction === 'short' ? 'sell' : 'buy', price, quantity: vol, commission: 0,
