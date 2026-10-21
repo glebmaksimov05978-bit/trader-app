@@ -80,7 +80,7 @@ function initFirebase() {
 const TG = () => {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) throw new Error('Нет TELEGRAM_BOT_TOKEN');
-  return `https://api.telegram.org/bot${token}`;
+  return `${process.env.TELEGRAM_API_BASE || 'https://api.telegram.org'}/bot${token}`;
 };
 
 async function tg(method, body) {

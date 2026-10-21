@@ -64,7 +64,7 @@ async function notify(text, keyboard = null) {
   const chatId = process.env.TELEGRAM_CHAT_ID;
   if (!token || !chatId) return;
   try {
-    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+    const res = await fetch(`${process.env.TELEGRAM_API_BASE || 'https://api.telegram.org'}/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

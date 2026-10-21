@@ -30,6 +30,21 @@ import { prepare, execute, cancel, parseCallback } from './tgTrade.js';
 const GITHUB_REPO = 'glebmaksimov05978-bit/trader-app';
 const GITHUB_WORKFLOW = 'traderpro-alerts.yml';
 
+const TG_PROXY_METHODS = new Set(['sendMessage', 'editMessageText', 'editMessageReplyMarkup', 'answerCallbackQuery', 'getMe']);
+
+export async function handleTelegramProxy(request, env, path) {
+  const m = /^\/tg\/bot([^/]+)\/([A-Za-z]+)$/.exec(path);
+  if (!m || !env.BOT_TOKEN || m[1] !== env.BOT_TOKEN) return new Response('forbidden', { status: 403 });
+  if (!TG_PROXY_METHODS.has(m[2])) return new Response('method not allowed', { status: 405 });
+  const body = request.method === 'POST' ? await request.text() : undefined;
+  const res = await fetch(`https://api.telegram.org/bot${env.BOT_TOKEN}/${m[2]}`, {
+    method: request.method === 'POST' ? 'POST' : 'GET',
+    headers: { 'Content-Type': 'application/json' },
+    ...(body ? { body } : {}),
+  });
+  return new Response(await res.text(), { status: res.status, headers: { 'Content-Type': 'application/json' } });
+}
+
 async function tg(token, method, body) {
   const res = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: 'POST',
@@ -208,6 +223,13 @@ export default {
     if (path === '/order/config') return handleOrderConfig(request, env);
     if (path === '/order/state') return handleOrderState(request, env);
     if (path === '/setup') return handleSetup(request, env);
+
+    // Прокси к Telegram для роботов, которые работают в России (Яндекс Облако): оттуда api.telegram.org
+    // может не открываться, а у воркера (Cloudflare) доступ есть. Робот шлёт запрос на
+    // <адрес воркера>/tg/bot<токен>/<метод> — ровно как в Telegram, — а воркер пересылает дальше.
+    // Защита: токен в адресе должен совпасть с токеном бота этого воркера (его знает только владелец),
+    // и разрешены лишь методы отправки/правки сообщений.
+    if (path.startsWith('/tg/')) return handleTelegramProxy(request, env, path);
 
     // Второй, независимый путь для будильника — обычный веб-адрес, на который может
     // стучаться внешний крон-сервис (cron-job.org и т.п.), а не встроенный механизм
