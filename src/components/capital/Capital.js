@@ -365,13 +365,13 @@ export default function Capital() {
           <div className="kpi-value" style={{fontSize:22}}>
             {formatCurrency(Math.round(currentBalance))}
           </div>
-          <div className="kpi-sub">{currentBalance >= deposit ? '+' : ''}{formatCurrency(Math.round(currentBalance - deposit))}</div>
+          <div className="kpi-sub">{Math.round(currentBalance - deposit) > 0 ? '+' : ''}{formatCurrency(Math.round(currentBalance - deposit))}</div>
         </div>
 
         <div className={`kpi-card ${Math.round(todayPnl) === 0 ? 'blue' : todayPnl > 0 ? 'green' : todayLossUsed >= dailyLossRub * 0.8 ? 'red' : 'gold'}`}>
           <div className="kpi-label">P&L сегодня</div>
           <div className="kpi-value" style={{color: Math.round(todayPnl) === 0 ? undefined : todayPnl > 0 ? 'var(--green)' : 'var(--red)', fontSize:22}}>
-            {todayPnl >= 0 ? '+' : ''}{formatCurrency(Math.round(todayPnl))}
+            {Math.round(todayPnl) > 0 ? '+' : ''}{formatCurrency(Math.round(todayPnl))}
           </div>
           <div className="kpi-sub">{todayTrades.length} открыто сегодня{todayRealized.partialPnl !== 0 ? ` · из них фиксация частями ${todayRealized.partialPnl > 0 ? "+" : ""}${formatCurrency(Math.round(todayRealized.partialPnl))}` : ""}</div>
         </div>

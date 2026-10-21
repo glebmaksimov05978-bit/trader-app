@@ -23,3 +23,14 @@ export function formatPercent(v, digits = 2) {
   if (Math.abs(n) < eps / 2) return n === 0 ? `0${digits ? ',' + '0'.repeat(digits) : ''}%` : `${n > 0 ? '+' : '−'}<${eps.toString().replace('.', ',')}%`;
   return `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n).toFixed(digits).replace('.', ',')}%`;
 }
+
+/** Русское склонение: plural(1, ['сделка','сделки','сделок']) → «сделка». */
+export function plural(n, forms) {
+  const a = Math.abs(Math.trunc(Number(n) || 0)) % 100;
+  const b = a % 10;
+  if (a > 10 && a < 20) return forms[2];
+  if (b > 1 && b < 5) return forms[1];
+  if (b === 1) return forms[0];
+  return forms[2];
+}
+export const tradesWord = (n) => `${n} ${plural(n, ['сделка', 'сделки', 'сделок'])}`;

@@ -347,7 +347,7 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
                           <td>
                             {t.pnl !== null && t.pnl !== undefined
                               ? <span style={{ color: t.pnl >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>
-                                  {t.pnl >= 0 ? '+' : ''}{formatCurrency(Math.round(t.pnl))}
+                                  {t.pnl > 0 ? '+' : ''}{formatCurrency(Math.round(t.pnl))}
                                 </span>
                               : t.pnlNeedsSpecs ? <span className="text-muted" title="Нет токена Т-Инвестиций или спецификация недоступна">н/д</span> : '—'}
                           </td>

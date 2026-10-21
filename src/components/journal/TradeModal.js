@@ -412,7 +412,7 @@ export default function TradeModal({ trade, onSave, onClose, defaultDeposit, def
             <div style={{padding:'10px 14px', background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.2)', borderRadius:12, fontSize:13}}>
               <span className="text-secondary">Автоподсчёт: </span>
               <span style={{color: autoPnl.pnl >= 0 ? 'var(--green)' : 'var(--red)', fontWeight:600}}>
-                {autoPnl.pnl >= 0 ? '+' : ''}{formatCurrency(autoPnl.pnl)}
+                {autoPnl.pnl > 0 ? '+' : ''}{formatCurrency(autoPnl.pnl)}
               </span>
               <span className="text-muted"> (комиссия {formatCurrency(autoPnl.commission)})</span>
             </div>

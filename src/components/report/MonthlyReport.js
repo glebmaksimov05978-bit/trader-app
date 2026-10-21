@@ -17,7 +17,7 @@ import { buildDecisionJournal } from '../../services/analytics/decisionJournal';
 import { buildMonthlyReport, reportVerdict } from '../../services/analytics/monthlyReport';
 import { buildPeriodReport, listPeriods, SCOPES } from '../../services/analytics/periodReport';
 import { buildEntryStats } from '../../services/analytics/entryStats';
-import { formatCurrency, formatPercent } from '../../utils/money';
+import { formatCurrency, formatPercent, tradesWord } from '../../utils/money';
 import { computeClosePnl } from '../../services/tradeClose';
 import { MIN_SAMPLE } from '../../services/analytics/insightsEngine';
 import './MonthlyReport.css';
@@ -136,7 +136,7 @@ export default function MonthlyReport() {
       ) : (
         <>
           {classic && !classic.empty && type === 'month' && scope === 'real'
-            ? <div className="card mr-verdict">{reportVerdict(classic)}</div>
+            ? <div className="card mr-verdict">{reportVerdict(classic)}{rep.stats.realizedOpen ? ` Ещё ${money(rep.stats.realizedOpen)} зафиксировано частями по сделкам, которые пока открыты (входит в «Результат»).` : ''}</div>
             : <div className="card mr-verdict">{summaryLine(rep)}</div>}
 
           <KpiRow rep={rep} />
@@ -167,7 +167,7 @@ export default function MonthlyReport() {
                   <tbody>
                     {rep.byInstrument.slice(0, 10).map((i) => (
                       <tr key={i.label}>
-                        <td style={{ fontWeight: 600 }}>{i.label}</td><td>{i.count}</td><td>{Math.round(i.winrate)}%</td>
+                        <td style={{ fontWeight: 600 }}>{i.label}</td><td>{i.count || '—'}</td><td>{i.count ? `${Math.round(i.winrate)}%` : '—'}</td>
                         <td className={`mr-num ${sgn(i.pnl)}`}>{money(i.pnl)}</td>
                       </tr>
                     ))}
@@ -576,7 +576,7 @@ function StrategyCard({ rep }) {
               <span className={`mr-num ${sgn(r.pnl)}`}>{money(r.pnl)}</span>
             </div>
             <div className="mr-strat-bar"><i className={sgn(r.pnl)} style={{ width: `${Math.max(3, (Math.abs(r.pnl) / maxAbs) * 100)}%` }} /></div>
-            <div className="mr-strat-sub">{r.count} сделок · {Math.round(r.winrate)}% прибыльных · профит-фактор {pfText(r.profitFactor)} · средняя {money(r.avg)}</div>
+            <div className="mr-strat-sub">{tradesWord(r.count)} · {Math.round(r.winrate)}% прибыльных · профит-фактор {pfText(r.profitFactor)} · средняя {money(r.avg)}</div>
           </div>
         ))}
       </div>

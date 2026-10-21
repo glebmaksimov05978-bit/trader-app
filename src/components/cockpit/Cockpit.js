@@ -49,7 +49,7 @@ import CollapsibleSection from './CollapsibleSection';
 import OrderModal from '../calculator/OrderModal';
 import './Cockpit.css';
 
-const fmtPct = (v, d = 2) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${v.toFixed(d)}%`);
+const fmtPct = (v, d = 2) => (v == null ? '—' : `${Number(v.toFixed(d)) > 0 ? '+' : ''}${(Number(v.toFixed(d)) || 0).toFixed(d)}%`);
 const fmtRub = (v) => (v == null ? '—'
   : `${v >= 0 ? '+' : '−'}${Math.round(Math.abs(v)).toLocaleString('ru-RU')} ₽`);
 const fmtNum = (v, d = 2) => (v == null ? '—' : Number(v).toFixed(d));
@@ -629,7 +629,7 @@ export default function Cockpit() {
         trade, exitPrice: executedPrice, qty: lotsExecuted, closedAtDate: new Date(),
         commRate, userProfile, source: 'order',
       });
-      const money2 = `${pnl >= 0 ? '+' : ''}${pnl.toLocaleString('ru-RU')} ₽`;
+      const money2 = `${pnl > 0 ? '+' : ''}${pnl.toLocaleString('ru-RU')} ₽`;
       toast.success(partial
         ? `Зафиксировано ${lotsExecuted}: ${money2}. В рынке осталось ${remaining}.`
         : `Сделка закрыта. P&L: ${money2}`);
@@ -966,7 +966,7 @@ export default function Cockpit() {
                         <span className={`ck-dir ${t.direction}`}>{t.direction === 'long' ? 'ЛОНГ' : 'ШОРТ'}</span>
                       </div>
                       <div className="ck-pos-sub">
-                        {t.status === 'partial' ? `в рынке ${fmtNum(rem, 0)} из ${fmtNum(vol, 0)}` : `${fmtNum(vol, 0)} конт.`}
+                        {t.status === 'partial' ? `в рынке ${fmtNum(rem, 0)} из ${fmtNum(vol, 0)}` : `${fmtNum(vol, 0)} ${t.instrumentType === 'future' ? 'конт.' : 'лот.'}`}
                       </div>
                       <div className="ck-pos-sub">вход {fmtNum(t.entryPrice)}</div>
                     </button>
@@ -1039,7 +1039,7 @@ export default function Cockpit() {
                       {/* «объём условный» — по правилам риска денег на такую позицию не
                           хватает, робот открыл её одним контрактом только ради наблюдения. */}
                       <div className="ck-pos-sub">
-                        {fmtNum(parseFloat(t.volume) || 0, 0)} конт. · вход {fmtNum(t.entryPrice)}
+                        {fmtNum(parseFloat(t.volume) || 0, 0)} {t.instrumentType === 'future' ? 'конт.' : 'лот.'} · вход {fmtNum(t.entryPrice)}
                         {t.riskTooBig ? ' · объём условный' : ''}
                         {t.repeatedAt ? ' · повторена' : ''}
                       </div>

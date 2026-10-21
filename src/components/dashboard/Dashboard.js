@@ -17,7 +17,7 @@ import {
   BarChart, Bar, Cell
 } from 'recharts';
 import { formatNumber } from '../../utils/calculator';
-import { formatCurrency, formatPercent } from '../../utils/money';
+import { formatCurrency, formatPercent, tradesWord } from '../../utils/money';
 import toast from 'react-hot-toast';
 
 import Icon from '../shared/Icon';
@@ -196,7 +196,7 @@ export default function Dashboard() {
               {formatCurrency(lastEquity)}
             </div>
             <div className="kpi-sub">
-              {pnlTotal >= 0 ? '+' : ''}{formatCurrency(pnlTotal)}
+              {pnlTotal > 0 ? '+' : ''}{formatCurrency(pnlTotal)}
               {pnlPercent !== null ? ` (${pnlPercent}%)` : ' (депозит не указан)'}
             </div>
           </>}
@@ -548,8 +548,8 @@ export default function Dashboard() {
             </div>
             <div className="stat-row"><span className="stat-row-label">Средний профит</span><span className="stat-row-value text-green">{formatCurrency(Math.round(stats.avgWin))}</span></div>
             <div className="stat-row"><span className="stat-row-label">Средний убыток</span><span className="stat-row-value text-red">{formatCurrency(Math.round(stats.avgLoss))}</span></div>
-            <div className="stat-row"><span className="stat-row-label">Серия побед</span><span className="stat-row-value">{stats.maxWinStreak} сделок</span></div>
-            <div className="stat-row"><span className="stat-row-label">Серия убытков</span><span className="stat-row-value">{stats.maxLossStreak} сделок</span></div>
+            <div className="stat-row"><span className="stat-row-label">Серия побед</span><span className="stat-row-value">{tradesWord(stats.maxWinStreak)}</span></div>
+            <div className="stat-row"><span className="stat-row-label">Серия убытков</span><span className="stat-row-value">{tradesWord(stats.maxLossStreak)}</span></div>
             <div className="stat-row"><span className="stat-row-label">Общий профит</span><span className="stat-row-value text-green">{formatCurrency(Math.round(stats.grossProfit))}</span></div>
             <div className="stat-row"><span className="stat-row-label">Общий убыток</span><span className="stat-row-value text-red">{formatCurrency(Math.round(stats.grossLoss))}</span></div>
           </div>
@@ -570,11 +570,11 @@ export default function Dashboard() {
                     <span className="stat-row-label">
                       {INSTRUMENT_LABELS[g.instrumentType] || g.instrumentType}
                       <span style={{color:'var(--text-muted)', fontSize:12, marginLeft:6}}>
-                        {g.count} сделок, винрейт {g.winrate.toFixed(0)}%
+                        {tradesWord(g.count)}, винрейт {g.winrate.toFixed(0)}%
                       </span>
                     </span>
                     <span className={`stat-row-value ${g.totalPnl >= 0 ? 'text-green' : 'text-red'}`}>
-                      {g.totalPnl >= 0 ? '+' : ''}{formatCurrency(Math.round(g.totalPnl))}
+                      {g.totalPnl > 0 ? '+' : ''}{formatCurrency(Math.round(g.totalPnl))}
                     </span>
                   </div>
                 ))}

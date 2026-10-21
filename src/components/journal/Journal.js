@@ -299,7 +299,7 @@ export default function Journal() {
         userProfile,
         source: 'manual',
       });
-      const money = `${pnl >= 0 ? '+' : ''}${formatCurrency(pnl)}`;
+      const money = `${pnl > 0 ? '+' : ''}${formatCurrency(pnl)}`;
       toast.success(partial
         ? `Зафиксировано ${qty} из ${remainingBefore}: ${money}. В рынке осталось ${remainingBefore - qty}.`
         : `Сделка закрыта. P&L: ${money}`);
@@ -592,7 +592,7 @@ export default function Journal() {
           <div className={`kpi-card ${stats.totalPnl >= 0 ? 'green' : 'red'}`}>
             <div className="kpi-label">Итого P&L</div>
             <div className="kpi-value" style={{color: stats.totalPnl >= 0 ? 'var(--green)' : 'var(--red)'}}>
-              {stats.totalPnl >= 0 ? '+' : ''}{formatCurrency(Math.round(stats.totalPnl))}
+              {stats.totalPnl > 0 ? '+' : ''}{formatCurrency(Math.round(stats.totalPnl))}
             </div>
             <div className="kpi-sub">Матожидание: {formatCurrency(Math.round(stats.expectancy))}</div>
           </div>
@@ -736,16 +736,15 @@ export default function Journal() {
                             className="btn btn-sm"
                             style={{
                               width: '100%',
-                              background: 'linear-gradient(135deg, #10b981, #059669)',
-                              color: '#fff',
-                              border: 'none',
+                              background: 'transparent',
+                              color: 'var(--green)',
+                              border: '1px solid color-mix(in srgb, var(--green) 55%, transparent)',
                               borderRadius: 8,
                               padding: '6px 0',
                               fontSize: 11,
                               fontWeight: 600,
                               cursor: 'pointer',
                               whiteSpace: 'nowrap',
-                              boxShadow: '0 2px 8px rgba(16,185,129,0.3)',
                             }}
                             onClick={() => openClose(trade)}
                             title="Закрыть сделку или зафиксировать часть"
@@ -1228,7 +1227,7 @@ export default function Journal() {
                       fontSize:16,
                       color: quickResult.pnl >= 0 ? 'var(--green)' : 'var(--red)',
                     }}>
-                      {quickResult.pnl >= 0 ? '+' : ''}{formatCurrency(quickResult.pnl)}
+                      {quickResult.pnl > 0 ? '+' : ''}{formatCurrency(quickResult.pnl)}
                     </span>
                   </div>
                   <div style={{display:'flex',justifyContent:'space-between'}}>

@@ -266,6 +266,7 @@
      вылезал за край панели (реальная жалоба: «полоска уходит за границу»). */
   max-width: 100%; box-sizing: border-box;
 }
+.ck-select-dark { background-size: 10px 6px; }
 .ck-select-dark:hover { border-color: var(--accent-primary); }
 .ck-select-dark option { background: var(--bg-surface-2); color: var(--text-primary); }
 .ck-radar-filter-sel { display: block; width: 100%; margin: 4px 0 0; }
