@@ -55,6 +55,8 @@ jobs:
       # (час и выключатель — в Настройках). Отметка «сегодня слали» хранится в профиле, поэтому три
       # будильника сообщение не дублируют.
       - name: Утренняя сводка
+        timeout-minutes: 3
+        if: always()
         continue-on-error: true
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
@@ -68,7 +70,22 @@ jobs:
             node scripts/alerts/morningDigest.mjs
           fi
 
+      - name: Снимок для меню Telegram (ранний, чтобы меню не «старело», если дальше что-то зависнет)
+        timeout-minutes: 3
+        if: always()
+        continue-on-error: true
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ALERT_UIDS: ${{ secrets.ALERT_UIDS }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
+        run: node scripts/telegram/writeSnapshot.mjs
+
       - name: Проверить позиции и отправить уведомления
+        timeout-minutes: 6
+        if: always()
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -91,6 +108,8 @@ jobs:
       # При ручном запуске по умолчанию идёт сухой прогон: показывает, что открылось бы, и
       # ничего не пишет в базу. По расписанию работает по-настоящему.
       - name: Бумажные сделки по радару
+        timeout-minutes: 9
+        if: always()
         continue-on-error: true
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
@@ -118,6 +137,8 @@ jobs:
       # FORCE_CHECK здесь не нужен: у ведения нет привязки к часам сессии, его собственное
       # условие — «появился ли новый бар», и вне торгов оно само ничего не делает.
       - name: Ведение бумажных сделок
+        timeout-minutes: 6
+        if: always()
         continue-on-error: true
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
@@ -135,6 +156,8 @@ jobs:
       # робота) — складывается в Cloudflare KV, откуда его читает бот. Только чтение базы;
       # идёт ПОСЛЕ остальных, чтобы в снимок попали свежие итоги этого прохода.
       - name: Снимок для меню Telegram
+        timeout-minutes: 3
+        if: always()
         continue-on-error: true
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
@@ -149,6 +172,8 @@ jobs:
       # на новый контракт), несуществующие инструменты убираются, об этом приходит сообщение.
       # Отключается в профиле (alertPrefs.radarAutoCleanup = false). Любой сбой безвреден.
       - name: Автоочистка радара
+        timeout-minutes: 3
+        if: always()
         continue-on-error: true
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
@@ -166,6 +191,8 @@ jobs:
       # по бумажной). Воркер бота оставляет записи fill:… в хранилище — здесь они превращаются в
       # записи Журнала тем же расчётом, что и в приложении. Повторный запуск безопасен.
       - name: Перенос сделок из Telegram в Журнал
+        timeout-minutes: 3
+        if: always()
         continue-on-error: true
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
@@ -188,6 +215,8 @@ jobs:
       # ключа. Без секретов RELAY_URL и RELAY_KEY молча пропускается. Отключается в Настройках
       # (alertPrefs.brokerActionSync = false).
       - name: Отметки действий по позициям в Т-Банке
+        timeout-minutes: 3
+        if: always()
         continue-on-error: true
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}

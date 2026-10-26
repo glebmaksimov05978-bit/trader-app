@@ -26,12 +26,14 @@ const root = [path.resolve(here, '..'), path.resolve(here, '../..')]
 // Порядок как в workflow. Первым идёт утренняя сводка — она дешёвая.
 export const STEPS = [
   { id: 'digest', script: 'scripts/alerts/morningDigest.mjs', dry: true },
+  // Снимок для меню Telegram — рано: он дешёвый, а меню бота читает именно его («проверка была 11 часов назад»
+  // — признак того, что до этого шага длинная цепочка не доходила).
+  { id: 'snapshot', script: 'scripts/telegram/writeSnapshot.mjs', dry: true },
+  { id: 'fills', script: 'scripts/telegram/applyFills.mjs', dry: true },
   { id: 'alerts', script: 'scripts/alerts/runAlerts.mjs', dry: false },
   { id: 'paper', script: 'scripts/paper/runPaperTrades.mjs', dry: true },
   { id: 'manage', script: 'scripts/paper/managePaperTrades.mjs', dry: true },
-  { id: 'snapshot', script: 'scripts/telegram/writeSnapshot.mjs', dry: true },
   { id: 'cleanup', script: 'scripts/radar/cleanupRadar.mjs', dry: true },
-  { id: 'fills', script: 'scripts/telegram/applyFills.mjs', dry: true },
   { id: 'sync', script: 'scripts/paper/syncActions.mjs', dry: true },
 ];
 
