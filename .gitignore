@@ -76,3 +76,8 @@ src/services/import/__fixtures__/
 /build
 relay/dist/
 relay/certs/
+/private/
+
+# локальные файлы окружения — могут содержать секреты
+.env.local
+.env.*.local
