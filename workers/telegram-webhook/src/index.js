@@ -19,9 +19,9 @@
 // установка означала бы второй деплой, второй набор секретов и второй источник
 // расхождений. Обработчики при этом полностью раздельны — общего между ними ровно
 // ничего, кроме адреса.
-import { buildReasonKeyboard, describeDecision, escapeHtml } from '../../../src/services/alerts.js';
+import { buildReasonKeyboard, describeDecision } from '../../../src/services/alerts.js';
 import { handleOrder, handleOrderConfig, handleOrderState } from './orders.js';
-import { MENU_KEYBOARD, renderMenuReply, commandOf, menuButtons } from './menu.js';
+import { MENU_KEYBOARD, menuReply, commandOf, START_TEXT, parseMenuCallback, renderMenuView } from './menu.js';
 import { tinkoff, resolveInstrument, listAccounts } from './orders.js';
 import { prepare, execute, cancel, parseCallback } from './tgTrade.js';
 
@@ -99,21 +99,36 @@ async function handleMenuMessage(message, env) {
 
   const command = commandOf(message.text);
   if (!command) return new Response('ok');
-  const text = command === 'start'
-    ? '<b>TraderPro</b>\nМеню внизу: открытые сделки, бумажные, радар, статус робота.\nЭто только просмотр — открывать и закрывать сделки здесь пока нельзя.'
-    : renderMenuReply(command, snap);
-  await tg(env.BOT_TOKEN, 'sendMessage', {
-    chat_id: message.chat.id, text, parse_mode: 'HTML', disable_web_page_preview: true,
-    reply_markup: MENU_KEYBOARD,
-  });
-  // Кнопки действий — отдельным сообщением: обычная клавиатура меню остаётся внизу экрана, а
-  // инлайн-кнопки привязываются к конкретному списку.
-  const buttons = menuButtons(command, snap);
-  if (buttons) {
-    await tg(env.BOT_TOKEN, 'sendMessage', {
-      chat_id: message.chat.id, text: 'Действия по сделкам (нужно будет подтвердить):', reply_markup: buttons,
-    });
+  const common = { chat_id: message.chat.id, parse_mode: 'HTML', disable_web_page_preview: true };
+  if (command === 'start') {
+    // Клавиатура меню внизу чата переустанавливается именно здесь (после смены подписей кнопок).
+    await tg(env.BOT_TOKEN, 'sendMessage', { ...common, text: START_TEXT, reply_markup: MENU_KEYBOARD });
+    return new Response('ok');
   }
+  const r = menuReply(command, snap);
+  if (!r) return new Response('ok');
+  // Список стратегий / сделок — инлайн-кнопками под самим сообщением; обычная клавиатура меню
+  // внизу чата остаётся на месте.
+  await tg(env.BOT_TOKEN, 'sendMessage', { ...common, text: r.text, ...(r.keyboard ? { reply_markup: r.keyboard } : { reply_markup: MENU_KEYBOARD }) });
+  return new Response('ok');
+}
+
+// Переходы внутри меню (m|…): выбор стратегии, список, карточка сделки. Правим то же сообщение,
+// чтобы чат не засорялся. Только чат владельца из снимка; чужим — молчание.
+async function handleMenuCallback(cq, env) {
+  const token = env.BOT_TOKEN;
+  const raw = await env.DECISIONS.get('snap:main');
+  const snap = raw ? JSON.parse(raw) : null;
+  const chatId = cq.message?.chat?.id;
+  if (!snap?.chatId || String(chatId) !== String(snap.chatId) || String(cq.from?.id) !== String(snap.chatId)) return new Response('ok');
+  const view = parseMenuCallback(cq.data);
+  if (!view) return new Response('ok');
+  const r = renderMenuView(view, snap, env.APP_URL);
+  await tg(token, 'editMessageText', {
+    chat_id: chatId, message_id: cq.message.message_id, text: r.text, parse_mode: 'HTML', disable_web_page_preview: true,
+    reply_markup: r.keyboard || { inline_keyboard: [] },
+  });
+  await tg(token, 'answerCallbackQuery', { callback_query_id: cq.id });
   return new Response('ok');
 }
 
@@ -147,11 +162,11 @@ async function handleTradeCallback(cq, env) {
     let args;
     if (cb.action === 'c') {
       const t = (snap.real || []).find((p) => p.id === cb.id);
-      if (!t) { await tg(token, 'sendMessage', { chat_id: chatId, text: 'Сделки нет в последнем снимке — откройте «📈 Сделки» заново.' }); return new Response('ok'); }
+      if (!t) { await tg(token, 'sendMessage', { chat_id: chatId, text: 'Сделки нет в последнем снимке — откройте «Реальные» заново.' }); return new Response('ok'); }
       args = { kind: 'close', ticker: t.ticker, instrumentType: t.type, tradeId: t.id, tradeDirection: t.dir };
     } else {
       const t = (snap.paper || []).find((p) => p.id === cb.id);
-      if (!t) { await tg(token, 'sendMessage', { chat_id: chatId, text: 'Бумажной сделки нет в последнем снимке — откройте «📄 Бумажные» заново.' }); return new Response('ok'); }
+      if (!t) { await tg(token, 'sendMessage', { chat_id: chatId, text: 'Бумажной сделки нет в последнем снимке — откройте «Бумажные» заново.' }); return new Response('ok'); }
       args = { kind: 'open', ticker: t.ticker, instrumentType: t.type, paperId: t.id, direction: t.dir === 'short' ? 'sell' : 'buy', lots: t.vol, tradeDirection: t.dir };
     }
     const r = await prepare(deps, args);
@@ -267,6 +282,7 @@ export default {
     if (update?.message?.text) return handleMenuMessage(update.message, env);
 
     const cq = update?.callback_query;
+    if (cq?.data?.startsWith('m|')) return handleMenuCallback(cq, env);
     if (cq?.data?.startsWith('x|')) return handleTradeCallback(cq, env);
     if (!cq?.data?.startsWith('d|')) return new Response('ok'); // не наша кнопка — молча выходим
 
@@ -294,11 +310,17 @@ export default {
       { expirationTtl: 86400 },
     );
 
+    const keepLinks = (cq.message.reply_markup?.inline_keyboard || []).filter((row) => row.length && row.every((b) => b.url));
+    const original = cq.message.text || String(tradeId);
+    const suffix = `\n\n→ ${label}`;
+    const entities = [...(cq.message.entities || [])];
+    entities.push({ type: 'italic', offset: [...original].reduce((n, ch) => n + (ch.codePointAt(0) > 0xffff ? 2 : 1), 0) + 2, length: [...suffix.slice(2)].reduce((n, ch) => n + (ch.codePointAt(0) > 0xffff ? 2 : 1), 0) });
     await tg(token, 'editMessageText', {
       chat_id: cq.message.chat.id, message_id: cq.message.message_id,
-      text: `${cq.message.text ? escapeHtml(cq.message.text) : tradeId}\n\n<i>→ ${escapeHtml(label)}</i>`,
-      parse_mode: 'HTML',
-      reply_markup: { inline_keyboard: [] }, // решение принято — кнопки больше не нужны
+      text: original + suffix,
+      entities,
+      disable_web_page_preview: true,
+      reply_markup: { inline_keyboard: keepLinks }, // решение принято — кнопки решений не нужны, ссылка в приложение остаётся
     });
     await tg(token, 'answerCallbackQuery', {
       callback_query_id: cq.id,

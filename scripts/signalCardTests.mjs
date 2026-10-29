@@ -16,32 +16,40 @@ const card = formatPaperSignalCard({
   conditions: [{ label: 'Цена выше EMA200', passed: true }, { label: 'RSI ниже 35', passed: true }, { label: 'Объём выше среднего', passed: false }],
 });
 const text = strip(card);
-ok('в заголовке стратегия, тикер и направление', /Бумажная · «Пробой» — SBER лонг, сигнал/.test(text));
+ok('в заголовке тикер, направление, стратегия', /SBER · лонг\s+сигнал\s+Бумажная · «Пробой»/.test(text));
 ok('подзаголовок: горизонт, таймфрейм и свеча', /краткосрок · Ч1 · свеча 14\.10 18:00/.test(text));
-ok('вход, стоп и цель в процентах', /Вход 301,2/.test(text) && /Стоп 294,1 \(−2,4%\)/.test(text) && /Цель 318 \(\+5,6%\)/.test(text));
-ok('прибыль к риску = 16,8 / 7,1 ≈ 2,4', /Прибыль к риску: 2,4 : 1/.test(text));
-ok('объём и риск в рублях и процентах', /Объём 10 · риск ≈ 710 ₽ \(0,7% капитала\)/.test(text));
-ok('условия: 2 из 3, с отметками', /Условия стратегии: 2 из 3/.test(text) && /✅ Цена выше EMA200/.test(text) && /▫️ Объём выше среднего/.test(text));
+ok('вход, стоп и цель таблицей, в процентах', /Вход\s+301,2/.test(text) && /Стоп\s+294,1\s+−2,4%/.test(text) && /Цель\s+318\s+\+5,6%/.test(text));
+const tableLines = (card.match(/<pre>([\s\S]*?)<\/pre>/) || [])[1].split('\n');
+const valueEnd = (l) => l.replace(/\s{2}(?:[−+][\d,]+%|ведёт.*|[\d,]+% капитала)$/, '').length;
+ok('цифры выровнены: значения всех строк таблицы заканчиваются в одной колонке', new Set(tableLines.map(valueEnd)).size === 1);
+ok('прибыль к риску = 16,8 / 7,1 ≈ 2,4', /К риску\s+2,4 : 1/.test(text));
+ok('объём и риск в рублях и процентах', /Объём\s+10/.test(text) && /Риск\s+710 ₽\s+0,7% капитала/.test(text));
+ok('условия: 2 из 3, с отметками', /Условия: 2 из 3/.test(text) && /✓ Цена выше EMA200/.test(text) && /✗ Объём выше среднего/.test(text));
+ok('в карточке нет цветных эмодзи', !/[\u{1F300}-\u{1FAFF}✅❌]/u.test(card));
 
 const short = strip(formatPaperSignalCard({ trade: { ...trade, direction: 'short', stopLoss: 308.3, takeProfit: 284.4 } }));
-ok('шорт: стоп выше входа — минус, цель ниже — плюс', /Стоп 308,3 \(−2,4%\)/.test(short) && /Цель 284,4 \(\+5,6%\)/.test(short) && /шорт/.test(short));
+ok('шорт: стоп выше входа — минус, цель ниже — плюс', /Стоп\s+308,3\s+−2,4%/.test(short) && /Цель\s+284,4\s+\+5,6%/.test(short) && /шорт/.test(short));
 const noStop = strip(formatPaperSignalCard({ trade: { ...trade, stopLoss: null } }));
-ok('без стопа: об этом сказано, прибыль к риску не выдумывается', /Стопа нет/.test(noStop) && !/Прибыль к риску/.test(noStop));
+ok('без стопа: об этом сказано, прибыль к риску не выдумывается', /Стоп\s+нет\s+ведёт следящий выход/.test(noStop) && !/К риску/.test(noStop));
 const noCond = strip(formatPaperSignalCard({ trade: { ...trade, entryPassed: 5, entryTotal: 6 } }));
-ok('без списка условий — счёт из записи сделки', /Условия стратегии: 5 из 6/.test(noCond));
+ok('без списка условий — счёт из записи сделки', /Условия: 5 из 6/.test(noCond));
 ok('условный объём помечен', /Объём условный/.test(strip(formatPaperSignalCard({ trade: { ...trade, riskTooBig: true } }))));
 const evil = formatPaperSignalCard({ trade: { ...trade, entryStrategyName: 'A<b>&B' }, conditions: [{ label: '1 < 2 & 3', passed: true }] });
 ok('спецсимволы экранируются (иначе Telegram не доставит)', !/A<b>&B/.test(evil) && /A&lt;b&gt;&amp;B/.test(evil) && /1 &lt; 2 &amp; 3/.test(evil));
-ok('больше десяти условий — показываются десять', (card.match(/✅|▫️/g) || []).length === 3
-  && (formatPaperSignalCard({ trade, conditions: Array.from({ length: 14 }, (_, i) => ({ label: `у${i}`, passed: true })) }).match(/✅/g) || []).length === 10);
+ok('больше десяти условий — показываются десять', (card.match(/✓|✗/g) || []).length === 3
+  && (formatPaperSignalCard({ trade, conditions: Array.from({ length: 14 }, (_, i) => ({ label: `у${i}`, passed: true })) }).match(/✓/g) || []).length === 10);
 
 // ---------- кнопки ----------
 const kb = paperDecisionKeyboard('abc123');
 ok('«Вошёл» и «Пропустил» в одной строке', kb.inline_keyboard[0].length === 2 && kb.inline_keyboard[0][0].callback_data === 'd|P:abc123|en' && kb.inline_keyboard[0][1].callback_data === 'd|P:abc123|sk');
 ok('«Повторить реально» остаётся прежней кнопкой', kb.inline_keyboard[1][0].callback_data === 'x|o|abc123');
-ok('без «Повторить»', paperDecisionKeyboard('abc123', { repeat: false }).inline_keyboard.length === 1);
+ok('без «Повторить» остаются «Вошёл/Пропустил» и ссылка', paperDecisionKeyboard('abc123', { repeat: false }).inline_keyboard.length === 2);
+const linkRow = kb.inline_keyboard[2];
+ok('под карточкой кнопка «Открыть в приложении» ведёт на эту сделку', linkRow.length === 1 && linkRow[0].text === 'Открыть в приложении' && linkRow[0].url === 'https://trader-app-blue.vercel.app/cockpit?activeId=abc123');
+ok('в ссылке нет ничего, кроме id сделки', !/token|key|secret/i.test(linkRow[0].url));
+ok('кнопки без эмодзи', kb.inline_keyboard.flat().every((b) => !/[\u{1F300}-\u{1FAFF}✅⏭]/u.test(b.text)));
 ok('нет id — нет клавиатуры', paperDecisionKeyboard(null) === null && notThisKeyboard('') === null);
-const allCb = [...kb.inline_keyboard.flat(), ...ambiguousEntryKeyboard([{ paperId: 'a'.repeat(20), strategy: 'Длинное название стратегии для проверки' }]).inline_keyboard.flat(), ...notThisKeyboard('a'.repeat(20)).inline_keyboard.flat()];
+const allCb = [...kb.inline_keyboard.flat().filter((b) => b.callback_data), ...ambiguousEntryKeyboard([{ paperId: 'a'.repeat(20), strategy: 'Длинное название стратегии для проверки' }]).inline_keyboard.flat(), ...notThisKeyboard('a'.repeat(20)).inline_keyboard.flat()];
 ok('данные кнопок не длиннее 64 байт (лимит Telegram)', allCb.every((b) => new TextEncoder().encode(b.callback_data).length <= 64));
 const amb = ambiguousEntryKeyboard([{ paperId: 'pa', strategy: 'Пробой' }, { paperId: 'pb', strategy: 'Откат' }]);
 ok('неоднозначный вход: по кнопке на стратегию и «Ни по одной»', amb.inline_keyboard.length === 3 && amb.inline_keyboard[0][0].callback_data === 'd|P:pa|en' && amb.inline_keyboard[2][0].callback_data === 'd|P:pa|nt');

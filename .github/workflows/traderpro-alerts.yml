@@ -48,8 +48,14 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Установить firebase-admin
-        run: npm install firebase-admin@12 --no-save
+      # @resvg/resvg-js — рисует PNG-картинку графика для сообщения о входе (без него сообщение
+      # просто уходит текстом). Шрифт с кириллицей для подписей на картинке — DejaVu.
+      - name: Установить firebase-admin и рисовалку графиков
+        run: |
+          # Оба пакета ставятся одной командой (npm --no-save убирает «лишние» пакеты прошлой установки).
+          # Не встала рисовалка — ставим только firebase-admin: роботы работают, картинок просто не будет.
+          npm install firebase-admin@12 @resvg/resvg-js@2.6.2 --no-save || npm install firebase-admin@12 --no-save
+          fc-list | grep -qi dejavu || (sudo apt-get update -qq && sudo apt-get install -y -qq fonts-dejavu-core) || true
 
       # Утренняя сводка в Telegram (стоит В НАЧАЛЕ задания: она дешёвая, а длинные шаги ниже раньше упирались в лимит времени и до неё не доходили) — один раз в сутки при первом проходе после 8:00 МСК
       # (час и выключатель — в Настройках). Отметка «сегодня слали» хранится в профиле, поэтому три

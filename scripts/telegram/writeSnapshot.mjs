@@ -128,11 +128,14 @@ async function main() {
   const uid = (process.env.ALERT_UIDS || '').split(',').map((s) => s.trim()).filter(Boolean)[0];
   if (!uid) throw new Error('Нет ALERT_UIDS');
 
-  const [realSnap, paperOpenSnap, paperAllSnap, radarSnap] = await Promise.all([
+  const [realSnap, paperOpenSnap, paperAllSnap, radarSnap, realRecentSnap] = await Promise.all([
     db.collection('trades').where('uid', '==', uid).where('status', 'in', ['open', 'partial']).get(),
     db.collection('paperTrades').where('uid', '==', uid).where('status', 'in', ['open', 'partial']).get(),
     db.collection('paperTrades').where('uid', '==', uid).get(),
     db.collection('radarItems').where('uid', '==', uid).get(),
+    // Последние сделки журнала (индекс uid+date уже есть) — для списка закрытых в меню бота.
+    db.collection('trades').where('uid', '==', uid).orderBy('date', 'desc').limit(120).get()
+      .catch((e) => { console.error(`Последние сделки журнала для меню не прочитаны: ${e.message}`); return { docs: [] }; }),
   ]);
 
   const real = [];
@@ -148,6 +151,21 @@ async function main() {
     .slice(0, 5)
     .map((p) => ({ ticker: p.ticker, dir: p.direction, pnl: Number(p.pnl) || 0, closedAt: toIso(p.closedAt) }));
 
+  // Строка закрытой сделки для меню: итог в рублях и в процентах хода цены (с учётом стороны).
+  const closedRow = (t) => {
+    const entry = parseFloat(t.entryPrice), exit = parseFloat(t.exitPrice);
+    const pct = entry && exit ? Math.round(((t.direction === 'short' ? entry - exit : exit - entry) / entry) * 10000) / 100 : null;
+    return { id: t.id, ticker: String(t.ticker || '').toUpperCase(), dir: t.direction === 'short' ? 'short' : 'long', pnl: Math.round((Number(t.pnl) || 0) * 100) / 100, pct, closedAt: toIso(t.closedAt || t.closeDate), strategy: t.entryStrategyName || null };
+  };
+  const byClosedDesc = (a, b) => String(b.closedAt || '').localeCompare(String(a.closedAt || ''));
+  const paperClosedList = paperAllSnap.docs.map((d) => ({ id: d.id, ...d.data() })).filter((p) => p.status === 'closed' && p.pnl != null).map(closedRow).sort(byClosedDesc).slice(0, 60);
+  const realRecent = realRecentSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const realClosedList = realRecent.filter((p) => p.status === 'closed' && p.pnl != null).map(closedRow).sort(byClosedDesc).slice(0, 40);
+  const summarize = (list) => groupPaperByStrategy(list).groups.map((g) => ({
+    label: g.label, open: g.open, closed: g.closed, pnl: Math.round(g.pnl), winrate: g.winrate == null ? null : Math.round(g.winrate),
+    avgHoldDays: g.avgHoldDays == null ? null : Math.round(g.avgHoldDays * 10) / 10, timeframes: g.timeframes,
+  }));
+
   const radar = radarSnap.docs.map((d) => d.data()).map((r) => ({
     ticker: String(r.ticker || '').toUpperCase(),
     robot: r.robotCheck ? { at: r.robotCheck.at, text: r.robotCheck.text, opened: !!r.robotCheck.opened } : null,
@@ -160,10 +178,11 @@ async function main() {
     real, paper,
     paperClosed: { count: closed.length, pnl: Math.round(closedPnl * 100) / 100, last: last5 },
     // Сводка по каждой стратегии отдельно — для кнопки «🧪 Стратегии» в боте.
-    paperByStrategy: groupPaperByStrategy(paperAllSnap.docs.map((d) => d.data())).groups.map((g) => ({
-      label: g.label, open: g.open, closed: g.closed, pnl: Math.round(g.pnl), winrate: g.winrate == null ? null : Math.round(g.winrate),
-      avgHoldDays: g.avgHoldDays == null ? null : Math.round(g.avgHoldDays * 10) / 10, timeframes: g.timeframes,
-    })),
+    paperByStrategy: summarize(paperAllSnap.docs.map((d) => d.data())),
+    // Для меню «Реальные»/«Бумажные»: итоги по стратегиям и списки последних закрытых сделок.
+    // Реальные — по последним 120 записям журнала (не за всё время): чтобы читать снимок дёшево.
+    realByStrategy: summarize(realRecent),
+    paperClosedList, realClosedList,
     radar,
     robot: { lastCheckAt: lastRobot, radarCount: radar.length },
   };

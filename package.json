@@ -46,6 +46,7 @@
     "test:tgproxy": "node scripts/tgProxyTests.mjs",
     "test:tgvercel": "node scripts/tgProxyVercelTests.mjs",
     "test:yandexrobots": "node scripts/yandexRobotsTests.mjs",
+    "test:tgchart": "node scripts/telegramChartTests.mjs",
     "test:smoke": "react-scripts test --watchAll=false src/components/smoke.test.js src/components/chartmount.test.js",
     "test:papergroups": "node scripts/paperGroupsTests.mjs",
     "test:fillsclose": "node scripts/fillsCloseTest.mjs",

@@ -249,30 +249,49 @@ export function formatPaperForTelegram({ title, lines = [], trade = null }) {
   return `${head}${body ? `\n${body}` : ''}${tail}`;
 }
 
+// ── Ссылки из Telegram в приложение ─────────────────────────────────────────────
+// Адрес сайта публичный (виден всем), поэтому лежит здесь по умолчанию; можно переопределить
+// переменной APP_URL. Конкретная сделка открывается в «Сопровождении»: /cockpit?activeId=<id> —
+// тем же способом, каким туда ведёт радар.
+export const DEFAULT_APP_URL = 'https://trader-app-blue.vercel.app';
+const appBase = (base) => String(base || DEFAULT_APP_URL).replace(/\/+$/, '');
+export function appTradeUrl(id, base) {
+  if (!id) return `${appBase(base)}/cockpit`;
+  return `${appBase(base)}/cockpit?activeId=${encodeURIComponent(id)}`;
+}
+export function appPageUrl(path = '/', base) {
+  return `${appBase(base)}${path.startsWith('/') ? path : `/${path}`}`;
+}
+/** Ряд с одной кнопкой «Открыть в приложении» — для клавиатур под сообщениями. */
+export function appButtonRow(id, base, text = 'Открыть в приложении') {
+  return [{ text, url: appTradeUrl(id, base) }];
+}
+
 /**
  * Кнопки под уведомлением. Смысл в том, чтобы решение фиксировалось В МОМЕНТ его принятия,
  * с телефона, а не заносилось потом по памяти — дневник причин иначе просто не наполнится.
  * Кнопки показываем только там, где есть что решать: на предупреждениях «за шаг до сигнала»
  * решать ещё нечего.
  */
-export function buildKeyboard(alert, trade) {
+export function buildKeyboard(alert, trade, appUrl) {
   if (alert.type === ALERT_TYPES.APPROACHING) {
-    return { inline_keyboard: [[{ text: '🔕 Не напоминать 4 часа', callback_data: `d|${trade.id}|sn4` }]] };
+    return { inline_keyboard: [[{ text: 'Не напоминать 4 часа', callback_data: `d|${trade.id}|sn4` }], appButtonRow(trade.id, appUrl)] };
   }
   const share = alert.suggestedShare;
   return {
     inline_keyboard: [
       // Раньше кнопка называлась просто «Зафиксировал» — непонятно, часть или всё.
       // Теперь в самой кнопке стоит доля, которую предложила система.
-      [{ text: share && share < 100 ? `✂️ Снял часть (${share}%)` : '✂️ Снял часть', callback_data: `d|${trade.id}|fp` }],
-      [{ text: '🚪 Закрыл сделку целиком', callback_data: `d|${trade.id}|fa` }],
+      [{ text: share && share < 100 ? `Снял часть (${share}%)` : 'Снял часть', callback_data: `d|${trade.id}|fp` }],
+      [{ text: 'Закрыл сделку целиком', callback_data: `d|${trade.id}|fa` }],
       [
-        { text: '➡️ Ничего не делал', callback_data: `d|${trade.id}|sk` },
-        { text: '🔕 Тихо 4 часа', callback_data: `d|${trade.id}|sn4` },
+        { text: 'Ничего не делал', callback_data: `d|${trade.id}|sk` },
+        { text: 'Тихо 4 часа', callback_data: `d|${trade.id}|sn4` },
       ],
       // Закрыть по-настоящему, не уходя из Telegram. Нажатие ничего не отправляет брокеру:
       // бот проверит позицию у брокера и попросит подтвердить (tgTrade.js).
-      [{ text: '📉 Закрыть у брокера', callback_data: `x|c|${trade.id}` }],
+      [{ text: 'Закрыть у брокера', callback_data: `x|c|${trade.id}` }],
+      appButtonRow(trade.id, appUrl),
     ],
   };
 }
@@ -300,9 +319,9 @@ export function paperTelegramAllowed(prefs = {}, strategyId = null, strategies =
  * свою позицию. Само нажатие ничего не отправляет — бот сначала покажет подтверждение
  * (workers/telegram-webhook/src/tgTrade.js).
  */
-export function paperRepeatKeyboard(paperId) {
+export function paperRepeatKeyboard(paperId, appUrl) {
   if (!paperId) return null;
-  return { inline_keyboard: [[{ text: '🔁 Повторить реально', callback_data: `x|o|${paperId}` }]] };
+  return { inline_keyboard: [[{ text: 'Повторить реально', callback_data: `x|o|${paperId}` }], appButtonRow(paperId, appUrl)] };
 }
 
 // Причины пропуска БУМАЖНОГО сигнала — свои: «Держу до цели» здесь не имеет смысла (позиции нет).
@@ -337,14 +356,15 @@ export function buildReasonKeyboard(tradeId) {
  * Показывается только когда включено в Настройках (alertPrefs.paperDecisionButtons): нажатия
  * разбирает воркер Telegram, и до его обновления новые коды он поймёт неверно.
  */
-export function paperDecisionKeyboard(paperId, { repeat = true } = {}) {
+export function paperDecisionKeyboard(paperId, { repeat = true, appUrl } = {}) {
   if (!paperId) return null;
   const ref = paperRef(paperId);
   const rows = [[
-    { text: '✅ Вошёл', callback_data: `d|${ref}|en` },
-    { text: '⏭ Пропустил', callback_data: `d|${ref}|sk` },
+    { text: 'Вошёл', callback_data: `d|${ref}|en` },
+    { text: 'Пропустил', callback_data: `d|${ref}|sk` },
   ]];
-  if (repeat) rows.push([{ text: '🔁 Повторить реально', callback_data: `x|o|${paperId}` }]);
+  if (repeat) rows.push([{ text: 'Повторить реально', callback_data: `x|o|${paperId}` }]);
+  rows.push(appButtonRow(paperId, appUrl));
   return { inline_keyboard: rows };
 }
 
@@ -408,7 +428,7 @@ const fmtSigned = (v) => (v == null ? '—' : `${v >= 0 ? '+' : '−'}${fmtNum(M
 export function formatPaperSignalCard({ trade, caption = '', conditions = [], riskRub = null, riskPct = null, signalBar = null }) {
   const dir = trade.direction === 'short' ? 'шорт' : 'лонг';
   const strat = trade.entryStrategyName ? `«${escapeHtml(trade.entryStrategyName)}»` : 'стратегия без названия';
-  const head = `📄 <b>Бумажная · ${strat} — ${escapeHtml(trade.ticker)} ${dir}, сигнал</b>`;
+  const head = `<b>${escapeHtml(trade.ticker)} · ${dir}</b>  сигнал\nБумажная · ${strat}`;
   const sub = [caption, signalBar ? `свеча ${signalBar}` : null].filter(Boolean).map(escapeHtml).join(' · ');
 
   const entry = Number(trade.entryPrice);
@@ -417,33 +437,33 @@ export function formatPaperSignalCard({ trade, caption = '', conditions = [], ri
   const sign = trade.direction === 'short' ? -1 : 1;
   const pctTo = (p) => (entry > 0 && p != null ? ((p - entry) / entry) * 100 * sign : null);
 
-  const lines = [];
-  const parts = [`<b>Вход</b> ${fmtNum(entry)}`];
-  if (stop != null) parts.push(`<b>Стоп</b> ${fmtNum(stop)} (${fmtSigned(pctTo(stop))})`);
-  else parts.push('<b>Стопа нет</b> — ведёт следящий выход');
-  if (take != null) parts.push(`<b>Цель</b> ${fmtNum(take)} (${fmtSigned(pctTo(take))})`);
-  lines.push(parts.join('  ·  '));
-
+  // Цифры — таблицей в моноширинном блоке: подписи слева, числа выровнены по правому краю.
+  const rows = [['Вход', fmtNum(entry), '']];
+  if (stop != null) rows.push(['Стоп', fmtNum(stop), fmtSigned(pctTo(stop))]);
+  else rows.push(['Стоп', 'нет', 'ведёт следящий выход']);
+  if (take != null) rows.push(['Цель', fmtNum(take), fmtSigned(pctTo(take))]);
   if (stop != null && take != null && Math.abs(entry - stop) > 0) {
-    lines.push(`Прибыль к риску: ${fmtNum(Math.abs(take - entry) / Math.abs(entry - stop), 1)} : 1`);
+    rows.push(['К риску', `${fmtNum(Math.abs(take - entry) / Math.abs(entry - stop), 1)} : 1`, '']);
   }
-  const vol = [`Объём ${fmtNum(trade.volume, 0)}`];
-  if (riskRub != null) vol.push(`риск ≈ ${fmtRubS(riskRub)}${riskPct != null ? ` (${fmtNum(riskPct, 1)}% капитала)` : ''}`);
-  lines.push(vol.join(' · '));
+  rows.push(['Объём', fmtNum(trade.volume, 0), '']);
+  if (riskRub != null) rows.push(['Риск', fmtRubS(riskRub), riskPct != null ? `${fmtNum(riskPct, 1)}% капитала` : '']);
+  const w1 = Math.max(...rows.map((r) => r[0].length));
+  const w2 = Math.max(...rows.map((r) => r[1].length));
+  const table = rows.map((r) => `${r[0].padEnd(w1)}  ${r[1].padStart(w2)}${r[2] ? `  ${r[2]}` : ''}`).join('\n');
 
   const passed = conditions.filter((c) => c.passed).length;
   let cond = '';
   if (conditions.length) {
-    cond = `\n\n<b>Условия стратегии: ${passed} из ${conditions.length}</b>\n`
-      + conditions.slice(0, 10).map((c) => `${c.passed ? '✅' : '▫️'} ${escapeHtml(c.label)}`).join('\n');
+    cond = `\n\n<b>Условия: ${passed} из ${conditions.length}</b>\n`
+      + conditions.slice(0, 10).map((c) => `${c.passed ? '✓' : '✗'} ${escapeHtml(c.label)}`).join('\n');
   } else if (trade.entryPassed != null && trade.entryTotal != null) {
-    cond = `\n\n<b>Условия стратегии: ${trade.entryPassed} из ${trade.entryTotal}</b>`;
+    cond = `\n\n<b>Условия: ${trade.entryPassed} из ${trade.entryTotal}</b>`;
   }
 
   const tail = trade.riskTooBig
     ? '\n\n<i>Объём условный: на эту сделку при текущем депозите денег бы не хватило.</i>'
     : '';
-  return `${head}${sub ? `\n<i>${sub}</i>` : ''}\n\n${lines.join('\n')}${cond}${tail}`;
+  return `${head}${sub ? `\n<i>${sub}</i>` : ''}\n\n<pre>${escapeHtml(table)}</pre>${cond}${tail}`;
 }
 
 const WEEKDAYS = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];

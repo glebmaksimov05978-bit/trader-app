@@ -76,6 +76,8 @@ const { entryGuard, DEFAULT_MIN_DAYS_TO_EXPIRY } = await import(rollUrl);
 const { formatPaperForTelegram, paperTelegramAllowed, paperRepeatKeyboard, formatPaperSignalCard, paperDecisionKeyboard } = await import(alertsUrl);
 // Для карточки сигнала: список условий стратегии, риск позиции в рублях, подпись «горизонт · таймфрейм».
 const { evaluateStrategy } = await import(pathToFileURL(path.join(tmp, 'strategy.js')).href);
+// Картинка графика к сообщению о входе: таймфрейм стратегии + следующий (scripts/telegram/signalPhoto.mjs).
+const { sendSignalPhoto } = await import(pathToFileURL(path.join(repoRoot, 'scripts/telegram/signalPhoto.mjs')).href);
 const { positionRisk } = await import(esmify(path.join(repoRoot, 'src/services/analytics/openRisk.js')));
 // Паспорт стратегии (горизонт, рабочий таймфрейм, «на сопровождении», наблюдение) — без зависимостей.
 const metaUrl = esmify(path.join(repoRoot, 'src/services/analytics/strategyMeta.js'));
@@ -365,6 +367,17 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades, strat
     const keyboard = profile.alertPrefs?.paperDecisionButtons === true
       ? paperDecisionKeyboard(ref.id)
       : paperRepeatKeyboard(ref.id);
+    // Сначала картинка (тихо: не получилось — сообщение уйдёт и без неё), потом карточка с кнопками.
+    if (!DRY) {
+      await sendSignalPhoto({
+        token: process.env.TELEGRAM_BOT_TOKEN, chatId: process.env.TELEGRAM_CHAT_ID,
+        apiBase: process.env.TELEGRAM_API_BASE || 'https://api.telegram.org',
+        ticker: paper.ticker, trade: paper, tfKey, signalDate: signalBar.date,
+        getCandles: (k) => (k === tfKey ? Promise.resolve(candles) : cachedCandles({
+          ticker: item.ticker, instrumentType, toDate: new Date(), timeframe: k, lookbackDays: (TIMEFRAMES[k] || TIMEFRAMES.D1).lookbackDays,
+        })),
+      });
+    }
     await notifyPaper(formatPaperSignalCard({
       trade: paper,
       caption: captionOf({ ...strategy, timeframe: strategy.timeframe || tfKey }) || (tfKey ? tfKey : ''),
