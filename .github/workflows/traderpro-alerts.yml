@@ -33,6 +33,10 @@ on:
 # сделок ДО записи друг друга и открыли бы одну и ту же сделку дважды (и продублировали
 # бы сообщения в Telegram). cancel-in-progress: false — идущий проход не обрывается, а
 # лишние ожидающие GitHub сам схлопывает до одного.
+permissions:
+  contents: read
+  actions: read
+
 concurrency:
   group: traderpro-robots
   cancel-in-progress: false
@@ -56,6 +60,20 @@ jobs:
           # Не встала рисовалка — ставим только firebase-admin: роботы работают, картинок просто не будет.
           npm install firebase-admin@12 @resvg/resvg-js@2.6.2 --no-save || npm install firebase-admin@12 --no-save
           fc-list | grep -qi dejavu || (sudo apt-get update -qq && sudo apt-get install -y -qq fonts-dejavu-core) || true
+
+      # Сторож: если в торговое время давно не было запусков от будильников — предупреждение в Telegram.
+      - name: Сторож будильников
+        timeout-minutes: 2
+        if: always()
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
+        run: node scripts/alerts/watchdog.mjs
 
       # Утренняя сводка в Telegram (стоит В НАЧАЛЕ задания: она дешёвая, а длинные шаги ниже раньше упирались в лимит времени и до неё не доходили) — один раз в сутки при первом проходе после 8:00 МСК
       # (час и выключатель — в Настройках). Отметка «сегодня слали» хранится в профиле, поэтому три
