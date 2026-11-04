@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { auth } from '../../services/firebase';
 import { getUserTrades, calcStats } from '../../services/trades';
 import toast from 'react-hot-toast';
 import './Advisor.css';
@@ -115,9 +116,11 @@ ${recentTrades || 'Нет данных'}${calcContext}
     setInput('');
     setLoading(true);
     try {
+      // Сервер проверяет, что вызывает вошедший Pro-пользователь: подпись — Firebase ID-токен.
+      const idToken = await auth.currentUser?.getIdToken();
       const response = await fetch('/api/advisor', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}) },
         body: JSON.stringify({ messages: newMessages, systemPrompt: buildSystemPrompt() }),
       });
       if (!response.ok) throw new Error('API error');

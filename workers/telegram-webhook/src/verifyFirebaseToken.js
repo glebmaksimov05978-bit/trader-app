@@ -91,7 +91,9 @@ export async function verifyFirebaseToken(idToken, projectId, expectedUid) {
     if (typeof p.iat !== 'number' || p.iat - skew > now) return { ok: false, error: 'токен из будущего' };
     if (expectedUid && p.sub !== expectedUid) return { ok: false, error: 'это не владелец счёта' };
 
-    return { ok: true, uid: p.sub };
+    // email_verified нужен сайту (платные ИИ-функции только для подтверждённых аккаунтов);
+    // воркер заявок его не использует, лишнее поле ему не мешает.
+    return { ok: true, uid: p.sub, emailVerified: p.email_verified === true };
   } catch (e) {
     return { ok: false, error: `проверка токена не удалась: ${e.message}` };
   }

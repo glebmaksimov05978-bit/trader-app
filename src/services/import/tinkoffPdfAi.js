@@ -52,9 +52,16 @@ function validateRow(row) {
 export async function parseTinkoffPdfViaAI(file) {
   const rawText = await extractRawText(file);
 
+  // Сервер проверяет, что вызывает вошедший пользователь: подпись — Firebase ID-токен.
+  // Firebase подключается здесь лениво: этот файл грузят и тесты в Node, где браузерного входа нет.
+  let idToken = null;
+  try {
+    const { auth } = await import('../firebase');
+    idToken = (await auth.currentUser?.getIdToken()) || null;
+  } catch { /* вне браузера токена нет — сервер ответит «нужен вход» */ }
   const res = await fetch('/api/parse-tinkoff-report', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}) },
     body: JSON.stringify({ rawText }),
   });
   if (!res.ok) {

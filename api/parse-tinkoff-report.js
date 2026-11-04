@@ -1,5 +1,13 @@
 // api/parse-tinkoff-report.js — Vercel Edge Function, AI fallback for Tinkoff report parsing
+//
+// Защита (lib/serverGuard.js): только вошедший пользователь с подтверждённой почтой (роль любая —
+// импорт отчёта нужен и бесплатным). Инструкция для ИИ зашита здесь, пользователь присылает только текст
+// отчёта, его размер ограничен.
+import { requireUser, readJsonBody, json } from '../lib/serverGuard.js';
+
 export const config = { runtime: 'edge' };
+
+const MAX_BODY_CHARS = 400_000;
 
 const SYSTEM_PROMPT = `Ты парсер брокерских отчётов Т-Инвестиций (Тинькофф). Тебе дают сырой текст, извлечённый из PDF (порядок слов может быть искажён построчной экстракцией). Найди в тексте:
 
@@ -25,10 +33,15 @@ export default async function handler(req) {
     return new Response('Method not allowed', { status: 405 });
   }
 
+  const guard = await requireUser(req);
+  if (guard.error) return guard.error;
+
   try {
-    const { rawText } = await req.json();
+    const parsedBody = await readJsonBody(req, MAX_BODY_CHARS);
+    if (parsedBody.error) return parsedBody.error;
+    const { rawText } = parsedBody.body || {};
     if (!rawText || typeof rawText !== 'string') {
-      return new Response(JSON.stringify({ error: 'rawText is required' }), { status: 400 });
+      return json({ error: 'rawText is required' }, 400);
     }
 
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -47,11 +60,9 @@ export default async function handler(req) {
     });
 
     if (!response.ok) {
-      const err = await response.text();
-      return new Response(JSON.stringify({ error: err }), {
-        status: response.status,
-        headers: { 'Content-Type': 'application/json' },
-      });
+      // Текст ошибки поставщика наружу не отдаём, в журнал функции — да.
+      console.error('parse-tinkoff-report: upstream', response.status, (await response.text()).slice(0, 300));
+      return json({ error: 'ИИ-разбор сейчас недоступен. Попробуйте позже.' }, 502);
     }
 
     const data = await response.json();
@@ -61,17 +72,12 @@ export default async function handler(req) {
     try {
       parsed = JSON.parse(jsonMatch ? jsonMatch[0] : text);
     } catch (e) {
-      return new Response(JSON.stringify({ error: 'AI returned invalid JSON: ' + e.message }), { status: 502 });
+      return json({ error: 'ИИ вернул неразборчивый ответ: ' + e.message }, 502);
     }
 
-    return new Response(JSON.stringify(parsed), {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-    });
+    return json(parsed);
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), { status: 500 });
+    console.error('parse-tinkoff-report:', err.message);
+    return json({ error: 'ИИ-разбор сейчас недоступен. Попробуйте позже.' }, 500);
   }
 }
