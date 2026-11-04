@@ -49,7 +49,7 @@
     "test:tgchart": "node scripts/telegramChartTests.mjs",
     "test:watchdog": "node scripts/watchdogTests.mjs",
     "test:aiguard": "node scripts/aiGuardTests.mjs",
-    "test:trainer": "node scripts/patternGeneratorTests.mjs && node scripts/patternQuizTests.mjs && node scripts/trainerSimTests.mjs",
+    "test:trainer": "node scripts/patternGeneratorTests.mjs && node scripts/patternQuizTests.mjs && node scripts/trainerSimTests.mjs && node scripts/liveSimTests.mjs",
     "eval:patterns": "node scripts/patternGeneratorEval.mjs",
     "test:apiimport": "node scripts/tbankApiImportTests.mjs",
     "test:smoke": "react-scripts test --watchAll=false src/components/smoke.test.js src/components/chartmount.test.js src/components/report/reportControls.test.js src/components/journal/importApi.test.js src/components/onboarding/onboarding.test.js src/components/trainer/trainer.test.js",

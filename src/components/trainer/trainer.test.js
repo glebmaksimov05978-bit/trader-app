@@ -29,7 +29,8 @@ const mockCandles = Array.from({ length: 400 }, (_, i) => {
   return { date: new Date(Date.UTC(2020, 0, 1) + i * 86400000), open: base, high: base + 1, low: base - 1, close: base + 0.4, volume: 1000 };
 });
 jest.mock('../../services/marketData/candles', () => ({
-  TIMEFRAMES: { D1: { minutes: 1440, label: 'Д1' } },
+  TIMEFRAMES: { D1: { minutes: 1440, label: 'Д1', lookbackDays: 960 } },
+  availableTimeframes: () => [{ key: 'D1', label: 'Д1', minutes: 1440 }],
   fetchDailyCandles: jest.fn(),
 }));
 
@@ -83,7 +84,7 @@ test('страница тренажёра открывается на игре �
   expect(host.querySelector('.page-title').textContent).toBe('Тренажёр');
   expect(host.textContent).toMatch(/не попадает/);
   expect(host.textContent).toContain('Какая фигура на графике?');
-  expect([...host.querySelectorAll('.tr-tabs [role="tab"]')].map((t) => t.textContent)).toEqual(['Увидеть фигуру', 'Переигровка истории', 'Разбор']);
+  expect([...host.querySelectorAll('.tr-tabs [role="tab"]')].map((t) => t.textContent)).toEqual(['Увидеть фигуру', 'Переигровка истории', 'Живые цены', 'Разбор']);
 });
 
 test('игра: ответ раскрывает разбор, показывает алгоритм и сохраняет прогресс в профиль', async () => {
@@ -148,4 +149,46 @@ test('разбор: показывает только учебные сделк�
   expect(host.textContent).toContain('Мало данных (2 из 25)');
   expect(host.textContent).toContain('Пока 2 из 25 сделок');
   expect(host.querySelectorAll('.badge-purple').length).toBeGreaterThanOrEqual(2); // у каждой строки метка «Бумага»
+});
+
+test('живые цены: заявка сохраняется как ожидающая, учебная, живая', async () => {
+  await click(byText('Живые цены', host));
+  await click(byText('Загрузить график'));
+  await sleep(10);
+  expect(host.textContent).toContain('Последняя цена');
+  await click(byText('Купить'));                                   // без стопа — не ставится
+  expect(mockAdd).not.toHaveBeenCalled();
+  await setValue(host.querySelector('#tr-live-stop'), '250');
+  await click(byText('Купить'));
+  await sleep(10);
+  expect(mockAdd).toHaveBeenCalledTimes(1);
+  const doc = mockSaved[0];
+  expect(doc.status).toBe('pending');
+  expect(doc.dataMode).toBe('live');
+  expect(doc.kind).toBe('trainer');
+  expect(doc.side).toBe('long');
+  expect(doc.orderStop).toBe(250);
+  expect(doc.tfMinutes).toBe(1440);
+});
+
+test('живые цены: открытие страницы дочитывает ожидающую сделку по свежим свечам и записывает итог', async () => {
+  const orderBar = mockCandles[200].date.toISOString();
+  const pending = {
+    id: 'live1', kind: 'trainer', dataMode: 'live', status: 'pending', ticker: 'SBER', instrumentType: 'stock', timeframe: 'D1', tfMinutes: 1440,
+    side: 'long', orderStop: 190, orderTake: 250, riskMoney: 1000, feePctPerSide: 0.05, orderPrice: 200, orderBarTime: orderBar, lastBarTime: orderBar,
+    stopSchedule: [{ afterMs: 0, price: 190 }], strategyId: null, strategyName: null, stopMoves: [],
+  };
+  trainerTrades.getTrainerTrades.mockImplementation(async () => [pending]);
+  await act(async () => { root.render(<Trainer key="live" />); });
+  await sleep(10);
+  await click(byText('Живые цены', host));
+  await sleep(50);
+  expect(host.textContent).toContain('Мои живые позиции');
+  expect(trainerTrades.updateTrainerTrade).toHaveBeenCalled();
+  const [id, body] = trainerTrades.updateTrainerTrade.mock.calls[0];
+  expect(id).toBe('live1');
+  expect(body.status).toBe('closed');
+  expect(body.exitReason).toBe('take');
+  expect(body.r).toBeGreaterThan(0);
+  expect(body.id).toBeUndefined();
 });

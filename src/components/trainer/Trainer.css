@@ -1,5 +1,5 @@
 /* src/components/trainer/Trainer.css — тренажёр «Тренд». Сдержанно: матовые поверхности, без неона. */
-.trainer-page .tr-tabs { max-width: 560px; }
+.trainer-page .tr-tabs { max-width: 720px; }
 
 .tr-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
 .tr-main { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
@@ -92,3 +92,10 @@
   .tr-stats { flex-wrap: wrap; white-space: normal; gap: 10px; }
   .tr-big { font-size: 34px; }
 }
+
+/* Живые позиции: строка-кнопка */
+.tr-liverow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; width: 100%; padding: 10px 8px; background: transparent; border: none; border-bottom: 1px solid var(--border-subtle); font: inherit; font-size: 13px; text-align: left; color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-xs); }
+.tr-liverow:last-child { border-bottom: none; }
+.tr-liverow:hover { background: var(--bg-surface-2); }
+.tr-liverow.on { background: var(--bg-surface-3); }
+.tr-liverow .tr-muted { margin: 0; flex: 1; min-width: 120px; }

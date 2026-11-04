@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 import Icon from '../shared/Icon';
 import PatternGame from './PatternGame';
 import ReplayDesk from './ReplayDesk';
+import LiveDesk from './LiveDesk';
 import TrainerReview from './TrainerReview';
 import { getTrainerTrades } from '../../services/trainer/trainerTrades';
 import { emptyProgress } from '../../services/trainer/patternQuiz';
@@ -15,6 +16,7 @@ import './Trainer.css';
 const TABS = [
   { id: 'patterns', label: 'Увидеть фигуру' },
   { id: 'replay', label: 'Переигровка истории' },
+  { id: 'live', label: 'Живые цены' },
   { id: 'review', label: 'Разбор' },
 ];
 
@@ -51,6 +53,7 @@ export default function Trainer() {
       <div style={{ marginTop: 16 }}>
         {tab === 'patterns' && <PatternGame progress={userProfile?.trainerPatterns || emptyProgress()} onProgress={saveProgress} />}
         {tab === 'replay' && <ReplayDesk onSaved={reload} />}
+        {tab === 'live' && <LiveDesk trades={trades} onChanged={reload} />}
         {tab === 'review' && <TrainerReview trades={trades} onChanged={reload} />}
       </div>
     </div>
