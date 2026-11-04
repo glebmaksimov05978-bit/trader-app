@@ -59,6 +59,27 @@ export class TinkoffAPI {
     }
   }
 
+  // ГО фьючерса у Т-Банка есть не во всех ответах FutureBy (и не всегда актуально) — отдельный метод
+  // GetFuturesMargin отдаёт именно ГО на покупку и продажу. Дополняем инструмент, только если ГО в нём
+  // нет совсем; при любой ошибке возвращаем инструмент как есть (ГО тогда можно ввести руками).
+  async withFuturesMargin(instrument) {
+    if (!instrument) return instrument;
+    if (moneyToFloat(instrument.initialMarginOnBuy) > 0 || moneyToFloat(instrument.initialMarginOnSell) > 0) return instrument;
+    try {
+      const m = await this.request('/tinkoff.public.invest.api.contract.v1.InstrumentsService/GetFuturesMargin', {
+        instrumentId: instrument.uid || instrument.figi,
+      });
+      return {
+        ...instrument,
+        initialMarginOnBuy: m.initialMarginOnBuy ?? instrument.initialMarginOnBuy,
+        initialMarginOnSell: m.initialMarginOnSell ?? instrument.initialMarginOnSell,
+        minPriceIncrementAmount: instrument.minPriceIncrementAmount ?? m.minPriceIncrementAmount,
+      };
+    } catch {
+      return instrument;
+    }
+  }
+
   // Акция по тикеру — ищем через FindInstrument
   async getShareByTicker(ticker) {
     try {
@@ -191,6 +212,9 @@ export function parsePortfolioPosition(p) {
     averagePrice: moneyToFloat(p.averagePositionPrice),
     currentPrice: moneyToFloat(p.currentPrice),
     expectedYield: moneyToFloat(p.expectedYield),
+    // Вариационная маржа открытой фьючерсной позиции в рублях — результат «как у брокера». Нужна, чтобы
+    // сверять наш расчёт прибыли по позиции с брокерским (у акций поля нет — тогда 0).
+    varMargin: moneyToFloat(p.varMargin),
   };
 }
 
@@ -241,7 +265,11 @@ export function parseFutureInfo(instrument) {
   const lot       = instrument.lot || 1;
   const marginBuy  = moneyToFloat(instrument.initialMarginOnBuy);
   const marginSell = moneyToFloat(instrument.initialMarginOnSell);
-  const margin    = Math.min(marginBuy || marginSell, marginSell || marginBuy) || marginBuy || marginSell;
+  // ГО у Т-Банка разное для покупки и для продажи и меняется со временем. Для расчёта объёма
+  // нужно брать значение стороны сделки (initialMarginOnBuy / initialMarginOnSell); `initialMargin`
+  // оставлен как одно «безопасное» число для старых вызовов — БОЛЬШЕЕ из двух (раньше брали меньшее,
+  // и у шорта ГО выходило заниженным).
+  const margin    = Math.max(marginBuy, marginSell) || 0;
 
   return {
     ticker: instrument.ticker,
@@ -253,6 +281,14 @@ export function parseFutureInfo(instrument) {
     initialMarginOnBuy: marginBuy,
     initialMarginOnSell: marginSell,
     initialMargin: margin,
+    // Ставка риска начальной маржи с учётом текущего уровня риска портфеля клиента (лонг/шорт):
+    // у Т-Банка именно она определяет персональное плечо. Для фьючерсов может отсутствовать.
+    dlongClient: moneyToFloat(instrument.dlongClient) || null,
+    dshortClient: moneyToFloat(instrument.dshortClient) || null,
+    // Доступность направлений: у части контрактов шорт или покупка закрыты.
+    shortEnabled: instrument.shortEnabledFlag ?? null,
+    buyAvailable: instrument.buyAvailableFlag ?? null,
+    sellAvailable: instrument.sellAvailableFlag ?? null,
     currency: instrument.currency,
     expirationDate: instrument.expirationDate,
     basicAsset: instrument.basicAsset,

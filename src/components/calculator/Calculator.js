@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { TinkoffAPI, parseFutureInfo, parseShareInfo } from '../../services/tinkoff';
-import { calcTrade, formatCurrency, formatNumber } from '../../utils/calculator';
+import { calcTrade, scaleToContracts, formatCurrency, formatNumber } from '../../utils/calculator';
 import { addTrade, getUserTrades, computeLiveBalance } from '../../services/trades';
 import { addRadarItem } from '../../services/radar';
 import { fetchDailyCandles, availableTimeframes, DEFAULT_TIMEFRAME, TIMEFRAMES } from '../../services/marketData/candles';
@@ -151,7 +151,11 @@ export default function Calculator() {
     lot: '1',
     minStep: '1',
     minStepAmount: '',
+    // ГО, введённое руками (одно число на обе стороны). Пусто — берётся ГО Т-Банка по направлению сделки.
     initialMargin: '',
+    // ГО Т-Банка на покупку (лонг) и продажу (шорт): у них разные значения, и они меняются.
+    initialMarginBuy: '',
+    initialMarginSell: '',
     // Ставка по умолчанию берётся из тарифа Т-Банка в Настройках, а не из выдуманного
     // 0.06% — раньше это число не совпадало ни с одним реальным тарифом брокера.
     commissionRate: String(
@@ -338,7 +342,10 @@ export default function Calculator() {
       lot: form.lot,
       minStep: form.minStep,
       minStepAmount: form.minStepAmount,
+      // Если ГО введено руками — оно главнее; иначе ГО стороны сделки из Т-Банка.
       initialMargin: form.initialMargin,
+      initialMarginBuy: form.initialMargin ? 0 : form.initialMarginBuy,
+      initialMarginSell: form.initialMargin ? 0 : form.initialMarginSell,
       commissionRate: form.commissionRate,
       maxMarginPercent: parseFloat(userProfile?.maxMarginPercent) || 30,
       instrumentType,
@@ -353,27 +360,14 @@ export default function Calculator() {
   const displayResult = useMemo(() => {
     if (!result) return null;
     if (!manualContracts) return result;
-    const n = effectiveContracts;
-    const entry = parseFloat(form.entryPrice || 0);
-    const lot = parseFloat(form.lot || 1);
-    const commission = Math.round(entry * n * lot * parseFloat(form.commissionRate || 0.0006) * 2);
-    const totalLoss = Math.round(result.lossPerContract * n + commission);
-    const totalProfit = Math.round(result.profitPerContract * n - commission);
-    const totalMargin = Math.round((result.totalMargin / Math.max(result.contracts, 1)) * n);
-    const positionValue = Math.round(entry * n * lot);
-    const deposit = parseFloat(form.depositSize) || 1;
-    const marginUsed = instrumentType === 'future' ? totalMargin : positionValue;
-    return {
-      ...result,
-      contracts: n,
-      commission,
-      totalLoss,
-      totalProfit,
-      totalMargin,
-      positionValue,
-      marginUsagePercent: Math.round((marginUsed / deposit) * 100),
-      maxMarginPercent: result.maxMarginPercent || 30,
-    };
+    // Пересчёт итогов на введённое число контрактов — одной функцией с расчётом объёма
+    // (utils/calculator.js), чтобы рубли за пункт, комиссия и ГО считались везде одинаково.
+    return scaleToContracts(result, effectiveContracts, {
+      entryPrice: form.entryPrice,
+      commissionRate: form.commissionRate,
+      depositSize: form.depositSize,
+      instrumentType,
+    });
   }, [result, manualContracts, effectiveContracts, form, instrumentType]);
 
   // Re-evaluates the trader's own strategy checklist whenever the ticker analysis or the
@@ -502,7 +496,10 @@ export default function Calculator() {
               lot: String(card.lot || 1),
               minStep: fmtNum(card.minPriceIncrement) || '1',
               minStepAmount: fmtNum(card.minPriceIncrementAmount) || '',
-              initialMargin: fmtNum(card.initialMargin) || '',
+              // Биржа (MOEX) отдаёт одно ГО без деления на лонг/шорт — ставим его на обе стороны.
+              initialMargin: '',
+              initialMarginBuy: fmtNum(card.initialMargin) || '',
+              initialMarginSell: fmtNum(card.initialMargin) || '',
             }));
             toast.success(stale
               ? `${ticker}: ${price} ₽ — рынок сейчас закрыт, это цена последнего закрытия. ГО и шаг цены подтянуты с MOEX`
@@ -522,10 +519,12 @@ export default function Calculator() {
       } else {
         // Тинькофф
         if (!tapi) { toast.error('Введите API-токен в настройках'); return; }
-        const raw = instrumentType === 'stock'
+        let raw = instrumentType === 'stock'
           ? await tapi.getShareByTicker(ticker)
           : await tapi.getFutureByTicker(ticker);
         if (!raw) { toast.error(`Инструмент ${ticker} не найден`); return; }
+        // ГО на покупку и продажу: если в ответе по инструменту его нет — берём отдельным запросом.
+        if (instrumentType !== 'stock') raw = await tapi.withFuturesMargin(raw);
         const info = instrumentType === 'stock' ? parseShareInfo(raw) : parseFutureInfo(raw);
         setInstrumentInfo(info);
         // Логотип пришёл в этом же ответе Т-Банка — кладём в общий кэш, чтобы Радар,
@@ -541,7 +540,10 @@ export default function Calculator() {
           lot: String(info.lot || 1),
           minStep: fmtNum(info.minPriceIncrement) || '1',
           minStepAmount: fmtNum(info.minPriceIncrementAmount) || '',
-          initialMargin: fmtNum(info.initialMargin) || '',
+          // Т-Банк отдаёт ГО отдельно на покупку и на продажу; подставляется по направлению сделки.
+          initialMargin: '',
+          initialMarginBuy: fmtNum(info.initialMarginOnBuy) || '',
+          initialMarginSell: fmtNum(info.initialMarginOnSell) || '',
         }));
         if (price) toast.success(`${info.ticker}: ${price} ₽`);
         loadedTickerRef.current = ticker;
@@ -896,7 +898,7 @@ export default function Calculator() {
       try { sessionStorage.removeItem(CALC_DRAFT_KEY); } catch { /* ignore */ }
       setForm(f => ({
         ...f, ticker: '', entryPrice: '', stopLoss: '', takeProfit: '',
-        initialMargin: '', minStep: '1', minStepAmount: '', lot: '1',
+        initialMargin: '', initialMarginBuy: '', initialMarginSell: '', minStep: '1', minStepAmount: '', lot: '1',
       }));
       setInstrumentInfo(null);
       setForcedDir(null);
@@ -1011,7 +1013,7 @@ export default function Calculator() {
               setManualContracts('');
               setInstrumentInfo(null);
               setForcedDir(null);
-              setForm(f => ({ ...f, ticker:'', entryPrice:'', stopLoss:'', takeProfit:'', initialMargin:'', minStep:'1', minStepAmount:'', lot:'1' }));
+              setForm(f => ({ ...f, ticker:'', entryPrice:'', stopLoss:'', takeProfit:'', initialMargin:'', initialMarginBuy:'', initialMarginSell:'', minStep:'1', minStepAmount:'', lot:'1' }));
             }}
           >{label}</button>
         ))}
@@ -1335,6 +1337,12 @@ export default function Calculator() {
                 </div>
               )}
             </div>
+            {instrumentType === 'future' && !form.initialMargin && (form.initialMarginBuy || form.initialMarginSell) && (
+              <div className="text-xs text-muted" style={{marginBottom:12}}>
+                ГО на контракт: лонг {formatCurrency(parseFloat(form.initialMarginBuy) || 0)} · шорт {formatCurrency(parseFloat(form.initialMarginSell) || 0)}.
+                В расчёт берётся ГО стороны вашей сделки; число, введённое выше руками, главнее.
+              </div>
+            )}
             {instrumentType === 'future' && (
               <div className="calc-grid-2" style={{marginBottom:12}}>
                 <div className="input-group">
@@ -1413,6 +1421,11 @@ export default function Calculator() {
                   <div className="calc-metric-label">{instrumentType==='stock' ? 'СТОИМОСТЬ ПОЗИЦИИ' : 'ГО (ЗАМОРОЗКА)'}</div>
                   <div style={{fontSize:20,fontWeight:800}}>{formatCurrency(instrumentType==='stock' ? displayResult.positionValue : displayResult.totalMargin)}</div>
                   <div style={{fontSize:11,color:(displayResult.marginUsagePercent||0)>(displayResult.maxMarginPercent||30)?'var(--red)':''}}>{displayResult.marginUsagePercent||0}% / лимит {displayResult.maxMarginPercent||30}%</div>
+                  {instrumentType==='future' && displayResult.leverage > 0 && (
+                    <div style={{fontSize:11,color:'var(--text-muted)'}}>
+                      Плечо ≈ {formatNumber(displayResult.leverage, 1)}× · ГО на {displayResult.marginSide==='short' ? 'шорт' : displayResult.marginSide==='long' ? 'лонг' : 'контракт'}
+                    </div>
+                  )}
                   <div className="divider" style={{margin:'6px 0'}}/>
                   <div style={{fontSize:11,color:'var(--text-muted)'}}>Стоимость позиции:</div>
                   <div style={{fontSize:13,fontWeight:700}}>{formatCurrency(displayResult.positionValue)}</div>

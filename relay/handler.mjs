@@ -38,6 +38,8 @@ export const ALLOWED_METHODS = new Set([
   'InstrumentsService/FindInstrument',
   'InstrumentsService/ShareBy',
   'InstrumentsService/FutureBy',
+  // ГО фьючерса отдельно на покупку и на продажу — только чтение (робот считает по нему объём и плечо).
+  'InstrumentsService/GetFuturesMargin',
   'OrdersService/PostOrder',
   'OrdersService/GetOrderState',
   'OrdersService/GetOrders',

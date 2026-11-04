@@ -84,6 +84,9 @@ const metaUrl = esmify(path.join(repoRoot, 'src/services/analytics/strategyMeta.
 // Свои линии трейдера с графика — для условия «цена у моей линии» (модуль без зависимостей).
 const { userLevelsForChart } = await import(esmify(path.join(repoRoot, 'src/services/chartDrawings.js')));
 const { paperStrategyIdsFor, timeframeFor, captionOf } = await import(metaUrl);
+// ГО из Т-Банка (отдельно на покупку и на продажу) — чистый разбор ответа брокера, без зависимостей.
+const { parseBrokerFutureMargin, futuresLeverage } = await import(esmify(path.join(repoRoot, 'src/services/marketData/brokerMargin.js')));
+const ordersUrl = pathToFileURL(path.join(repoRoot, 'workers/telegram-webhook/src/orders.js')).href;
 
 const DRY = process.argv.includes('--dry');
 const FORCE = process.argv.includes('--force') || process.env.FORCE_CHECK === 'true';
@@ -141,15 +144,56 @@ function strategyFor(item, profile) {
 // Параметры контракта нужны, чтобы посчитать объём по риску. Без них у фьючерса убыток на
 // контракт считается неверно — а фьючерсы здесь основной инструмент, так что молча
 // подставлять единицы нельзя: помечаем такую сделку как посчитанную приблизительно.
+// ГО фьючерса у Т-Банка через российского посредника (RELAY_URL/RELAY_KEY, только чтение FutureBy).
+// У брокера оно разное для покупки и продажи и меняется — именно его потребует брокер при реальной
+// заявке, поэтому объём считаем по нему. Нет посредника или он не ответил — null, робот работает как раньше.
+const brokerMarginCache = new Map();
+async function brokerFutureMargin(ticker) {
+  if (!process.env.RELAY_URL || !process.env.RELAY_KEY) return null;
+  if (brokerMarginCache.has(ticker)) return brokerMarginCache.get(ticker);
+  let res = null;
+  try {
+    const { tinkoff } = await import(ordersUrl);
+    const env = { RELAY_URL: process.env.RELAY_URL, RELAY_URL_BACKUP: process.env.RELAY_URL_BACKUP, RELAY_KEY: process.env.RELAY_KEY };
+    const data = await tinkoff(env, 'InstrumentsService/FutureBy', { idType: 'INSTRUMENT_ID_TYPE_TICKER', classCode: 'SPBFUT', id: ticker });
+    res = parseBrokerFutureMargin(data?.instrument);
+    // В ответе FutureBy ГО может не быть — тогда отдельный метод GetFuturesMargin (если посредник его уже
+    // разрешает; старая версия посредника ответит «метод не разрешён» — это не ошибка робота).
+    if (!res && (data?.instrument?.uid || data?.instrument?.figi)) {
+      try {
+        const m = await tinkoff(env, 'InstrumentsService/GetFuturesMargin', { instrumentId: data.instrument.uid || data.instrument.figi });
+        res = parseBrokerFutureMargin(m);
+      } catch (e2) {
+        console.error(`GetFuturesMargin по ${ticker} недоступен: ${e2.message}`);
+      }
+    }
+  } catch (e) {
+    console.error(`ГО из Т-Банка по ${ticker} не получено: ${e.message}`);
+  }
+  brokerMarginCache.set(ticker, res);
+  return res;
+}
+
 async function loadSpecs(ticker, instrumentType) {
   if (instrumentType === 'future') {
     const card = await fetchActiveFutureCard(ticker);
-    if (!card) return { lot: 1, minStep: 1, minStepAmount: 0, initialMargin: 0, approx: true };
+    const broker = await brokerFutureMargin(ticker);
+    if (!card) {
+      return {
+        lot: 1, minStep: 1, minStepAmount: 0, initialMargin: 0, approx: true,
+        initialMarginBuy: broker?.initialMarginBuy || 0, initialMarginSell: broker?.initialMarginSell || 0,
+        marginSource: broker ? 'tbank' : 'none',
+      };
+    }
     return {
       lot: card.lot || 1,
       minStep: card.minPriceIncrement || 1,
       minStepAmount: card.minPriceIncrementAmount || 0,
+      // Биржевое ГО — одно число на обе стороны (запасной вариант, если брокер не ответил).
       initialMargin: card.initialMargin || 0,
+      initialMarginBuy: broker?.initialMarginBuy || 0,
+      initialMarginSell: broker?.initialMarginSell || 0,
+      marginSource: broker ? 'tbank' : (card.initialMargin ? 'moex' : 'none'),
       approx: false,
     };
   }
@@ -287,6 +331,8 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades, strat
     riskPercent: profile.maxRiskPerTrade || 1,
     lot: specs.lot, minStep: specs.minStep, minStepAmount: specs.minStepAmount,
     initialMargin: specs.initialMargin,
+    initialMarginBuy: specs.initialMarginBuy || 0,
+    initialMarginSell: specs.initialMarginSell || 0,
     commissionRate: commRate,
     maxMarginPercent: parseFloat(profile.maxMarginPercent) || 30,
     instrumentType,
@@ -320,6 +366,14 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades, strat
     minStep: specs.minStep,
     minStepAmount: specs.minStepAmount,
     commissionRate: commRate,
+    // ГО, по которому считался объём: на контракт, стороны сделки, откуда взято (Т-Банк / биржа / нет)
+    // и плечо. ГО у брокера меняется, поэтому на момент входа оно запоминается в самой сделке.
+    ...(instrumentType === 'future' && sizing ? {
+      marginPerContract: sizing.marginPerContract || null,
+      marginSide: sizing.marginSide || null,
+      marginSource: specs.marginSource || null,
+      leverageAtEntry: sizing.leverage || futuresLeverage(entryPrice * (sizing.rubPerPoint || 0), sizing.marginPerContract) || null,
+    } : {}),
     status: 'open',
     openedAt: new Date(entryBar.date).toISOString(),
     entryTimeframe: tfKey,

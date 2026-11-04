@@ -9,7 +9,13 @@ export function calcTrade({
   lot = 1,
   minStep = 1,
   minStepAmount = 0,
+  // ГО на контракт. У Т-Банка оно РАЗНОЕ для покупки и продажи (initial_margin_on_buy /
+  // initial_margin_on_sell) и меняется со временем: лонг считается по первому, шорт — по второму.
+  // `initialMargin` — одно число «на обе стороны» (ручной ввод, биржа MOEX отдаёт одно значение);
+  // оно берётся, только если для нужной стороны своего ГО нет.
   initialMargin = 0,
+  initialMarginBuy = 0,
+  initialMarginSell = 0,
   commissionRate = 0.0006,
   maxMarginPercent = 30,
   instrumentType = 'future',
@@ -19,7 +25,9 @@ export function calcTrade({
   const tp      = parseFloat(takeProfit) || 0;
   const deposit = parseFloat(depositSize) || 0;
   const risk    = parseFloat(riskPercent) || 0;
-  const iMargin = parseFloat(initialMargin) || 0;
+  const iMarginAny = parseFloat(initialMargin) || 0;
+  const iMarginBuy = parseFloat(initialMarginBuy) || 0;
+  const iMarginSell = parseFloat(initialMarginSell) || 0;
   const step    = parseFloat(minStep) || 1;
   const stepAmt = parseFloat(minStepAmount) || 0;
   const l       = parseFloat(lot) || 1;
@@ -32,6 +40,13 @@ export function calcTrade({
 
   const riskAmount = (deposit * risk) / 100;
   const ticksToSL  = Math.abs(entry - sl) / step;
+
+  // ГО именно той стороны, с которой открывается сделка (лонг — покупка, шорт — продажа).
+  // Раньше брали меньшее из двух для любой сделки: у шорта Роснефти (RNZ6) это занижало ГО
+  // на четверть, и ограничение «не больше 30% депозита под ГО» пропускало на треть больше
+  // контрактов, чем разрешено на самом деле.
+  const sideMargin = direction === 'long' ? iMarginBuy : iMarginSell;
+  const iMargin = sideMargin > 0 ? sideMargin : iMarginAny;
 
   // Убыток на единицу (контракт для фьючерса, лот для акции)
   let lossPerContract;
@@ -120,9 +135,13 @@ export function calcTrade({
   const totalProfit = profitPerContract * contracts - commission;
   const totalLoss   = lossPerContract   * contracts + commission;
 
-  // Точка безубытка
+  // Точка безубытка. Рубли за один шаг цены на одну единицу объёма — ровно та же величина, что
+  // стоит в убытке на контракт выше: у фьючерса со стоимостью шага это она, иначе шаг × лот.
+  // Раньше делили на голый шаг цены без лота: у акций с лотом 10 (SBER) безубыток уходил в
+  // десять раз дальше, чем есть (показывало 303 вместо 300,3 при цене входа 300).
+  const rubPerTick      = (instrumentType !== 'stock' && stepAmt > 0) ? stepAmt : step * l;
   const commPerContract = contracts > 0 ? commission / contracts : 0;
-  const bevenTicks      = lossPerContract > 0 ? commPerContract / (stepAmt || step) : 0;
+  const bevenTicks      = lossPerContract > 0 ? commPerContract / rubPerTick : 0;
   const breakeven       = direction === 'long'
     ? entry + bevenTicks * step
     : entry - bevenTicks * step;
@@ -132,8 +151,18 @@ export function calcTrade({
     ? Math.round((marginUsedRub / deposit) * 100)
     : 0;
 
+  // Плечо по ГО: во сколько раз стоимость контракта больше замороженного под него ГО.
+  const contractValue = entry * rubPerPt;
+  const leverage = instrumentType === 'future' && iMargin > 0 ? contractValue / iMargin : 0;
+
   return {
     direction,
+    // ГО одного контракта, которое реально использовано, и какой стороны оно было.
+    marginPerContract:   Math.round(iMargin * 100) / 100,
+    marginSide:          sideMargin > 0 ? direction : (iMargin > 0 ? 'any' : 'none'),
+    leverage:            Math.round(leverage * 10) / 10,
+    // Рубли за 1 пункт цены на единицу объёма (нужно, чтобы пересчитать итог на другое число контрактов).
+    rubPerPoint:         rubPerPt,
     riskAmount:          Math.round(riskAmount),
     contracts,
     contractsByRisk,
@@ -153,6 +182,34 @@ export function calcTrade({
     marginUsagePercent,
     maxMarginPercent:    maxMarginPercent || 30,
     limitedByMargin:     contracts < contractsByRisk,
+  };
+}
+
+/**
+ * Пересчёт итогов Калькулятора на другое число контрактов (когда трейдер ввёл объём руками).
+ * Все деньги — через рубли за пункт (`result.rubPerPoint`) и ГО стороны сделки
+ * (`result.marginPerContract`). Раньше здесь стояла своя копия формулы с голым лотом: у фьючерса
+ * Brent комиссия получалась 0,06 ₽ вместо 48 ₽, а стоимость позиции 80 ₽ вместо 60 000 ₽.
+ */
+export function scaleToContracts(result, n, { entryPrice, commissionRate = 0.0006, depositSize, instrumentType = 'future' }) {
+  if (!result) return null;
+  const entry = parseFloat(entryPrice) || 0;
+  const rate = parseFloat(commissionRate) || 0.0006;
+  const deposit = parseFloat(depositSize) || 1;
+  const positionValue = Math.round(entry * n * result.rubPerPoint);
+  const commission = Math.round(positionValue * rate * 2);
+  const totalMargin = instrumentType === 'future' ? Math.round(result.marginPerContract * n) : 0;
+  const marginUsed = instrumentType === 'future' ? totalMargin : positionValue;
+  return {
+    ...result,
+    contracts: n,
+    commission,
+    totalLoss: Math.round(result.lossPerContract * n + commission),
+    totalProfit: Math.round(result.profitPerContract * n - commission),
+    totalMargin,
+    positionValue,
+    marginUsagePercent: Math.round((marginUsed / deposit) * 100),
+    maxMarginPercent: result.maxMarginPercent || 30,
   };
 }
 
