@@ -19,6 +19,9 @@ export const NAV_ITEMS = [
   // показываются только той стратегии, которая ими действительно пользуется, — см.
   // usesProfitSystem/usesLossSystem в Cockpit.js.
   { path: '/cockpit', icon: <Icon name="cockpit" size={18} />, label: 'Сопровождение', mobileLabel: 'Ведение' },
+  // Тренажёр открыт всем: учебные сделки на истории и игра на распознавание фигур. Пишет только в свою коллекцию
+  // trainerTrades — в Журнал, капитал и отчёты это не попадает.
+  { path: '/trainer', icon: <Icon name="target" size={18} />, label: 'Тренажёр' },
   { path: '/capital', icon: <Icon name="capital" size={18} />, label: 'Капитал' },
   { path: '/advisor', icon: <Icon name="advisor" size={18} />, label: 'AI Советник', mobileLabel: 'AI' },
   { path: '/settings', icon: <Icon name="settings" size={18} />, label: 'Настройки' },

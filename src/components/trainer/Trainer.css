@@ -1,0 +1,94 @@
+/* src/components/trainer/Trainer.css — тренажёр «Тренд». Сдержанно: матовые поверхности, без неона. */
+.trainer-page .tr-tabs { max-width: 560px; }
+
+.tr-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+.tr-main { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+.tr-side { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+
+.tr-side-title { font-size: 14px; font-weight: 700; margin: 0 0 10px; color: var(--text-primary); }
+.tr-muted { color: var(--text-secondary); font-size: 13px; line-height: 1.5; margin: 0 0 8px; }
+.tr-note { color: var(--text-muted); font-size: 12px; line-height: 1.5; margin: 8px 0 0; }
+.tr-pos { color: var(--green); }
+.tr-neg { color: var(--red); }
+
+/* Панель прогресса игры */
+.tr-statbar { display: grid; grid-template-columns: auto minmax(80px, 1fr) auto; gap: 14px; align-items: center; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius); padding: 12px 16px; }
+.tr-level { display: flex; flex-direction: column; line-height: 1.25; }
+.tr-level-n { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.tr-level-name { font-size: 15px; font-weight: 700; color: var(--text-primary); }
+.tr-xp { height: 8px; background: var(--bg-surface-3); border-radius: 4px; overflow: hidden; }
+.tr-xp-fill { height: 100%; background: var(--accent-primary); border-radius: 4px; transition: width 0.4s ease; }
+.tr-stats { display: flex; gap: 14px; font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
+.tr-stats b { color: var(--text-primary); }
+
+.tr-levels { display: flex; gap: 6px; flex-wrap: wrap; }
+.tr-chip { display: inline-flex; align-items: center; gap: 5px; padding: 6px 12px; font-size: 12px; font-family: inherit; color: var(--text-secondary); background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: 999px; cursor: pointer; transition: all var(--transition); }
+.tr-chip:hover:not(:disabled) { border-color: var(--border-medium); color: var(--text-primary); }
+.tr-chip.active { background: var(--bg-surface-3); color: var(--text-primary); border-color: var(--border-medium); }
+.tr-chip:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.tr-chart-card { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.tr-chart-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tr-q { font-size: 16px; font-weight: 700; margin: 4px 0 0; color: var(--text-primary); }
+.tr-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.tr-hint { color: var(--text-muted); font-size: 12px; margin: 0; }
+.tr-steps { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Итог раунда */
+.tr-reveal { display: flex; flex-direction: column; gap: 12px; }
+.tr-verdict { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: var(--radius-xs); font-size: 14px; font-weight: 600; }
+.tr-verdict em { font-style: normal; font-weight: 500; opacity: 0.85; margin-left: 6px; }
+.tr-verdict.ok { background: rgba(16, 185, 129, 0.12); color: var(--green); border: 1px solid rgba(16, 185, 129, 0.28); }
+.tr-verdict.bad { background: rgba(239, 68, 68, 0.1); color: var(--red); border: 1px solid rgba(239, 68, 68, 0.26); }
+.tr-theory, .tr-detector { background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 12px 14px; }
+.tr-theory h4, .tr-detector h4 { margin: 0 0 6px; font-size: 13px; display: flex; align-items: center; gap: 6px; color: var(--text-primary); }
+.tr-theory p, .tr-detector p { margin: 0 0 6px; font-size: 13px; line-height: 1.55; color: var(--text-secondary); }
+.tr-theory b { color: var(--text-primary); }
+.tr-detector ul { margin: 0 0 6px; padding-left: 18px; font-size: 13px; color: var(--text-secondary); }
+
+.tr-weak { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 6px 0; border-bottom: 1px solid var(--border-subtle); font-size: 13px; color: var(--text-secondary); }
+.tr-weak:last-of-type { border-bottom: none; }
+.tr-weak b { color: var(--text-primary); }
+.tr-weak small { grid-column: 1 / -1; color: var(--text-muted); font-size: 11px; }
+
+/* Настройка попытки и панель заявки */
+.tr-setup { max-width: 640px; }
+.tr-form { display: flex; flex-direction: column; gap: 12px; margin: 12px 0; }
+.tr-check { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: var(--text-secondary); line-height: 1.5; cursor: pointer; }
+.tr-check input { margin-top: 3px; }
+.tr-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.tr-row { display: flex; gap: 8px; align-items: center; }
+.tr-quick { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; font-size: 12px; color: var(--text-muted); }
+.tr-kv { display: flex; justify-content: space-between; gap: 10px; padding: 5px 0; font-size: 13px; color: var(--text-secondary); border-bottom: 1px solid var(--border-subtle); }
+.tr-kv:last-of-type { border-bottom: none; }
+.tr-kv b { color: var(--text-primary); text-align: right; }
+.tr-big { font-size: 40px; font-weight: 800; letter-spacing: -1px; line-height: 1.1; margin: 2px 0 4px; }
+
+/* Разбор */
+.tr-review { display: flex; flex-direction: column; gap: 14px; }
+.tr-scope { display: flex; gap: 8px; align-items: flex-start; padding: 10px 14px; font-size: 13px; line-height: 1.5; color: var(--text-secondary); background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-xs); }
+.tr-scope svg { flex: none; margin-top: 3px; }
+.tr-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+.tr-tile { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.tr-tile span { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.tr-tile b { font-size: 20px; color: var(--text-primary); }
+.tr-finding { display: flex; gap: 10px; padding: 10px 12px; border-radius: var(--radius-xs); background: var(--bg-surface-2); margin-bottom: 8px; }
+.tr-finding p { margin: 0; font-size: 13px; line-height: 1.55; color: var(--text-secondary); }
+.tr-finding svg { flex: none; margin-top: 3px; }
+.tr-finding.warn svg { color: var(--gold); }
+.tr-finding.info svg { color: var(--blue); }
+.tr-table { display: flex; flex-direction: column; }
+.tr-trow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 0; border-bottom: 1px solid var(--border-subtle); font-size: 13px; }
+.tr-trow:last-child { border-bottom: none; }
+.tr-tname { font-weight: 600; color: var(--text-primary); min-width: 110px; }
+.tr-trow .tr-muted { margin: 0; flex: 1; min-width: 160px; }
+.tr-empty { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; padding: 40px 20px; color: var(--text-secondary); }
+.tr-empty h3 { margin: 6px 0 0; color: var(--text-primary); }
+
+@media (max-width: 900px) {
+  .tr-grid { grid-template-columns: minmax(0, 1fr); }
+  .tr-side { order: 2; }
+  .tr-statbar { grid-template-columns: 1fr; gap: 8px; }
+  .tr-stats { flex-wrap: wrap; white-space: normal; gap: 10px; }
+  .tr-big { font-size: 34px; }
+}

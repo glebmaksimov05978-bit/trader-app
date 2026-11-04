@@ -61,6 +61,23 @@ jest.mock('../services/marketData/candles', () => {
   const { SAMPLE: S } = require('./sampleData');
   return { ...real, fetchDailyCandles: async () => S.candles() };
 });
+jest.mock('../services/trainer/trainerTrades', () => {
+  // 30 учебных сделок: часть с отодвинутым стопом, часть закрыта вручную рано — чтобы в «Разборе» были наблюдения
+  const day = 86400000, t0 = Date.UTC(2024, 0, 1);
+  const list = Array.from({ length: 30 }, (_, i) => {
+    const widen = i % 4 === 0, manual = !widen && i % 3 === 0;
+    const entryBar = 200 + i * 9, exitBar = entryBar + (widen ? 6 : 3);
+    return {
+      id: 'qa' + i, kind: 'trainer', status: 'closed', dataMode: i % 5 === 0 ? 'live' : 'history', ticker: ['SBER', 'GAZP', 'LKOH'][i % 3],
+      side: i % 2 ? 'short' : 'long', strategyId: i % 2 ? 's1' : null, strategyName: i % 2 ? 'Пробой' : undefined,
+      entryBar, exitBar, entryDate: new Date(t0 + entryBar * day).toISOString(), exitDate: new Date(t0 + exitBar * day).toISOString(),
+      barsHeld: exitBar - entryBar, r: widen ? -1.7 : manual ? 0.3 : (i % 2 ? 1.6 : -1), mfeR: manual ? 2 : 1.8, maeR: 0.6,
+      exitReason: widen ? 'stop' : manual ? 'manual' : (i % 2 ? 'take' : 'stop'), plannedRR: 2,
+      stopMoves: widen ? [{ bar: entryBar + 2, from: 95, to: 92, direction: 'widen' }] : [],
+    };
+  });
+  return { getTrainerTrades: async () => list, addTrainerTrade: jest.fn(), updateTrainerTrade: jest.fn(), deleteTrainerTrade: jest.fn() };
+});
 jest.mock('../services/broker', () => ({
   fetchOrderConfig: async () => ({ enabled: false }), fetchOrderState: async () => null,
   placeOrder: jest.fn(), explainOrderUnavailable: () => 'Заявки в тесте выключены',
@@ -100,6 +117,7 @@ run('страницы для просмотра глазами', () => {
     calculator: ['/calculator', require('../components/calculator/Calculator').default],
     settings: ['/settings', require('../components/settings/Settings').default],
     backtest: ['/backtest', require('../components/backtest/Backtest').default],
+    trainer: ['/trainer', require('../components/trainer/Trainer').default],
   };
   const css = allCss();
   fs.mkdirSync(OUT, { recursive: true });
@@ -150,6 +168,16 @@ run('страницы для просмотра глазами', () => {
             await act(async () => { chip.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
             snap('filtered');
           }
+        }
+        if (name === 'trainer') {
+          const snap = (suffix) => fs.writeFileSync(path.join(OUT, `${name}-${suffix}-${theme}.html`),
+            `<!doctype html><html lang="ru" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${name}</title><style>${css}</style></head><body>${document.body.innerHTML}</body></html>`, 'utf8');
+          const clickEl = async (el) => { await act(async () => { el.dispatchEvent(new MouseEvent('click', { bubbles: true })); }); };
+          const opt = host.querySelector('.tr-options button');
+          if (opt) { await clickEl(opt); snap('answered'); }
+          const tabs = [...host.querySelectorAll('.tr-tabs .tab')];
+          await clickEl(tabs[1]); snap('replay');
+          await clickEl(tabs[2]); await act(async () => { await new Promise((r) => setTimeout(r, 100)); }); snap('review');
         }
         console.error = origErr;
         act(() => root.unmount());

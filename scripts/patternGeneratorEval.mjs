@@ -24,17 +24,10 @@ function esmify(srcAbs) {
 for (const f of ['indicators', 'candlestickPatterns']) esmify(path.join(analytics, `${f}.js`));
 const { computePatternsAtEntry, MIN_DISPLAY_CONFIDENCE, PATTERN_LABELS } = await import(esmify(path.join(analytics, 'patterns.js')));
 const { generatePattern, PATTERN_IDS, PATTERN_SPECS } = await import(pathToFileURL(path.resolve(__dirname, '../src/services/trainer/patternGenerator.js')).href);
+const { DETECTOR_ACCEPT } = await import(pathToFileURL(path.resolve(__dirname, '../src/services/trainer/patternQuiz.js')).href);
 
-// Какие названия детектора считаем «правильным ответом» для каждой фигуры (флаги у детектора названы по наклону канала).
-const ACCEPT = {
-  double_top: ['double_top'], double_bottom: ['double_bottom'],
-  head_shoulders_top: ['head_shoulders_top'], head_shoulders_bottom: ['head_shoulders_bottom'],
-  triangle_ascending: ['triangle_ascending'], triangle_descending: ['triangle_descending'],
-  triangle_symmetric: ['triangle_symmetric', 'pennant_bullish', 'pennant_bearish'],
-  wedge_rising: ['wedge_rising'], wedge_falling: ['wedge_falling'],
-  flag_bull: ['flag_descending', 'flag_horizontal', 'pennant_bullish'],
-  flag_bear: ['flag_ascending', 'flag_horizontal', 'pennant_bearish'],
-};
+// Какие названия детектора считаем «правильным ответом» для каждой фигуры — общая таблица с игрой (services/trainer/patternQuiz.js).
+const ACCEPT = DETECTOR_ACCEPT;
 const SEEDS = Number(process.env.SEEDS || 120);
 const NOISES = [0.3, 0.5, 0.7];
 const SHAPE_ONLY = (c) => !/^(pin_bar|engulfing)/.test(c.pattern); // свечные фигуры в этом сравнении не участвуют

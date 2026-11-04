@@ -17,6 +17,7 @@ import Settings from './components/settings/Settings';
 import AdminPanel from './components/admin/AdminPanel';
 import Backtest from './components/backtest/Backtest';
 import Cockpit from './components/cockpit/Cockpit';
+import Trainer from './components/trainer/Trainer';
 import LoadingScreen from './components/LoadingScreen';
 import { TRUSTED_UIDS } from './constants/trustedUids';
 import './styles/globals.css';
@@ -80,6 +81,7 @@ function AppRoutes() {
             сама вкладка полезна с любой стратегией, а её части, завязанные на конкретные
             системы выхода, показываются только той стратегии, которая ими пользуется. */}
         <Route path="cockpit" element={<Cockpit />} />
+        <Route path="trainer" element={<Trainer />} />
       </Route>
     </Routes>
   );
