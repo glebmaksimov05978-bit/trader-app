@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TraderPro — риск под контролем</title>
+<meta name="description" content="Калькулятор сделки, журнал, импорт из Т-Банка, сопровождение позиций и честный разбор привычек. Для трейдеров на российском рынке.">
+<meta name="theme-color" content="#06080c">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,400;1,500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="landing.css">
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<div class="glow" id="glow" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+
+<!-- ============ шапка ============ -->
+<header class="nav" id="nav">
+  <nav class="nav-left" aria-label="Разделы">
+    <a class="pill" href="#how">Как это работает</a>
+    <a class="pill" href="#features">Возможности</a>
+    <a class="pill" href="#principles">Принципы</a>
+    <a class="pill" href="#faq">Вопросы</a>
+  </nav>
+  <a class="logo" href="#top" aria-label="На главную">
+    <svg viewBox="0 0 64 64" width="26" height="26" aria-hidden="true"><polygon points="32,3 57,17.5 57,46.5 32,61 7,46.5 7,17.5" fill="#0e1529" stroke="#9db3f4" stroke-width="2.4" stroke-linejoin="round"/><g stroke-linecap="round"><line x1="24" y1="26" x2="24" y2="40" stroke="#eef3ff" stroke-width="2"/><rect x="21.5" y="30" width="5" height="7" rx="1" fill="#eef3ff"/><line x1="32" y1="21" x2="32" y2="43" stroke="#5fd9ae" stroke-width="2"/><rect x="29.5" y="25" width="5" height="12" rx="1" fill="#5fd9ae"/><line x1="40" y1="28" x2="40" y2="41" stroke="#cfdcff" stroke-width="2"/><rect x="37.5" y="31" width="5" height="7" rx="1" fill="#cfdcff"/></g></svg>
+    <span data-brand>TraderPro</span>
+  </a>
+  <div class="nav-right">
+    <a class="pill ghost" href="/login">Войти</a>
+    <a class="pill solid magnetic" href="/login">Начать бесплатно</a>
+  </div>
+</header>
+
+<main id="top">
+<!-- ============ герой ============ -->
+<section class="hero" id="hero">
+  <canvas class="hero-chart" id="heroChart" aria-hidden="true"></canvas>
+  <div class="hero-vignette" aria-hidden="true"></div>
+
+  <div class="hero-copy">
+    <p class="kicker rise" style="--d:.15s">Для трейдеров на российском рынке</p>
+    <p class="lead rise" style="--d:.3s">Калькулятор сделки, журнал, импорт из&nbsp;Т-Банка, сопровождение позиций и&nbsp;честный разбор привычек — в&nbsp;одном месте.</p>
+    <div class="cta rise" style="--d:.45s">
+      <a class="btn solid magnetic" href="/login">Начать бесплатно</a>
+      <a class="btn line" href="#how">Как это работает <span aria-hidden="true">↓</span></a>
+    </div>
+  </div>
+
+  <div class="hero-word" id="heroWord" aria-hidden="true">
+    <span class="mask"><span class="giant" id="giant">РИСК</span></span>
+  </div>
+  <p class="hero-serif" id="heroSerif" aria-hidden="true">под контролем</p>
+  <h1 class="sr-only">Риск под контролем — калькулятор сделки, журнал и сопровождение позиций для трейдеров</h1>
+
+  <div class="device-wrap" id="deviceWrap">
+    <div class="device" id="device">
+      <div class="device-screen"><img src="img/journal.png" alt="Журнал сделок" width="2250" height="1410"></div>
+      <div class="device-sheen"></div>
+    </div>
+    <div class="float f1 glass" data-depth="22"><span class="f-label">Риск на сделку</span><b>1% · 1 031 ₽</b><span class="f-sub">пример расчёта</span></div>
+    <div class="float f2 glass" data-depth="38"><span class="f-label">ГО на шорт · плечо</span><b>9 455 ₽ · 4,1×</b><span class="f-sub">у лонга ГО другое</span></div>
+    <div class="float f3 glass" data-depth="14"><span class="f-label">Если сработает стоп</span><b class="neg">−0,29% депозита</b><span class="f-sub">считается до входа</span></div>
+  </div>
+
+  <p class="hero-note rise" style="--d:.7s">Без обещаний прибыли.<br>Только контроль.</p>
+  <div class="scroll-hint rise" style="--d:.9s"><i></i>листайте</div>
+</section>
+
+<!-- ============ бегущая строка ============ -->
+<section class="marquee" aria-hidden="true">
+  <div class="marquee-track">
+    <span>Калькулятор сделки</span><i>◆</i><span>Журнал</span><i>◆</i><span>Импорт из Т-Банка</span><i>◆</i><span>Привычки</span><i>◆</i><span>Сопровождение</span><i>◆</i><span>Бэктест</span><i>◆</i><span>Отчёты</span><i>◆</i>
+    <span>Калькулятор сделки</span><i>◆</i><span>Журнал</span><i>◆</i><span>Импорт из Т-Банка</span><i>◆</i><span>Привычки</span><i>◆</i><span>Сопровождение</span><i>◆</i><span>Бэктест</span><i>◆</i><span>Отчёты</span><i>◆</i>
+  </div>
+</section>
+
+<!-- ============ манифест ============ -->
+<section class="manifesto" id="manifesto">
+  <p class="eyebrow">Идея</p>
+  <p class="statement" id="statement">Рынок вы не контролируете. Зато контролируете размер позиции, стоп и собственные привычки. Всё остальное — шум.</p>
+  <p class="sub">Сервис не говорит, что покупать. Он считает вашу сделку до входа, ведёт вашу историю и показывает, где именно вы теряете деньги — цифрами, а не ощущениями.</p>
+</section>
+
+<!-- ============ как это работает ============ -->
+<section class="story" id="how">
+  <div class="story-head">
+    <p class="eyebrow">Как это работает</p>
+    <h2>Четыре шага от идеи<br><em>до честного итога</em></h2>
+  </div>
+  <div class="story-grid">
+    <ol class="steps" id="steps">
+      <li class="step is-on" data-step="0">
+        <span class="n">01</span>
+        <h3>Посчитайте сделку до входа</h3>
+        <p>Объём по вашему риску, стоп и цель. ГО на лонг и на шорт считаются отдельно — как у брокера, — плечо видно сразу. Лишнее отсекается до того, как вы нажали «купить».</p>
+      </li>
+      <li class="step" data-step="1">
+        <span class="n">02</span>
+        <h3>Загрузите историю</h3>
+        <p>Сделки подтягиваются из Т-Банка по токену «только чтение» или из отчёта. Покупки и продажи сопоставляются сами, дубли отсекаются, до записи вы видите предпросмотр.</p>
+      </li>
+      <li class="step" data-step="2">
+        <span class="n">03</span>
+        <h3>Сопровождайте позицию</h3>
+        <p>Радар входа, ступени фиксации, сигналы и уведомления в Telegram — по вашим правилам, а не по настроению. Бумажные сделки робота показывают, как сработала бы система.</p>
+      </li>
+      <li class="step" data-step="3">
+        <span class="n">04</span>
+        <h3>Разберите итог честно</h3>
+        <p>Отчёт за месяц, сравнение стратегий, «что стоит вам денег». Выводы о привычках — только от 25 сделок: меньше — это наблюдение, а не приговор.</p>
+      </li>
+    </ol>
+
+    <div class="stage" id="stage">
+      <div class="stage-frame glass">
+        <div class="scene is-on" data-scene="0">
+          <div class="calc">
+            <div class="calc-head"><span>Калькулятор сделки</span><em>пример, цифры иллюстративные</em></div>
+            <div class="calc-row"><span>Инструмент</span><b>RNZ6 · Шорт</b></div>
+            <div class="calc-grid">
+              <div><span>Вход</span><b>38 830</b></div>
+              <div><span>Стоп</span><b>38 900</b></div>
+              <div><span>Депозит</span><b>103 119 ₽</b></div>
+            </div>
+            <div class="calc-sep"></div>
+            <div class="calc-row"><span>Объём по риску 1%</span><b>10 контрактов</b></div>
+            <div class="calc-row"><span>Объём по ГО шорта (9 455 ₽)</span><b class="warn">3 контракта</b></div>
+            <div class="calc-bar"><i style="--w:27.5%"></i><span>ГО занято 27,5% депозита · лимит 30%</span></div>
+            <div class="calc-big"><span>Берём</span><b>3 контракта</b><em>плечо ≈ 4,1× · ГО на шорт</em></div>
+          </div>
+        </div>
+        <div class="scene" data-scene="1"><img src="img/journal.png" alt="Журнал сделок" loading="lazy"></div>
+        <div class="scene" data-scene="2"><img src="img/cockpit.png" alt="Сопровождение позиций" loading="lazy"></div>
+        <div class="scene" data-scene="3"><img src="img/report.png" alt="Отчёт за месяц" loading="lazy"></div>
+        <div class="stage-sheen"></div>
+      </div>
+      <div class="stage-dots" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ возможности ============ -->
+<section class="features" id="features">
+  <div class="features-head">
+    <p class="eyebrow">Возможности</p>
+    <h2>Всё, что нужно трейдеру,<br><em>чтобы не торговать вслепую</em></h2>
+  </div>
+  <div class="bento">
+    <article class="card tall spot">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 7h8M8 12h2m3 0h3M8 16h2m3 0h3"/></svg>
+      <h3>ГО лонга и шорта — раздельно</h3>
+      <p>Т-Банк требует разное обеспечение на покупку и продажу, и оно меняется. Калькулятор берёт ГО той стороны, с которой вы входите, и показывает плечо.</p>
+      <div class="mini-bars"><i style="--h:62%"></i><i style="--h:80%"></i><i style="--h:54%"></i><i style="--h:92%"></i><i style="--h:70%"></i></div>
+    </article>
+    <article class="card spot">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r=".8" fill="currentColor"/></svg>
+      <h3>Привычки, которые стоят денег</h3>
+      <p>Усреднение против позиции, тильт и отыгрыш, комиссионный налог, дневной лимит, карта времени — в рублях за период.</p>
+    </article>
+    <article class="card spot">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4M5 19h14"/></svg>
+      <h3>Импорт из Т-Банка</h3>
+      <p>Отчёт PDF или Excel — или загрузка прямо по токену «только чтение». Сначала предпросмотр, запись только по вашей кнопке.</p>
+    </article>
+    <article class="card wide spot">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-6 4 3 5-8 4 5"/><path d="M3 21h18"/></svg>
+      <h3>Бэктест с честной проверкой</h3>
+      <p>Прогоните стратегию по истории, а конец истории отложите и откройте один раз: если стратегия там тоже в плюсе — доверия к ней больше. Если нет — вы узнали это бесплатно.</p>
+    </article>
+    <article class="card spot">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4 3 11l6 2m12-9-5 16-5-7m10-9L9 13"/></svg>
+      <h3>Telegram под рукой</h3>
+      <p>Уведомления о сигналах и позициях, картинка графика, кнопки решений — без открытия сайта.</p>
+    </article>
+    <article class="card spot">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h8l4 4v14H4V3h4z"/><path d="M14 3v5h5M8 13h8M8 17h5"/></svg>
+      <h3>Бумажные сделки робота</h3>
+      <p>Робот ведёт виртуальные сделки по правилам вашей стратегии — сравните себя с системой без риска для денег.</p>
+    </article>
+    <article class="card spot">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V10m6 10V4m6 16v-7m4 7H2"/></svg>
+      <h3>Отчёты по периодам</h3>
+      <p>Месяц против прошлого месяца, сравнение стратегий, «я против системы». Скоро — красивые PDF на почту и в Telegram.</p>
+    </article>
+  </div>
+</section>
+
+<!-- ============ принципы ============ -->
+<section class="principles" id="principles">
+  <p class="eyebrow">Принципы</p>
+  <p class="big-serif">«Мы не угадываем рынок. Мы помогаем не делать <em>одни и те же ошибки</em> дважды.»</p>
+  <div class="triple">
+    <div><span>01</span><h3>Не обещаем прибыль</h3><p>Никаких сигналов «купи — продай» и гарантий доходности. Сервис работает с вашими числами и вашими правилами.</p></div>
+    <div><span>02</span><h3>Решение всегда за вами</h3><p>Система считает, напоминает и показывает. Что делать с позицией — решаете вы, и это решение остаётся в журнале.</p></div>
+    <div><span>03</span><h3>Выводы только по данным</h3><p>Привычки и статистика считаются кодом и проверяются тестами. Мало сделок — так и написано: «наблюдение», а не «приговор».</p></div>
+  </div>
+</section>
+
+<!-- ============ вопросы ============ -->
+<section class="faq" id="faq">
+  <p class="eyebrow">Вопросы</p>
+  <h2>Коротко о главном</h2>
+  <div class="faq-list">
+    <details><summary>Сколько это стоит?</summary><p>Сейчас регистрация бесплатная, без карты. Условия тарифов появятся позже, и о них сообщим заранее.</p></details>
+    <details><summary>Нужен ли токен брокера?</summary><p>Для расчётов и журнала — нет. Для автоматической загрузки сделок и живых цен можно добавить токен Т-Инвестиций; достаточно права «только чтение». Приложение ничего не покупает и не продаёт без вашей команды.</p></details>
+    <details><summary>Какие брокеры поддерживаются?</summary><p>Сейчас — Т-Банк (Т-Инвестиции): отчёты и загрузка по API. Другие брокеры добавим, когда появятся образцы их отчётов.</p></details>
+    <details><summary>Это инвестиционная рекомендация?</summary><p>Нет. Сервис — рабочее место трейдера: расчёты, журнал и аналитика по вашим же данным. Торговля на бирже связана с риском потерь.</p></details>
+  </div>
+</section>
+
+<!-- ============ финал ============ -->
+<section class="final">
+  <p class="eyebrow">Начните с первой сделки</p>
+  <h2><span>Риск под</span> <em>контролем</em></h2>
+  <a class="btn solid big magnetic" href="/login">Начать бесплатно</a>
+  <p class="final-note">Бесплатно · без карты · за пару минут</p>
+</section>
+</main>
+
+<footer class="foot">
+  <span data-brand>TraderPro</span>
+  <span>Торговля на бирже связана с риском. Сервис не является индивидуальной инвестиционной рекомендацией.</span>
+  <span>© 2026</span>
+</footer>
+
+<script src="landing.js"></script>
+</body>
+</html>
