@@ -1,0 +1,109 @@
+/* Фоны страницы входа (варианты выбираются временной панелью .lds). Только токены темы. */
+
+/* ПЛАНШЕТЫ-ГРАФИКИ («Панели») */
+.lp-layer { position: absolute; inset: 0; overflow: hidden; }
+.lp-col {
+  position: absolute; top: 0; bottom: 0; width: 40vw;
+  display: flex; flex-direction: column; justify-content: center; gap: 3vh;
+}
+.lp-col-left {
+  left: -4vw; opacity: 0.4;
+  transform: perspective(1500px) rotateY(24deg); transform-origin: 0% 50%;
+  -webkit-mask-image: linear-gradient(90deg, #000 30%, transparent 100%);
+  mask-image: linear-gradient(90deg, #000 30%, transparent 100%);
+}
+.lp-col-right {
+  right: -4vw; opacity: 0.8;
+  transform: perspective(1500px) rotateY(-24deg); transform-origin: 100% 50%;
+  -webkit-mask-image: linear-gradient(270deg, #000 30%, transparent 100%);
+  mask-image: linear-gradient(270deg, #000 30%, transparent 100%);
+}
+.lp-layer.dim .lp-col-left { opacity: 0.22; }
+.lp-layer.dim .lp-col-right { opacity: 0.45; }
+.lp-panel { width: 100%; aspect-ratio: 800 / 520; animation: lpFloat 16s ease-in-out infinite; }
+.lp-col .lp-panel:nth-child(2) { animation-delay: -8s; }
+@keyframes lpFloat { 0%, 100% { translate: 0 0; } 50% { translate: 0 -9px; } }
+.lp-grid line { stroke: var(--text-muted); stroke-opacity: 0.16; stroke-width: 1; }
+.lp-label { fill: var(--text-secondary); font-size: 15px; font-weight: 600; opacity: 0.75; }
+.lp-candle { opacity: 0; animation: lpIn 0.7s ease-out forwards; }
+.lp-candle.up line { stroke: var(--green); stroke-width: 1.4; }
+.lp-candle.up rect { fill: var(--green); }
+.lp-candle.down line { stroke: var(--red); stroke-width: 1.4; }
+.lp-candle.down rect { fill: var(--red); }
+.lp-candle .lp-vol { opacity: 0.28; }
+.lp-ma { stroke-width: 1.7; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.lp-ma-fast { stroke: var(--accent-primary); stroke-opacity: 0.85; }
+.lp-ma-slow { stroke: var(--text-secondary); stroke-opacity: 0.55; }
+.lp-tag { opacity: 0; animation: lpIn 0.7s ease-out forwards; }
+.lp-tag text { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; }
+.lp-tag.buy rect { fill: color-mix(in srgb, var(--green) 16%, transparent); stroke: var(--green); stroke-opacity: 0.7; }
+.lp-tag.buy text { fill: var(--green); }
+.lp-tag.sell rect { fill: color-mix(in srgb, var(--red) 16%, transparent); stroke: var(--red); stroke-opacity: 0.7; }
+.lp-tag.sell text { fill: var(--red); }
+@keyframes lpIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* ПРИЗМА (настоящее 3D на CSS) */
+.lpr-stage {
+  --R: clamp(150px, 31vmin, 300px);
+  position: fixed; top: 50%; width: 0; height: 0; perspective: 1500px;
+  left: calc(50% + (min(1020px, 100% - 48px) - 400px) / 2);
+}
+.lpr-tilt { transform-style: preserve-3d; transform: rotateX(-14deg); }
+.lpr-body { transform-style: preserve-3d; animation: lprSpin 80s linear infinite; }
+@keyframes lprSpin { to { transform: rotateY(360deg); } }
+.lpr-face {
+  position: absolute; width: var(--R); height: calc(var(--R) * 2.3);
+  left: calc(var(--R) * -0.5); top: calc(var(--R) * -1.15);
+  transform: rotateY(calc(var(--i) * 60deg)) translateZ(calc(var(--R) * 0.866));
+  background: color-mix(in srgb, var(--accent-primary) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-primary) 40%, transparent);
+  box-sizing: border-box;
+}
+.lpr-grid { stroke: var(--text-muted); stroke-opacity: 0.2; stroke-width: 1; }
+.lpr-up line { stroke: var(--green); stroke-opacity: 0.75; stroke-width: 1.2; }
+.lpr-up rect { fill: var(--green); fill-opacity: 0.7; }
+.lpr-down line { stroke: var(--red); stroke-opacity: 0.75; stroke-width: 1.2; }
+.lpr-down rect { fill: var(--red); fill-opacity: 0.7; }
+.lpr-cap { position: absolute; width: calc(var(--R) * 2); height: calc(var(--R) * 1.732); left: calc(var(--R) * -1); top: calc(var(--R) * -0.866); }
+.lpr-cap.top { transform: rotateX(90deg) translateZ(calc(var(--R) * 1.15)); }
+.lpr-cap.bottom { transform: rotateX(90deg) translateZ(calc(var(--R) * -1.15)); }
+.lpr-cap svg polygon { fill: color-mix(in srgb, var(--accent-primary) 10%, transparent); stroke: color-mix(in srgb, var(--accent-primary) 50%, transparent); stroke-width: 1.2; }
+.lpr-cap svg .lpr-cap-inner { fill: none; stroke-opacity: 0.35; }
+.lpr-spark {
+  position: absolute; left: -3px; top: -3px; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent-primary); animation: lprPulse 3s ease-in-out infinite;
+}
+@keyframes lprPulse { 0%, 100% { transform: scale(1); opacity: 0.9; } 50% { transform: scale(2.6); opacity: 0.25; } }
+
+/* CANVAS-ФОНЫ («Живой график», «Стакан») */
+.login-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.dim-left {
+  -webkit-mask-image: linear-gradient(90deg, rgba(0,0,0,0.22) 0%, rgba(0,0,0,0.22) 36%, #000 62%);
+  mask-image: linear-gradient(90deg, rgba(0,0,0,0.22) 0%, rgba(0,0,0,0.22) 36%, #000 62%);
+}
+
+@media (max-width: 900px) {
+  .lpr-stage { left: 50%; }
+  .dim-left { -webkit-mask-image: none; mask-image: none; }
+  .lp-col { width: 70vw; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lp-panel, .lpr-body, .lpr-spark { animation: none; }
+  .lp-candle, .lp-tag { animation: none; opacity: 1; }
+}
+
+/* ВРЕМЕННАЯ ПАНЕЛЬ ВЫБОРА ФОНА И ЗНАКА */
+.lds {
+  position: fixed; left: 12px; bottom: 12px; z-index: 50; display: flex; flex-direction: column; gap: 5px;
+  max-width: calc(100vw - 24px); padding: 7px 8px; font-size: 11px; line-height: 1.2;
+  background: var(--bg-overlay); border: 1px solid var(--border-subtle); border-radius: 10px;
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+}
+.lds-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.lds-title { color: var(--text-muted); min-width: 34px; }
+.lds-btn {
+  padding: 3px 8px; border-radius: 6px; cursor: pointer; font: inherit;
+  border: 1px solid var(--border-subtle); background: var(--bg-surface); color: var(--text-secondary);
+}
+.lds-btn:hover { color: var(--text-primary); border-color: var(--border-medium); }
+.lds-btn.on { background: var(--accent-primary); border-color: transparent; color: #fff; }

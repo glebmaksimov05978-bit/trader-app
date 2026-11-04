@@ -37,7 +37,7 @@
   width: 36px;
   height: 36px;
   border-radius: 10px;
-  background: var(--accent-gradient);
+  background: none;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -352,7 +352,6 @@
   box-shadow: 4px 0 24px -12px rgba(17,26,46,0.12);
 }
 [data-theme="light"] .sidebar::before { background: none; }
-[data-theme="light"] .logo-icon { box-shadow: 0 4px 12px -4px rgba(79,99,216,0.5); }
 [data-theme="light"] .nav-item { color: var(--text-secondary); }
 [data-theme="light"] .nav-item:hover { background: var(--bg-surface-2); color: var(--text-primary); }
 [data-theme="light"] .nav-item.active {

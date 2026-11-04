@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useTheme } from '../../context/ThemeContext';
 import { TRUSTED_UIDS } from '../../constants/trustedUids';
 import { NAV_ITEMS, ADMIN_ITEMS, TRUSTED_ITEMS } from '../../constants/navItems';
+import BrandMark from '../shared/BrandMark';
 import './Sidebar.css';
 
 export default function Sidebar() {
@@ -24,7 +25,7 @@ export default function Sidebar() {
     <aside className="sidebar">
       {/* Logo */}
       <div className="sidebar-logo">
-        <div className="logo-icon">T</div>
+        <div className="logo-icon"><BrandMark size={36} /></div>
         <div className="logo-text">
           <span className="logo-name">TraderPro</span>
           <span className="logo-sub">v2.0</span>

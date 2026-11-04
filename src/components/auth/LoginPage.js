@@ -4,6 +4,14 @@ import { useAuth } from '../../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import './LoginPage.css';
+import LoginBackdrop from './LoginBackground';
+import BrandMark, { useBrandVariant } from '../shared/BrandMark';
+import LoginDevSwitcher from './LoginDevSwitcher';
+import Icon from '../shared/Icon';
+import { useTheme } from '../../context/ThemeContext';
+
+// Панель сравнения фонов и знаков — только при разработке (npm start), на сайте её нет.
+const DEV_SWITCHER = process.env.NODE_ENV !== 'production';
 
 // SVG иконки
 const IconUser = () => (
@@ -116,7 +124,7 @@ function ResetModal({ onClose }) {
     <div className="login-modal-overlay" onClick={onClose}>
       <div className="login-modal" onClick={e => e.stopPropagation()}>
         <div className="login-modal-header">
-          <div style={{fontSize:32, marginBottom:8}}>🔑</div>
+          <div className="login-modal-icon"><Icon name="lock" size={26} /></div>
           <h3 className="login-modal-title">Сброс пароля</h3>
           <p className="login-modal-sub">Введите email — пришлём ссылку для сброса</p>
         </div>
@@ -143,15 +151,15 @@ function ResetModal({ onClose }) {
             </button>
           </>
         ) : (
-          <div style={{textAlign:'center', padding:'16px 0'}}>
-            <div style={{fontSize:48, marginBottom:12}}>✅</div>
-            <p style={{color:'rgba(255,255,255,0.6)', fontSize:14}}>
-              Письмо отправлено на <strong style={{color:'#818cf8'}}>{email}</strong>.<br/>
-              Проверьте папку «Спам» если не видите письма.
+          <div className="login-modal-done">
+            <div className="login-modal-done-icon"><Icon name="check" size={32} /></div>
+            <p>
+              Письмо отправлено на <strong>{email}</strong>.<br/>
+              Проверьте папку «Спам», если не видите письма.
             </p>
           </div>
         )}
-        <button onClick={onClose} className="login-modal-close">✕</button>
+        <button onClick={onClose} className="login-modal-close" aria-label="Закрыть"><Icon name="close" size={14} /></button>
       </div>
     </div>
   );
@@ -175,6 +183,18 @@ export default function LoginPage() {
   const [regPass2, setRegPass2] = useState('');
 
   const { login, register, loginWithGoogle } = useAuth();
+  const { theme, toggleTheme } = useTheme();
+  // ВРЕМЕННО: выбор фона и знака (см. LoginDevSwitcher) — только в режиме разработки.
+  // На сайте у всех один фон — «Живой график».
+  const [brandVariant, setBrandVariant] = useBrandVariant();
+  const [bg, setBgState] = useState(() => {
+    if (!DEV_SWITCHER) return 'live';
+    try { return localStorage.getItem('loginBg') || 'live'; } catch { return 'live'; }
+  });
+  const setBg = (v) => {
+    setBgState(v);
+    try { localStorage.setItem('loginBg', v); } catch { /* не страшно */ }
+  };
   const navigate = useNavigate();
   const [googleLoading, setGoogleLoading] = useState(false);
 
@@ -219,7 +239,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await register(regEmail, regPass, regName);
-      toast.success('Аккаунт создан! Добро пожаловать 🎉');
+      toast.success('Аккаунт создан. Добро пожаловать!');
       navigate('/');
     } catch (err) {
       const msg =
@@ -232,74 +252,54 @@ export default function LoginPage() {
     }
   };
 
-  const particles = Array.from({length: 40}, (_, i) => i);
-
   return (
     <div className="login-page">
-      <div className="login-bg">
-        <div className="bg-orb bg-orb-1" />
-        <div className="bg-orb bg-orb-2" />
-        <div className="bg-orb bg-orb-3" />
-        <div className="bg-grid" />
-      </div>
+      <LoginBackdrop variant={bg} />
+      {DEV_SWITCHER && <LoginDevSwitcher bg={bg} onBg={setBg} icon={brandVariant} onIcon={setBrandVariant} />}
 
-      {particles.map((i) => (
-        <div key={i} className="particle" style={{
-          left: `${(i * 2.47 + 3) % 96}%`,
-          top: `${(i * 3.71 + 5) % 90}%`,
-          animationDuration: `${7 + (i * 1.1) % 10}s`,
-          animationDelay: `-${(i * 0.53) % 12}s`,
-          width: `${2 + (i % 4)}px`,
-          height: `${2 + (i % 4)}px`,
-          background: i % 5 === 0 ? 'rgba(79,70,229,0.9)' :
-                      i % 5 === 1 ? 'rgba(124,58,237,0.8)' :
-                      i % 5 === 2 ? 'rgba(16,185,129,0.7)' :
-                      i % 5 === 3 ? 'rgba(245,158,11,0.7)' :
-                                    'rgba(129,140,248,0.6)',
-        }} />
-      ))}
+      <button type="button" className="login-theme-btn" onClick={toggleTheme}
+        aria-label={theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}>
+        <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={18} />
+      </button>
 
       <div className="login-wrapper">
-        {/* Левая брендовая часть */}
+        {/* Левая часть — о продукте */}
         <div className="login-brand">
           <div className="brand-logo">
             <div className="brand-logo-icon">
-              <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-                <path d="M14 2L26 8V20L14 26L2 20V8L14 2Z" stroke="white" strokeWidth="1.5" fill="none"/>
-                <path d="M14 7L21 11V17L14 21L7 17V11L14 7Z" fill="white" fillOpacity="0.3"/>
-                <circle cx="14" cy="14" r="3" fill="white"/>
-              </svg>
+              <BrandMark size={44} />
             </div>
             <span className="brand-name">TraderPro</span>
           </div>
           <div className="brand-content">
-            <h1 className="brand-title">
-              Торгуй умнее.<br/>
-              <span className="brand-title-accent">Зарабатывай больше.</span>
-            </h1>
+            <h1 className="brand-title">Контроль риска и дисциплины в каждой сделке</h1>
             <p className="brand-desc">
-              Профессиональный инструмент для трейдера — калькулятор, журнал сделок и AI-советник в одном месте.
+              Рабочее место трейдера на российском рынке: расчёт сделки, журнал, сопровождение позиций и отчёты.
             </p>
           </div>
-          <div className="brand-stats">
-            <div className="brand-stat">
-              <span className="brand-stat-value">AI</span>
-              <span className="brand-stat-label">Советник</span>
-            </div>
-            <div className="brand-stat-divider" />
-            <div className="brand-stat">
-              <span className="brand-stat-value">24/7</span>
-              <span className="brand-stat-label">Доступ</span>
-            </div>
-            <div className="brand-stat-divider" />
-            <div className="brand-stat">
-              <svg className="brand-infinity" viewBox="0 0 48 24" fill="none">
-                <path d="M24 12C24 12 19 4 12 4C5 4 2 8 2 12C2 16 5 20 12 20C19 20 24 12 24 12Z" stroke="white" strokeWidth="3.5" fill="none" strokeLinecap="round"/>
-                <path d="M24 12C24 12 29 4 36 4C43 4 46 8 46 12C46 16 43 20 36 20C29 20 24 12 24 12Z" stroke="white" strokeWidth="3.5" fill="none" strokeLinecap="round"/>
-              </svg>
-              <span className="brand-stat-label">Сделок</span>
-            </div>
-          </div>
+          <ul className="brand-features">
+            <li className="brand-feature">
+              <span className="brand-feature-icon"><Icon name="calculator" size={18} /></span>
+              <div>
+                <div className="brand-feature-title">Калькулятор сделки</div>
+                <div className="brand-feature-text">Объём, стоп и цель по вашим правилам риска</div>
+              </div>
+            </li>
+            <li className="brand-feature">
+              <span className="brand-feature-icon"><Icon name="journal" size={18} /></span>
+              <div>
+                <div className="brand-feature-title">Журнал и импорт отчётов</div>
+                <div className="brand-feature-text">Сделки подтягиваются из отчётов брокера, привычки считаются сами</div>
+              </div>
+            </li>
+            <li className="brand-feature">
+              <span className="brand-feature-icon"><Icon name="cockpit" size={18} /></span>
+              <div>
+                <div className="brand-feature-title">Сопровождение позиций</div>
+                <div className="brand-feature-text">Радар, сигналы и уведомления в Telegram</div>
+              </div>
+            </li>
+          </ul>
         </div>
 
         {/* Правая форма */}
@@ -321,7 +321,6 @@ export default function LoginPage() {
             {mode === 'login' ? (
               <>
                 <div className="login-card-header">
-                  <div className="login-card-badge">Личный кабинет</div>
                   <h2 className="login-card-title">Вход в систему</h2>
                   <p className="login-card-sub">Введите ваши данные для входа</p>
                 </div>
@@ -364,26 +363,14 @@ export default function LoginPage() {
                   <div className="login-footer-line" />
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleGoogleLogin}
-                  disabled={googleLoading}
-                  style={{
-                    width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:10,
-                    padding:'12px', borderRadius:14,
-                    background:'#fff', border:'1px solid rgba(0,0,0,0.1)',
-                    color:'#1f1f1f', fontFamily:'inherit', fontSize:14, fontWeight:600,
-                    cursor:'pointer', opacity: googleLoading ? 0.7 : 1,
-                  }}
-                >
-                  {googleLoading ? <span className="login-spinner" style={{borderColor:'#4285F4', borderTopColor:'transparent'}}/> : <IconGoogle />}
+                <button type="button" className="login-google" onClick={handleGoogleLogin} disabled={googleLoading}>
+                  {googleLoading ? <span className="login-spinner"/> : <IconGoogle />}
                   {googleLoading ? 'Входим...' : 'Войти через Google'}
                 </button>
               </>
             ) : (
               <>
                 <div className="login-card-header">
-                  <div className="login-card-badge">Новый аккаунт</div>
                   <h2 className="login-card-title">Регистрация</h2>
                   <p className="login-card-sub">Создайте аккаунт бесплатно</p>
                 </div>
@@ -438,19 +425,8 @@ export default function LoginPage() {
                   <div className="login-footer-line" />
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleGoogleLogin}
-                  disabled={googleLoading}
-                  style={{
-                    width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:10,
-                    padding:'12px', borderRadius:14,
-                    background:'#fff', border:'1px solid rgba(0,0,0,0.1)',
-                    color:'#1f1f1f', fontFamily:'inherit', fontSize:14, fontWeight:600,
-                    cursor:'pointer', opacity: googleLoading ? 0.7 : 1, marginBottom:16,
-                  }}
-                >
-                  {googleLoading ? <span className="login-spinner" style={{borderColor:'#4285F4', borderTopColor:'transparent'}}/> : <IconGoogle />}
+                <button type="button" className="login-google" onClick={handleGoogleLogin} disabled={googleLoading}>
+                  {googleLoading ? <span className="login-spinner"/> : <IconGoogle />}
                   {googleLoading ? 'Входим...' : 'Продолжить с Google'}
                 </button>
 

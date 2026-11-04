@@ -1,224 +1,221 @@
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600;700&display=swap');
+/* Страница входа. Только токены темы из styles/globals.css (светлая и тёмная), один
+   акцент, без градиентов и свечений — в одном стиле с остальным приложением. */
 
 .login-page {
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #080c14;
-  font-family: 'DM Sans', sans-serif;
+  padding: 24px 24px 9vh;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: inherit;
   overflow: hidden;
   position: relative;
 }
 
-.login-bg { position: fixed; inset: 0; z-index: 0; }
-.bg-orb { position: absolute; border-radius: 50%; filter: blur(80px); animation: orbFloat 8s ease-in-out infinite; }
-.bg-orb-1 { width:700px;height:700px;background:radial-gradient(circle,rgba(79,70,229,0.25) 0%,transparent 70%);top:-200px;left:-100px; }
-.bg-orb-2 { width:450px;height:450px;background:radial-gradient(circle,rgba(124,58,237,0.18) 0%,transparent 70%);bottom:-100px;right:-50px;animation-delay:-3s; }
-.bg-orb-3 { width:300px;height:300px;background:radial-gradient(circle,rgba(16,185,129,0.12) 0%,transparent 70%);top:50%;left:50%;transform:translate(-50%,-50%);animation-delay:-6s; }
-
-@keyframes orbFloat {
-  0%,100% { transform:translate(0,0) scale(1); }
-  33% { transform:translate(30px,-20px) scale(1.05); }
-  66% { transform:translate(-20px,15px) scale(0.95); }
-}
-
-.bg-grid {
+/* ФОН (см. LoginBackground.js) */
+.login-backdrop { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+.login-backdrop-grid {
   position: absolute; inset: 0;
-  background-image: linear-gradient(rgba(255,255,255,0.03) 1px,transparent 1px), linear-gradient(90deg,rgba(255,255,255,0.03) 1px,transparent 1px);
-  background-size: 50px 50px;
+  background-image:
+    linear-gradient(var(--border-subtle) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
+  background-size: 56px 56px;
+  -webkit-mask-image: radial-gradient(ellipse 80% 70% at 50% 45%, #000 20%, transparent 100%);
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 45%, #000 20%, transparent 100%);
+}
+.login-backdrop-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.login-backdrop-line {
+  stroke: var(--accent-primary); stroke-opacity: 0.55; stroke-width: 1.6;
+  stroke-linejoin: round; stroke-linecap: round;
+  stroke-dasharray: 1; stroke-dashoffset: 0;
+  animation: loginLineDraw 2.6s cubic-bezier(0.3, 0.1, 0.2, 1) both;
+}
+.login-backdrop-avg {
+  stroke: var(--text-muted); stroke-opacity: 0.4; stroke-width: 1.1;
+  stroke-dasharray: 1; stroke-dashoffset: 0;
+  animation: loginLineDraw 3.2s cubic-bezier(0.3, 0.1, 0.2, 1) both;
+}
+.login-backdrop-area { animation: loginFadeIn 2.6s ease-out both; }
+@keyframes loginLineDraw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes loginFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .login-backdrop-line, .login-backdrop-avg, .login-backdrop-area, .login-card { animation: none; }
 }
 
-.particle { position: absolute; border-radius: 50%; animation: particleFloat linear infinite; z-index: 1; pointer-events: none; }
-@keyframes particleFloat {
-  0%   { transform:translateY(0px) rotate(0deg); opacity:0; }
-  10%  { opacity:1; }
-  90%  { opacity:1; }
-  100% { transform:translateY(-160px) rotate(360deg); opacity:0; }
+/* ПЕРЕКЛЮЧАТЕЛЬ ТЕМЫ */
+.login-theme-btn {
+  position: fixed; top: 16px; right: 16px; z-index: 5;
+  width: 38px; height: 38px; border-radius: var(--radius-sm);
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-surface); color: var(--text-secondary);
+  border: 1px solid var(--border-subtle); cursor: pointer;
+  transition: color var(--transition), border-color var(--transition);
 }
+.login-theme-btn:hover { color: var(--text-primary); border-color: var(--border-medium); }
 
+/* РАСКЛАДКА */
 .login-wrapper {
-  display: grid; grid-template-columns: 1fr 1fr;
-  max-width: 1000px; width: 100%; margin: 16px;
-  position: relative; z-index: 2; border-radius: 28px;
-  overflow: hidden; min-height: 480px;
-  box-shadow: 0 40px 120px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.06);
+  display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 80px; align-items: center;
+  max-width: 1020px; width: 100%;
+  position: relative; z-index: 2;
 }
 
-.login-brand {
-  background: linear-gradient(145deg, #0f1829 0%, #131d35 50%, #0d1525 100%);
-  padding: 48px 44px; display: flex; flex-direction: column;
-  justify-content: space-between; position: relative;
-  overflow: hidden; border-right: 1px solid rgba(255,255,255,0.06);
+/* ЛЕВАЯ ЧАСТЬ — О ПРОДУКТЕ */
+.login-brand { display: flex; flex-direction: column; gap: 36px; }
+.brand-logo { display: flex; align-items: center; gap: 12px; }
+.brand-logo-icon { display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.brand-name { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; }
+.brand-title { font-size: 36px; font-weight: 700; line-height: 1.15; letter-spacing: -0.025em; margin: 0 0 14px; max-width: 460px; }
+.brand-desc { font-size: 15px; color: var(--text-secondary); line-height: 1.65; max-width: 440px; margin: 0; }
+.brand-features { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
+.brand-feature { display: flex; align-items: flex-start; gap: 14px; }
+.brand-feature-icon {
+  width: 36px; height: 36px; border-radius: var(--radius-sm); flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg-surface); border: 1px solid var(--border-subtle); color: var(--accent-primary);
 }
-.login-brand::before { content:''; position:absolute; top:-100px; right:-100px; width:350px; height:350px; background:radial-gradient(circle,rgba(79,70,229,0.15) 0%,transparent 60%); pointer-events:none; }
-.login-brand::after  { content:''; position:absolute; bottom:-60px; left:-60px; width:250px; height:250px; background:radial-gradient(circle,rgba(124,58,237,0.1) 0%,transparent 60%); pointer-events:none; }
+.brand-feature-title { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+.brand-feature-text { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
 
-.brand-logo { display:flex; align-items:center; gap:12px; }
-.brand-logo-icon { width:48px; height:48px; border-radius:14px; background:linear-gradient(135deg,#4f46e5,#7c3aed); display:flex; align-items:center; justify-content:center; box-shadow:0 8px 24px rgba(79,70,229,0.45); flex-shrink:0; }
-.brand-name { font-family:'Syne',sans-serif; font-size:32px; font-weight:800; color:#fff; letter-spacing:-1px; line-height:1; white-space:nowrap; }
-.brand-content { flex:1; display:flex; flex-direction:column; justify-content:center; padding:40px 0; }
-.brand-title { font-family:'Syne',sans-serif; font-size:34px; font-weight:800; color:#fff; line-height:1.15; letter-spacing:-1px; margin-bottom:16px; }
-.brand-title-accent { background:linear-gradient(135deg,#818cf8,#a78bfa); -webkit-background-clip:text; -webkit-text-fill-color:transparent; }
-.brand-desc { font-size:14px; color:rgba(255,255,255,0.45); line-height:1.7; max-width:280px; }
-.brand-stats { display:flex; align-items:center; gap:28px; padding:20px 0 0; border-top:1px solid rgba(255,255,255,0.08); }
-.brand-stat { display:flex; flex-direction:column; gap:6px; align-items:flex-start; }
-.brand-stat-value { font-family:'DM Sans',sans-serif; font-size:24px; font-weight:700; color:#fff; line-height:1; display:block; min-width:48px; }
-.brand-infinity { width:48px; height:24px; display:block; margin-bottom:2px; }
-.brand-stat-label { font-size:10px; color:rgba(255,255,255,0.35); text-transform:uppercase; letter-spacing:0.8px; }
-.brand-stat-divider { width:1px; height:36px; background:rgba(255,255,255,0.12); flex-shrink:0; }
-
-/* ПРАВАЯ ЧАСТЬ */
-.login-form-side {
-  background: #0d1525;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 28px 36px;
-  overflow-y: auto;
-}
-
+/* КАРТОЧКА ФОРМЫ */
 .login-card {
-  width: 100%;
-  max-width: 340px;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  animation: cardEntrance 0.6s cubic-bezier(0.16,1,0.3,1) forwards;
+  width: 100%; display: flex; flex-direction: column; align-items: stretch;
+  background: var(--bg-surface); border: 1px solid var(--border-subtle);
+  border-radius: calc(var(--radius) + 4px); padding: 30px 30px 28px;
+  box-shadow: var(--shadow-card, var(--shadow-pop));
+  animation: cardEntrance 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
-@keyframes cardEntrance { from{opacity:0;transform:translateY(24px)} to{opacity:1;transform:translateY(0)} }
+@keyframes cardEntrance { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
 
-.login-card-header { margin-bottom:16px; text-align:center; }
-.login-card-badge { display:inline-flex; align-items:center; padding:4px 12px; background:rgba(79,70,229,0.15); border:1px solid rgba(79,70,229,0.3); border-radius:20px; font-size:11px; font-weight:500; color:#818cf8; letter-spacing:0.5px; text-transform:uppercase; margin-bottom:12px; }
-.login-card-title { font-family:'Syne',sans-serif; font-size:26px; font-weight:800; color:#f0f4ff; letter-spacing:-0.8px; margin-bottom:4px; }
-.login-card-sub { font-size:13px; color:rgba(255,255,255,0.35); }
+/* ВКЛАДКИ */
+.login-tabs { display: flex; gap: 22px; border-bottom: 1px solid var(--border-subtle); margin-bottom: 22px; }
+.login-tab {
+  background: none; border: none; cursor: pointer; font-family: inherit;
+  padding: 0 0 12px; margin-bottom: -1px; font-size: 14px; font-weight: 600;
+  color: var(--text-muted); border-bottom: 2px solid transparent; transition: color var(--transition), border-color var(--transition);
+}
+.login-tab:hover:not(.active) { color: var(--text-secondary); }
+.login-tab.active { color: var(--text-primary); border-bottom-color: var(--accent-primary); }
 
-.login-form { display:flex; flex-direction:column; gap:10px; width:100%; }
-.login-field { display:flex; flex-direction:column; gap:6px; width:100%; }
-.login-field-label { font-size:12px; font-weight:500; color:rgba(255,255,255,0.4); letter-spacing:0.3px; transition:color 0.2s; text-align:left; }
-.login-field.focused .login-field-label { color:#818cf8; }
+.login-card-header { margin-bottom: 18px; }
+.login-card-title { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 4px; }
+.login-card-sub { font-size: 13px; color: var(--text-muted); margin: 0; }
 
+/* ПОЛЯ */
+.login-form { display: flex; flex-direction: column; gap: 14px; width: 100%; }
+.login-field { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.login-field-label { font-size: 12px; font-weight: 500; color: var(--text-secondary); text-align: left; }
 .login-field-wrap {
-  display: flex;
-  align-items: center;
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 14px;
-  overflow: hidden;
-  transition: all 0.2s;
-  width: 100%;
-  /* Убираем внутренние браузерные иконки */
-  position: relative;
+  display: flex; align-items: center; width: 100%; position: relative; overflow: hidden;
+  background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm);
+  transition: border-color var(--transition), box-shadow var(--transition);
 }
 .login-field.focused .login-field-wrap {
-  border-color: rgba(79,70,229,0.6);
-  background: rgba(79,70,229,0.07);
-  box-shadow: 0 0 0 3px rgba(79,70,229,0.15);
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-primary) 18%, transparent);
 }
-
-.login-field-icon {
-  padding: 0 14px;
-  color: rgba(255,255,255,0.3);
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  transition: color 0.2s;
-}
-.login-field.focused .login-field-icon { color:#818cf8; }
-
+.login-field-icon { padding: 0 6px 0 13px; color: var(--text-muted); display: flex; align-items: center; flex-shrink: 0; }
+.login-field.focused .login-field-icon { color: var(--accent-primary); }
 .login-input {
-  flex: 1;
-  background: none;
-  border: none;
-  outline: none;
-  padding: 13px 8px 13px 4px;
-  font-size: 15px;
-  font-family: 'DM Sans', sans-serif;
-  color: #f0f4ff;
-  width: 100%;
-  min-width: 0;
+  flex: 1; min-width: 0; width: 100%; background: none; border: none; outline: none;
+  padding: 12px 10px 12px 6px; font-size: 15px; font-family: inherit; color: var(--text-primary);
 }
-.login-input::placeholder { color:rgba(255,255,255,0.22); }
-
-/* Глаз кнопка */
+.login-input::placeholder { color: var(--text-muted); opacity: 0.7; }
 .login-eye {
-  padding: 0 14px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  color: rgba(255,255,255,0.3);
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  transition: color 0.2s;
+  padding: 0 13px; background: none; border: none; cursor: pointer; color: var(--text-muted);
+  display: flex; align-items: center; flex-shrink: 0; transition: color var(--transition);
 }
-.login-eye:hover { color: rgba(255,255,255,0.7); }
+.login-eye:hover { color: var(--text-primary); }
+.login-forgot {
+  background: none; border: none; cursor: pointer; font-family: inherit; font-size: 12px;
+  color: var(--text-secondary); padding: 0; margin-top: -6px; align-self: flex-end; transition: color var(--transition);
+}
+.login-forgot:hover { color: var(--accent-primary); }
 
-.login-btn { margin-top:4px; width:100%; padding:12px; border:none; border-radius:14px; background:linear-gradient(135deg,#4f46e5 0%,#7c3aed 100%); color:#fff; font-family:'DM Sans',sans-serif; font-size:15px; font-weight:600; cursor:pointer; transition:transform 0.2s,box-shadow 0.2s; position:relative; overflow:hidden; }
-.login-btn::before { content:''; position:absolute; inset:0; background:linear-gradient(135deg,rgba(255,255,255,0.12) 0%,transparent 100%); opacity:0; transition:opacity 0.2s; }
-@keyframes btnGlow { 0%,100%{box-shadow:0 0 20px rgba(79,70,229,0.4),0 8px 20px rgba(79,70,229,0.3)} 50%{box-shadow:0 0 40px rgba(79,70,229,0.7),0 8px 28px rgba(79,70,229,0.5)} }
-.login-btn:not(:disabled) { animation:btnGlow 2.5s ease-in-out infinite; }
-.login-btn:hover:not(:disabled)::before { opacity:1; }
-.login-btn:hover:not(:disabled) { transform:translateY(-2px); }
-.login-btn:active:not(:disabled) { transform:translateY(0); }
-.login-btn:disabled { opacity:0.5; cursor:not-allowed; animation:none; }
-.login-btn-content { display:flex; align-items:center; justify-content:center; gap:8px; position:relative; z-index:1; }
-.login-spinner { width:16px; height:16px; border:2px solid rgba(255,255,255,0.3); border-top-color:#fff; border-radius:50%; animation:spin 0.7s linear infinite; }
-@keyframes spin { to{transform:rotate(360deg)} }
+/* КНОПКИ */
+.login-btn {
+  margin-top: 4px; width: 100%; height: 44px; border: none; border-radius: var(--radius-sm);
+  background: var(--accent-primary); color: #fff; font-family: inherit; font-size: 15px; font-weight: 600;
+  cursor: pointer; transition: filter var(--transition), transform var(--transition);
+}
+.login-btn:hover:not(:disabled) { filter: brightness(1.08); }
+.login-btn:active:not(:disabled) { transform: translateY(1px); }
+.login-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.login-btn-content { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.login-spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.35); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
-.login-footer { display:flex; align-items:center; gap:12px; margin-top:16px; }
-.login-footer-line { flex:1; height:1px; background:rgba(255,255,255,0.07); }
-.login-footer-text { font-size:11px; color:rgba(255,255,255,0.2); white-space:nowrap; }
+.login-google {
+  width: 100%; height: 44px; display: flex; align-items: center; justify-content: center; gap: 10px;
+  background: transparent; color: var(--text-primary); border: 1px solid var(--border-medium); border-radius: var(--radius-sm);
+  font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer; transition: background var(--transition);
+}
+.login-google:hover:not(:disabled) { background: var(--bg-surface-2); }
+.login-google:disabled { opacity: 0.7; cursor: default; }
+.login-google .login-spinner { border-color: #4285F4; border-top-color: transparent; }
 
-/* ТАБЫ */
-.login-tabs { display:flex; gap:4px; background:rgba(255,255,255,0.05); border-radius:16px; padding:4px; margin-bottom:16px; }
-.login-tab { flex:1; padding:9px 16px; background:none; border:none; border-radius:12px; font-family:'DM Sans',sans-serif; font-size:13px; font-weight:600; color:rgba(255,255,255,0.35); cursor:pointer; transition:all 0.2s; }
-.login-tab.active { background:linear-gradient(135deg,#4f46e5,#7c3aed); color:#fff; box-shadow:0 4px 12px rgba(79,70,229,0.35); }
-.login-tab:hover:not(.active) { color:rgba(255,255,255,0.6); }
+.login-footer { display: flex; align-items: center; gap: 12px; margin: 16px 0; }
+.login-footer-line { flex: 1; height: 1px; background: var(--border-subtle); }
+.login-footer-text { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
 
-/* Забыл пароль */
-.login-forgot { background:none; border:none; cursor:pointer; font-family:'DM Sans',sans-serif; font-size:12px; color:rgba(129,140,248,0.7); text-align:right; padding:0; transition:color 0.2s; margin-top:-4px; align-self:flex-end; }
-.login-forgot:hover { color:#818cf8; }
+/* ОКНО СБРОСА ПАРОЛЯ */
+.login-modal-overlay {
+  position: fixed; inset: 0; z-index: 1000; background: var(--bg-overlay);
+  -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center; padding: 24px; animation: fadeIn 0.2s ease;
+}
+.login-modal {
+  position: relative; width: 100%; max-width: 380px; padding: 30px 28px;
+  background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: calc(var(--radius) + 4px);
+  box-shadow: var(--shadow-pop); animation: cardEntrance 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.login-modal-header { text-align: center; margin-bottom: 22px; }
+.login-modal-icon { color: var(--accent-primary); display: flex; justify-content: center; margin-bottom: 10px; }
+.login-modal-title { font-size: 20px; font-weight: 700; margin: 0 0 6px; }
+.login-modal-sub { font-size: 13px; color: var(--text-muted); margin: 0; }
+.login-modal-done { text-align: center; padding: 8px 0 4px; }
+.login-modal-done-icon { color: var(--green); display: flex; justify-content: center; margin-bottom: 10px; }
+.login-modal-done p { font-size: 14px; color: var(--text-secondary); line-height: 1.6; margin: 0; }
+.login-modal-done strong { color: var(--text-primary); }
+.login-modal-close {
+  position: absolute; top: 14px; right: 14px; width: 28px; height: 28px; border: none; border-radius: 50%;
+  background: var(--bg-surface-2); color: var(--text-muted); cursor: pointer;
+  display: flex; align-items: center; justify-content: center; transition: color var(--transition);
+}
+.login-modal-close:hover { color: var(--text-primary); }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
-/* МОДАЛ СБРОСА */
-.login-modal-overlay { position:fixed; inset:0; z-index:1000; background:rgba(0,0,0,0.7); backdrop-filter:blur(8px); display:flex; align-items:center; justify-content:center; padding:24px; animation:fadeIn 0.2s ease; }
-.login-modal { background:linear-gradient(145deg,#0f1829,#131d35); border:1px solid rgba(255,255,255,0.1); border-radius:24px; padding:36px 32px; width:100%; max-width:380px; position:relative; box-shadow:0 40px 80px rgba(0,0,0,0.5); animation:cardEntrance 0.3s cubic-bezier(0.16,1,0.3,1); }
-.login-modal-header { text-align:center; margin-bottom:24px; }
-.login-modal-title { font-family:'Syne',sans-serif; font-size:22px; font-weight:800; color:#f0f4ff; margin-bottom:6px; }
-.login-modal-sub { font-size:13px; color:rgba(255,255,255,0.4); }
-.login-modal-close { position:absolute; top:16px; right:16px; background:rgba(255,255,255,0.07); border:none; border-radius:50%; width:28px; height:28px; cursor:pointer; color:rgba(255,255,255,0.5); font-size:12px; display:flex; align-items:center; justify-content:center; transition:all 0.2s; }
-.login-modal-close:hover { background:rgba(255,255,255,0.15); color:#fff; }
-@keyframes fadeIn { from{opacity:0} to{opacity:1} }
-
-/* ФИКС АВТОЗАПОЛНЕНИЯ */
+/* АВТОЗАПОЛНЕНИЕ БРАУЗЕРА */
 .login-input:-webkit-autofill,
 .login-input:-webkit-autofill:hover,
 .login-input:-webkit-autofill:focus {
-  -webkit-box-shadow: 0 0 0 1000px #111827 inset !important;
-  -webkit-text-fill-color: #f0f4ff !important;
-  caret-color: #f0f4ff;
+  -webkit-box-shadow: 0 0 0 1000px var(--bg-surface-2) inset !important;
+  -webkit-text-fill-color: var(--text-primary) !important;
+  caret-color: var(--text-primary);
   transition: background-color 5000s ease-in-out 0s;
 }
 
-/* Убираем ВСЕ браузерные иконки в полях */
+/* Убираем браузерные иконки внутри полей */
 input::-webkit-credentials-auto-fill-button,
 input::-webkit-contacts-auto-fill-button,
 input::-webkit-password-auto-fill-button,
 input::-webkit-caps-lock-indicator,
 input::-webkit-strong-password-auto-fill-button {
-  display: none !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-  width: 0 !important;
-  height: 0 !important;
+  display: none !important; visibility: hidden !important; pointer-events: none !important; width: 0 !important; height: 0 !important;
 }
 input[type="password"]::-ms-reveal,
 input[type="password"]::-ms-clear { display: none; }
-/* Firefox */
 input { -moz-appearance: none; }
 
-@media (max-width:700px) {
-  .login-wrapper { grid-template-columns:1fr; margin:0; border-radius:0; min-height:100vh; }
-  .login-brand { display:none; }
-  .login-form-side { padding:32px 24px; }
+/* ПЛАНШЕТ И ТЕЛЕФОН */
+@media (max-width: 900px) {
+  .login-wrapper { grid-template-columns: 1fr; gap: 28px; max-width: 420px; }
+  .login-brand { gap: 0; align-items: center; }
+  .brand-content, .brand-features { display: none; }
+}
+@media (max-width: 480px) {
+  .login-page { padding: 16px; align-items: flex-start; padding-top: 56px; }
+  .login-card { padding: 24px 20px 22px; }
 }
