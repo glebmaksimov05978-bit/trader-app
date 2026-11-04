@@ -50,7 +50,7 @@
     "test:watchdog": "node scripts/watchdogTests.mjs",
     "test:aiguard": "node scripts/aiGuardTests.mjs",
     "test:apiimport": "node scripts/tbankApiImportTests.mjs",
-    "test:smoke": "react-scripts test --watchAll=false src/components/smoke.test.js src/components/chartmount.test.js src/components/report/reportControls.test.js src/components/journal/importApi.test.js",
+    "test:smoke": "react-scripts test --watchAll=false src/components/smoke.test.js src/components/chartmount.test.js src/components/report/reportControls.test.js src/components/journal/importApi.test.js src/components/onboarding/onboarding.test.js",
     "test:papergroups": "node scripts/paperGroupsTests.mjs",
     "test:fillsclose": "node scripts/fillsCloseTest.mjs",
     "test:period": "node scripts/periodReportTests.mjs",

@@ -7,6 +7,7 @@ import { NAV_ITEMS, ADMIN_ITEMS, TRUSTED_ITEMS } from '../../constants/navItems'
 import './Sidebar.css';
 
 import Icon from '../shared/Icon';
+import { useOnboarding } from '../onboarding/OnboardingContext';
 // Real user report on the FIRST version of this (bottom bar + hamburger for extras
 // only): the hamburger button was fixed-position over page content and partially
 // covered the "Дашборд" heading, and the drawer only ever held Бэктест — confusing,
@@ -16,6 +17,7 @@ import Icon from '../shared/Icon';
 // .main-content top padding on mobile so page content never sits under the bar.
 export default function MobileNav() {
   const { user, isAdmin } = useAuth();
+  const { startForPath } = useOnboarding();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const isTrusted = isAdmin || TRUSTED_UIDS.includes(user?.uid);
@@ -123,6 +125,10 @@ export default function MobileNav() {
                 <span>{item.label}</span>
               </NavLink>
             ))}
+            <button type="button" className="mobile-drawer-item" onClick={() => { setDrawerOpen(false); setTimeout(startForPath, 250); }}>
+              <span className="mobile-nav-icon"><Icon name="info" size={18} /></span>
+              <span>Подсказки</span>
+            </button>
           </div>
         </div>
       )}

@@ -52,6 +52,8 @@ export function AuthProvider({ children }) {
               dailyLossLimit: 3,
               maxRiskPerTrade: 1,
               createdAt: serverTimestamp(),
+              // Новому пользователю самостоятельно показываются обучающие туры (старым — только по кнопке).
+              onboarding: { eligible: true },
             };
             await setDoc(doc(db, 'users', firebaseUser.uid), defaultProfile);
             setUserProfile(defaultProfile);
@@ -88,6 +90,7 @@ export function AuthProvider({ children }) {
         dailyLossLimit: 3,
         maxRiskPerTrade: 1,
         createdAt: serverTimestamp(),
+        onboarding: { eligible: true },
       };
       await setDoc(doc(db, 'users', cred.user.uid), defaultProfile);
     }
@@ -109,6 +112,7 @@ export function AuthProvider({ children }) {
       dailyLossLimit: 3,
       maxRiskPerTrade: 1,
       createdAt: serverTimestamp(),
+      onboarding: { eligible: true },
     };
     await setDoc(doc(db, 'users', cred.user.uid), profile);
 

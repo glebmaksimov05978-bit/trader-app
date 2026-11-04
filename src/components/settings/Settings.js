@@ -9,6 +9,8 @@ import { getStrategies } from '../../services/analytics/strategy';
 import { futuresTurnoverRub, turnoverStatus } from '../../services/analytics/dayTurnover';
 import { normalizeTaPrefs } from '../../services/analytics/taView';
 import TaSettingsCard from './TaSettingsCard';
+import OnboardingCard from '../onboarding/OnboardingCard';
+import { TRUSTED_UIDS } from '../../constants/trustedUids';
 import toast from 'react-hot-toast';
 
 import Icon from '../shared/Icon';
@@ -520,6 +522,8 @@ export default function Settings() {
             </button>
           </div>
         </div>
+
+        <OnboardingCard trusted={userProfile?.role === 'admin' || TRUSTED_UIDS.includes(user?.uid)} />
 
         <button className="btn btn-primary btn-lg" onClick={save} disabled={saving}>
           {saving ? <><div className="spinner" style={{width:16,height:16}}/> Сохранение...</> : 'Сохранить все настройки'}

@@ -6,6 +6,8 @@ import { useTheme } from '../../context/ThemeContext';
 import { TRUSTED_UIDS } from '../../constants/trustedUids';
 import { NAV_ITEMS, ADMIN_ITEMS, TRUSTED_ITEMS } from '../../constants/navItems';
 import BrandMark from '../shared/BrandMark';
+import Icon from '../shared/Icon';
+import { useOnboarding } from '../onboarding/OnboardingContext';
 import './Sidebar.css';
 
 export default function Sidebar() {
@@ -13,6 +15,7 @@ export default function Sidebar() {
   const { theme, toggleTheme } = useTheme();
   const [profileOpen, setProfileOpen] = useState(false);
   const location = useLocation();
+  const { startForPath } = useOnboarding();
 
   const isTrusted = isAdmin || TRUSTED_UIDS.includes(user?.uid);
   const items = [
@@ -50,6 +53,10 @@ export default function Sidebar() {
 
       {/* Bottom section */}
       <div className="sidebar-bottom">
+        <button className="theme-toggle" onClick={startForPath} title="Подсказки по этому разделу">
+          <Icon name="info" size={16} />
+          <span className="theme-label">Подсказки</span>
+        </button>
         <button className="theme-toggle" onClick={toggleTheme} title="Переключить тему">
           <span>{theme === 'dark' ? '☀️' : '🌙'}</span>
           <span className="theme-label">{theme === 'dark' ? 'Светлая' : 'Тёмная'}</span>

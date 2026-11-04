@@ -1,0 +1,47 @@
+/* Обучающие туры: затемнение, подсветка элемента, карточка шага. Только токены приложения — светлая и тёмная тема. */
+.tour-root { position: fixed; inset: 0; z-index: 2000; }
+.tour-catch { position: fixed; inset: 0; background: transparent; }
+.tour-dim { position: fixed; inset: 0; background: rgba(4, 6, 10, 0.66); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); animation: tour-fade 0.3s ease both; }
+.tour-spot {
+  position: fixed; border-radius: 14px; pointer-events: none;
+  box-shadow: 0 0 0 9999px rgba(4, 6, 10, 0.66), 0 0 0 2px var(--accent-primary), 0 0 28px rgba(100, 133, 216, 0.45);
+  transition: top 0.35s cubic-bezier(0.2, 0.7, 0.2, 1), left 0.35s cubic-bezier(0.2, 0.7, 0.2, 1), width 0.35s cubic-bezier(0.2, 0.7, 0.2, 1), height 0.35s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.tour-pop {
+  position: fixed; width: min(380px, calc(100vw - 24px)); padding: 18px 20px 16px;
+  background: var(--bg-surface); color: var(--text-primary);
+  border: 1px solid var(--border-medium); border-radius: 16px;
+  box-shadow: var(--shadow-pop, 0 20px 60px rgba(0, 0, 0, 0.5));
+  animation: tour-pop 0.28s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+.tour-pop.modal { width: min(460px, calc(100vw - 24px)); padding: 24px 26px 20px; }
+.tour-pop.sheet { left: 12px; right: 12px; bottom: 12px; top: auto; width: auto; max-height: 72vh; overflow-y: auto; }
+.tour-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.tour-count { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent-primary); }
+.tour-x { border: none; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 14px; padding: 4px 6px; border-radius: 8px; }
+.tour-x:hover { background: var(--bg-surface-2); color: var(--text-primary); }
+.tour-title { margin: 0 0 8px; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+.tour-pop.modal .tour-title { font-size: 21px; }
+.tour-text { font-size: 13.5px; line-height: 1.6; color: var(--text-secondary); }
+.tour-text p { margin: 0; }
+.tour-gap { height: 8px; }
+.tour-dots { display: flex; gap: 5px; margin: 14px 0 12px; }
+.tour-dots i { height: 3px; flex: 1; max-width: 26px; border-radius: 3px; background: var(--bg-surface-3); transition: background 0.3s; }
+.tour-dots i.past { background: color-mix(in srgb, var(--accent-primary) 45%, transparent); }
+.tour-dots i.on { background: var(--accent-primary); }
+.tour-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.tour-nav { display: flex; gap: 8px; }
+.tour-off { display: block; margin: 12px auto 0; border: none; background: transparent; color: var(--text-muted); font-size: 12px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.tour-off:hover { color: var(--text-secondary); }
+@keyframes tour-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes tour-pop { from { opacity: 0; transform: translateY(8px) scale(0.98); } to { opacity: 1; transform: none; } }
+.tour-pop.modal:not(.sheet) { animation-name: tour-pop-center; }
+@keyframes tour-pop-center { from { opacity: 0; margin-top: 10px; } to { opacity: 1; margin-top: 0; } }
+@media (prefers-reduced-motion: reduce) { .tour-dim, .tour-pop, .tour-spot { animation: none !important; transition: none !important; } }
+
+/* карточка «Обучение» в Настройках */
+.onb-list { display: grid; gap: 8px; margin-top: 12px; }
+.onb-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border: 1px solid var(--border-subtle); border-radius: 12px; background: var(--bg-surface-2); }
+.onb-name { font-weight: 600; font-size: 14px; }
+.onb-about { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.onb-done { font-size: 11px; font-weight: 700; color: var(--green); margin-left: 8px; }

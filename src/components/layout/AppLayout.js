@@ -5,6 +5,7 @@ import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import EmailVerifyBanner from './EmailVerifyBanner';
 import { RadarLiveProvider } from '../../context/RadarLiveContext';
+import { OnboardingProvider } from '../onboarding/OnboardingContext';
 import './AppLayout.css';
 
 export default function AppLayout() {
@@ -33,6 +34,7 @@ export default function AppLayout() {
   // вкладки").
   return (
     <RadarLiveProvider>
+      <OnboardingProvider>
       <div className="app-layout">
         <div className="app-bg" />
         <Sidebar />
@@ -42,6 +44,7 @@ export default function AppLayout() {
         </main>
         <MobileNav />
       </div>
+      </OnboardingProvider>
     </RadarLiveProvider>
   );
 }
