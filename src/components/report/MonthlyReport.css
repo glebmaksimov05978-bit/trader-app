@@ -4,7 +4,34 @@
 
 .mr-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .mr-header-actions { display: flex; gap: 10px; align-items: center; }
-.mr-month { width: auto; min-width: 160px; padding: 9px 12px; }
+/* переключатель периода: стрелки и окно выбора месяца (вместо системного списка) */
+.mr-period { position: relative; display: inline-flex; align-items: stretch; border: 1px solid var(--border-medium); border-radius: 10px; background: var(--bg-surface); }
+.mr-period button { border: none; background: transparent; color: var(--text-secondary); font-family: inherit; cursor: pointer; transition: background var(--transition), color var(--transition); }
+.mr-period button:hover:not(:disabled) { color: var(--text-primary); background: var(--bg-surface-2); }
+.mr-period button:disabled { opacity: 0.35; cursor: default; }
+.mr-period button:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: -2px; }
+.mr-period-arrow { width: 36px; display: inline-flex; align-items: center; justify-content: center; }
+.mr-period-arrow:first-child { border-radius: 9px 0 0 9px; }
+.mr-period-arrow:last-child { border-radius: 0 9px 9px 0; }
+.mr-period-label { min-width: 168px; padding: 8px 12px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--text-primary) !important; border-left: 1px solid var(--border-subtle) !important; border-right: 1px solid var(--border-subtle) !important; }
+.mr-period-pop { position: absolute; top: calc(100% + 8px); left: 0; z-index: 40; width: 292px; padding: 12px; border: 1px solid var(--border-medium); border-radius: 12px; background: var(--bg-surface); box-shadow: var(--shadow-pop); max-height: 360px; overflow-y: auto; }
+.mr-pop-year + .mr-pop-year { margin-top: 12px; }
+.mr-pop-year-title { font-size: 11px; font-weight: 600; letter-spacing: 0.7px; color: var(--text-muted); margin: 0 4px 6px; }
+.mr-pop-months { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+.mr-pop-years { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; }
+.mr-pop-cell { padding: 8px 6px; border-radius: 8px; font-size: 13px; text-align: center; }
+.mr-period .mr-pop-cell.on { background: var(--accent-primary); color: #fff; font-weight: 600; }
+.mr-period .mr-pop-cell.on:hover { background: var(--accent-primary); color: #fff; }
+@media (max-width: 560px) { .mr-period-label { min-width: 0; flex: 1; } .mr-period { width: 100%; } .mr-period-pop { width: 100%; } }
+
+/* фильтр стратегий */
+.mr-filter { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.mr-filter-label { font-size: 12px; font-weight: 600; letter-spacing: 0.6px; text-transform: uppercase; color: var(--text-muted); margin-right: 2px; }
+.mr-chip { display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--border-medium); background: var(--bg-surface); color: var(--text-secondary); font-family: inherit; font-size: 13px; font-weight: 500; padding: 6px 12px; border-radius: 999px; cursor: pointer; transition: background var(--transition), color var(--transition), border-color var(--transition); }
+.mr-chip:hover { color: var(--text-primary); border-color: var(--text-muted); }
+.mr-chip.on { color: var(--text-primary); font-weight: 600; border-color: var(--accent-primary); background: color-mix(in srgb, var(--accent-primary) 14%, transparent); }
+.mr-chip:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+.mr-chip-n { font-size: 11px; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
 .mr-verdict {
   font-size: 15px;
@@ -121,6 +148,35 @@ td.mr-num { text-align: right; }
 .mr-strat-bar i.down { background: var(--red); }
 .mr-strat-sub { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
 .mr-two-col { display: flex; flex-direction: column; gap: 20px; }
+
+/* «Я против системы» и «Стратегии» одной высоты: правая карточка заполняет свободное место плитками показателей */
+.mr-two-stretch { align-items: stretch; }
+.mr-two.mr-one { grid-template-columns: 1fr; }
+@media print { .mr-two.mr-one { grid-template-columns: 1fr; } }
+.mr-two-stretch > .card { margin-bottom: 20px; }
+.mr-two-stretch > .card:last-child { display: flex; flex-direction: column; }
+.mr-two-stretch .mr-strats { flex: 1; }
+.mr-two-stretch .mr-strat { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+.mr-strat { padding: 12px 14px; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); background: var(--bg-surface-2); }
+.mr-strat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.mr-strat-grid > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mr-strat-grid span { font-size: 11px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mr-strat-grid b { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.mr-strat-grid b.up { color: var(--green); }
+.mr-strat-grid b.down { color: var(--red); }
+@media (max-width: 560px) { .mr-strat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* лучшая и худшая сделка в ряд; «По инструментам» — на всю ширину с полоской вклада */
+.mr-extremes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+@media (max-width: 760px) { .mr-extremes { grid-template-columns: 1fr; } }
+.mr-extremes .mr-block { margin-bottom: 20px; }
+.mr-trade-meta { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.mr-ibar-cell { width: 36%; }
+.mr-ibar { height: 6px; background: var(--bg-surface-3); border-radius: 3px; overflow: hidden; }
+.mr-ibar i { display: block; height: 100%; border-radius: 3px; background: var(--text-muted); }
+.mr-ibar i.up { background: var(--green); }
+.mr-ibar i.down { background: var(--red); }
+@media (max-width: 560px) { .mr-ibar-cell { display: none; } }
 .mr-src { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); border: 1px solid var(--border-medium); border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: middle; }
 
 /* ---------- риск открытых позиций и сравнение стратегий ---------- */

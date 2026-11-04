@@ -31,6 +31,13 @@ function toDate(v) {
 }
 
 const closedAtOf = (t) => toDate(t.closedAt) || toDate(t.closeDate);
+
+/** Название стратегии сделки — одно правило для отчёта, фильтра по стратегиям и сравнения. */
+export function strategyNameOf(t, src = 'real') {
+  return src === 'paper'
+    ? (t.entryStrategyName || 'Без названия')
+    : (t.entryStrategyName || t.strategyName || 'Вручную');
+}
 const pad = (n) => String(n).padStart(2, '0');
 export const monthKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
 export const yearKey = (d) => String(d.getFullYear());
@@ -46,7 +53,7 @@ export function normalize(realTrades, paperTrades, scope, legPnl = null) {
   if (scope === 'real' || scope === 'all') {
     for (const t of realTrades || []) {
       if (t.pnl == null || !Number.isFinite(Number(t.pnl))) continue;
-      const base = { src: 'real', ticker: String(t.ticker || '—').toUpperCase(), direction: t.direction, strategy: t.entryStrategyName || t.strategyName || 'Вручную', raw: t };
+      const base = { src: 'real', ticker: String(t.ticker || '—').toUpperCase(), direction: t.direction, strategy: strategyNameOf(t, 'real'), raw: t };
       if (t.status === 'closed') {
         const closed = closedAtOf(t);
         if (!closed) continue;
@@ -63,7 +70,7 @@ export function normalize(realTrades, paperTrades, scope, legPnl = null) {
       if (t.status !== 'closed' || t.pnl == null) continue;
       const closed = closedAtOf(t);
       if (!closed || !Number.isFinite(Number(t.pnl))) continue;
-      out.push({ src: 'paper', pnl: Number(t.pnl), closed, ticker: String(t.ticker || '—').toUpperCase(), direction: t.direction, strategy: t.entryStrategyName || 'Без названия', raw: t });
+      out.push({ src: 'paper', pnl: Number(t.pnl), closed, ticker: String(t.ticker || '—').toUpperCase(), direction: t.direction, strategy: strategyNameOf(t, 'paper'), raw: t });
     }
   }
   return out;
@@ -101,6 +108,17 @@ export function listPeriods(realTrades, paperTrades, type, legPnl = null) {
   const keys = new Set();
   for (const x of normalize(realTrades, paperTrades, 'all', legPnl)) keys.add(type === 'year' ? yearKey(x.closed) : monthKey(x.closed));
   return [...keys].sort().reverse().map((key) => ({ key, label: periodLabel(type, key) }));
+}
+
+/**
+ * Стратегии, по которым в выбранном срезе есть закрытые сделки (для фильтра «Стратегии»),
+ * с числом сделок за всё время; самые активные — первыми.
+ */
+export function listStrategyNames(realTrades, paperTrades, scope, legPnl = null) {
+  const map = new Map();
+  for (const x of normalize(realTrades, paperTrades, scope, legPnl)) map.set(x.strategy, (map.get(x.strategy) || 0) + (x.partial ? 0 : 1));
+  return [...map.entries()].map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'ru'));
 }
 
 export function statsOf(items) {

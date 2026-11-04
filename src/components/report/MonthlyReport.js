@@ -15,8 +15,9 @@ import { buildStrategyComparison, comparisonNote } from '../../services/analytic
 import { buildOpenRisk } from '../../services/analytics/openRisk';
 import { buildDecisionJournal } from '../../services/analytics/decisionJournal';
 import { buildMonthlyReport, reportVerdict } from '../../services/analytics/monthlyReport';
-import { buildPeriodReport, listPeriods, SCOPES } from '../../services/analytics/periodReport';
+import { buildPeriodReport, listPeriods, listStrategyNames, strategyNameOf, monthKey, SCOPES } from '../../services/analytics/periodReport';
 import { buildEntryStats } from '../../services/analytics/entryStats';
+import { PeriodSwitcher, StrategyFilter } from './ReportControls';
 import { formatCurrency, formatPercent, tradesWord } from '../../utils/money';
 import { computeClosePnl } from '../../services/tradeClose';
 import { MIN_SAMPLE } from '../../services/analytics/insightsEngine';
@@ -33,12 +34,13 @@ const sgn = (v) => (v > 0 ? 'up' : v < 0 ? 'down' : '');
 
 export default function MonthlyReport() {
   const { user, userProfile } = useAuth();
-  const [real, setReal] = useState([]);
-  const [paper, setPaper] = useState([]);
+  const [realAll, setReal] = useState([]);
+  const [paperAll, setPaper] = useState([]);
   const [loading, setLoading] = useState(true);
   const [scope, setScope] = useState('real');
   const [type, setType] = useState('month');
   const [pickedKey, setPickedKey] = useState(null);
+  const [pickedStrategies, setPickedStrategies] = useState([]); // пусто = все стратегии
 
   useEffect(() => {
     if (!user) return;
@@ -50,6 +52,17 @@ export default function MonthlyReport() {
       setReal(r); setPaper(p); setLoading(false);
     })();
   }, [user]);
+
+  // Фильтр по стратегиям: отчёт целиком (итоги, график, инструменты, сравнение, журнал решений) строится
+  // по сделкам выбранных стратегий. Выбрать можно одну, другую или несколько — тогда они сравниваются.
+  const strategyNames = useMemo(() => listStrategyNames(realAll, paperAll, scope, legPnl), [realAll, paperAll, scope]);
+  const chosen = useMemo(() => pickedStrategies.filter((n) => strategyNames.some((s) => s.name === n)), [pickedStrategies, strategyNames]);
+  const filterOn = chosen.length > 0 && chosen.length < strategyNames.length;
+  const real = useMemo(() => (filterOn ? realAll.filter((t) => chosen.includes(strategyNameOf(t, 'real'))) : realAll), [realAll, filterOn, chosen]);
+  const paper = useMemo(() => (filterOn ? paperAll.filter((t) => chosen.includes(strategyNameOf(t, 'paper'))) : paperAll), [paperAll, filterOn, chosen]);
+
+  // Ключ текущего периода: блок «Сейчас в рынке» показывается только в нём.
+  const currentKey = type === 'year' ? String(new Date().getFullYear()) : monthKey(new Date());
 
   const periods = useMemo(() => listPeriods(real, paper, type, legPnl), [real, paper, type]);
   // По умолчанию — самый свежий период, где что-то закрывалось: пустая страница в первые дни
@@ -81,12 +94,13 @@ export default function MonthlyReport() {
     [paper, real, type, key]);
 
   // Общий риск открытых позиций — на сейчас, а не за период: он про то, что в рынке прямо сейчас.
+  // (не фильтруется по стратегиям: баланс счёта и общий риск считаются по всем сделкам)
   const openRisk = useMemo(() => buildOpenRisk({
-    trades: real, paper,
-    deposit: computeLiveBalance(real, userProfile?.depositSize, userProfile?.depositSetAt),
+    trades: realAll, paper: paperAll,
+    deposit: computeLiveBalance(realAll, userProfile?.depositSize, userProfile?.depositSetAt),
     dailyLossLimitPct: Number(userProfile?.dailyLossLimit) || null,
     maxRiskPerTradePct: Number(userProfile?.maxRiskPerTrade) || null,
-  }), [real, paper, userProfile]);
+  }), [realAll, paperAll, userProfile]);
 
   const entryStats = useMemo(() => {
     if (!rep || scope === 'paper') return null;
@@ -117,12 +131,9 @@ export default function MonthlyReport() {
           <button className={type === 'month' ? 'on' : ''} onClick={() => { setType('month'); setPickedKey(null); }}>Месяц</button>
           <button className={type === 'year' ? 'on' : ''} onClick={() => { setType('year'); setPickedKey(null); }}>Год</button>
         </div>
-        <select className="input mr-month" value={key || ''} onChange={(e) => setPickedKey(e.target.value)} disabled={!periods.length}>
-          {periods.length ? periods.map((p) => <option key={p.key} value={p.key}>{p.label}</option>) : <option>нет данных</option>}
-        </select>
+        <PeriodSwitcher periods={periods} value={key} onChange={setPickedKey} type={type} />
+        <StrategyFilter names={strategyNames} selected={chosen} onChange={setPickedStrategies} />
       </div>
-
-      <OpenRiskCard risk={openRisk} />
 
       {!rep || rep.empty ? (
         <div className="card">
@@ -149,38 +160,25 @@ export default function MonthlyReport() {
             <EquityChart curve={rep.curve} prev={rep.prevCurve} type={type} />
           </div>
 
-          <div className="mr-two">
+          {/* Одна стратегия (в т.ч. выбранная фильтром) — карточка «Стратегии» ничего не добавляет к показателям выше,
+              поэтому «Я против системы» занимает всю ширину, а не оставляет пустое место рядом */}
+          <div className={`mr-two mr-two-stretch ${rep.byStrategy.length <= 1 ? 'mr-one' : ''}`}>
             <VersusCard rep={rep} />
-            <StrategyCard rep={rep} />
+            {rep.byStrategy.length > 1 && <StrategyCard rep={rep} />}
           </div>
 
           <ComparisonCard cmp={comparison} label={rep.label} />
 
           <DecisionCard j={journal} label={rep.label} />
 
-          <div className="mr-two">
-            <div className="card mr-block">
-              <div className="section-title">По инструментам</div>
-              <div className="table-wrapper">
-                <table className="table table-compact">
-                  <thead><tr><th>Тикер</th><th>Сделок</th><th>Прибыльных</th><th style={{ textAlign: 'right' }}>Итог</th></tr></thead>
-                  <tbody>
-                    {rep.byInstrument.slice(0, 10).map((i) => (
-                      <tr key={i.label}>
-                        <td style={{ fontWeight: 600 }}>{i.label}</td><td>{i.count || '—'}</td><td>{i.count ? `${Math.round(i.winrate)}%` : '—'}</td>
-                        <td className={`mr-num ${sgn(i.pnl)}`}>{money(i.pnl)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {rep.byInstrument.length > 10 && <div className="mr-note">Показаны 10 из {rep.byInstrument.length}.</div>}
-            </div>
-            <div className="mr-two-col">
-              <TradeCard title="Лучшая сделка" item={rep.stats.best} />
-              <TradeCard title="Худшая сделка" item={rep.stats.worst} />
-            </div>
+          {/* Лучшая и худшая сделка — в ряд, «По инструментам» — на всю ширину: так внизу нет пустых мест */}
+          <div className="mr-extremes">
+            <TradeCard title="Лучшая сделка" item={rep.stats.best} />
+            <TradeCard title="Худшая сделка" item={rep.stats.worst} />
           </div>
+
+          <InstrumentsCard rows={rep.byInstrument} />
+
 
           {entryStats && entryStats.groups.length > 0 && (
             <div className="card mr-block">
@@ -234,6 +232,9 @@ export default function MonthlyReport() {
           )}
         </>
       )}
+
+      {/* «Сейчас в рынке» — про сегодня, а не про прошлый период: только в отчёте за текущий месяц/год, внизу */}
+      {key === currentKey && <OpenRiskCard risk={openRisk} />}
     </div>
   );
 }
@@ -241,11 +242,11 @@ export default function MonthlyReport() {
 // ---------- общий риск открытых позиций ----------
 function OpenRiskCard({ risk }) {
   const t = risk.total;
-  if (!t.count && !risk.paper.count) return null;
+  if (!t.count) return null;
   const pct = (v) => (v == null ? '—' : `${v.toFixed(1)}%`);
   return (
     <div className="card mr-block mr-risk">
-      <div className="section-title">Риск открытых позиций сейчас</div>
+      <div className="section-title">Сейчас в рынке: риск открытых позиций</div>
       {t.count > 0 ? (
         <>
           <div className="mr-risk-top">
@@ -279,9 +280,6 @@ function OpenRiskCard({ risk }) {
       ) : (
         <p className="mr-note" style={{ marginTop: 0 }}>Реальных открытых позиций нет.</p>
       )}
-      {risk.paper.count > 0 && (
-        <p className="mr-note">Бумажных открыто {risk.paper.count}: условный риск {formatCurrency(Math.round(risk.paper.riskRub))} — в реальный риск не входит.</p>
-      )}
     </div>
   );
 }
@@ -297,8 +295,7 @@ function DecisionCard({ j, label }) {
         <>
           <p className="mr-note" style={{ marginTop: 0 }}>
             Сигналов за {label.toLowerCase()}: <b>{j.signals}</b>. Отмечено вами или по данным Т-Банка: <b>{j.marked}</b>
-            {j.unmarkedSignals > 0 && <>, без отметки: <b>{j.unmarkedSignals}</b></>}
-            {j.waiting > 0 && <> · сейчас ждут решения: <b>{j.waiting}</b></>}.
+            {j.unmarkedSignals > 0 && <>, без отметки: <b>{j.unmarkedSignals}</b></>}.
           </p>
           <table className="table table-compact">
             <thead><tr><th>Что вы сделали</th><th>Закрытых сигналов</th><th>Итог системы по ним</th><th>В среднем</th></tr></thead>
@@ -371,7 +368,7 @@ function ComparisonCard({ cmp, label }) {
               <tr key={r.key}>
                 <td>
                   <div style={{ fontWeight: 600 }}>{r.name}</div>
-                  <div className="mr-cmp-cap">{r.caption || 'горизонт не задан'}{r.openNow ? ` · в рынке ${r.openNow}` : ''}</div>
+                  <div className="mr-cmp-cap">{r.caption || 'горизонт не задан'}</div>
                 </td>
                 <td>{r.signals}</td>
                 <td>{r.stats.total}</td>
@@ -576,7 +573,13 @@ function StrategyCard({ rep }) {
               <span className={`mr-num ${sgn(r.pnl)}`}>{money(r.pnl)}</span>
             </div>
             <div className="mr-strat-bar"><i className={sgn(r.pnl)} style={{ width: `${Math.max(3, (Math.abs(r.pnl) / maxAbs) * 100)}%` }} /></div>
-            <div className="mr-strat-sub">{tradesWord(r.count)} · {Math.round(r.winrate)}% прибыльных · профит-фактор {pfText(r.profitFactor)} · средняя {money(r.avg)}</div>
+            {/* Четыре показателя плитками: карточка заполняет высоту соседней («Я против системы») даже при двух стратегиях */}
+            <div className="mr-strat-grid">
+              <div><span>Сделок</span><b>{r.count}</b></div>
+              <div><span>Прибыльных</span><b>{Math.round(r.winrate)}%</b></div>
+              <div><span>Профит-фактор</span><b>{pfText(r.profitFactor)}</b></div>
+              <div><span>Средняя</span><b className={sgn(r.avg)}>{money(r.avg)}</b></div>
+            </div>
           </div>
         ))}
       </div>
@@ -609,10 +612,11 @@ function Discipline({ d }) {
 }
 
 function TradeCard({ title, item }) {
-  if (!item) return <div className="card mr-block"><div className="section-title">{title}</div><p className="mr-note" style={{ marginTop: 0 }}>Нет данных.</p></div>;
+  if (!item) return <div className="card mr-block"><div className="section-title">{title}</div><p className="mr-note" style={{ marginTop: 0 }}>Нужно хотя бы две закрытые сделки за период.</p></div>;
   const t = item.raw || {};
+  const closed = item.closed instanceof Date ? item.closed.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) : null;
   return (
-    <div className="card mr-block">
+    <div className="card mr-block mr-tradecard">
       <div className="section-title">{title}</div>
       <div className="mr-trade">
         <div>
@@ -620,9 +624,38 @@ function TradeCard({ title, item }) {
           <div className="mr-note" style={{ margin: 0 }}>
             {item.direction === 'short' ? 'Шорт' : 'Лонг'}{t.entryPrice ? ` · вход ${px(t.entryPrice)}` : ''}{t.exitPrice ? ` → выход ${px(t.exitPrice)}` : ''}
           </div>
+          <div className="mr-trade-meta">{[item.strategy, closed ? `закрыта ${closed}` : null].filter(Boolean).join(' · ')}</div>
         </div>
         <div className={`mr-trade-pnl mr-num ${sgn(item.pnl)}`}>{money(item.pnl)}</div>
       </div>
+    </div>
+  );
+}
+
+// «По инструментам» — на всю ширину: сколько сделок, доля прибыльных, итог и полоска вклада в результат.
+function InstrumentsCard({ rows }) {
+  const shown = rows.slice(0, 12);
+  const maxAbs = Math.max(1, ...shown.map((i) => Math.abs(i.pnl)));
+  return (
+    <div className="card mr-block">
+      <div className="section-title">По инструментам</div>
+      <div className="table-wrapper">
+        <table className="table table-compact mr-instruments">
+          <thead><tr><th>Тикер</th><th>Сделок</th><th>Прибыльных</th><th>Вклад в результат</th><th style={{ textAlign: 'right' }}>Итог</th></tr></thead>
+          <tbody>
+            {shown.map((i) => (
+              <tr key={i.label}>
+                <td style={{ fontWeight: 600 }}>{i.label}</td>
+                <td>{i.count || '—'}</td>
+                <td>{i.count ? `${Math.round(i.winrate)}%` : '—'}</td>
+                <td className="mr-ibar-cell"><div className="mr-ibar"><i className={sgn(i.pnl)} style={{ width: `${Math.max(2, (Math.abs(i.pnl) / maxAbs) * 100)}%` }} /></div></td>
+                <td className={`mr-num ${sgn(i.pnl)}`}>{money(i.pnl)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rows.length > shown.length && <div className="mr-note">Показаны {shown.length} из {rows.length}.</div>}
     </div>
   );
 }

@@ -119,7 +119,10 @@ export function buildStrategyComparison({ items = [], paperTrades = [], realTrad
       capture: capN >= MIN_CAPTURE_SAMPLE && sumMfe > 0 ? { ratio: sumGot / sumMfe, n: capN } : null,
       tickers: [...r._tickers.values()],
     };
-  }).filter((r) => r.stats.total > 0 || r.signals > 0 || r.openNow > 0)
+  // Строку держат только закрытые сделки или сигналы ПЕРИОДА. «Сейчас в рынке» в отчёт за период не
+  // входит: это про сегодня, а отчёт — про то, что было (пустая строка из-за открытой сделки другого периода
+  // только путала).
+  }).filter((r) => r.stats.total > 0 || r.signals > 0)
     .sort((a, b) => b.stats.pnl - a.stats.pnl);
 
   // классы: одинаковые горизонт + таймфрейм

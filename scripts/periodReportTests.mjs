@@ -1,5 +1,5 @@
 // Проверка отчёта за период (npm run test:period). Сеть и база не нужны.
-import { buildPeriodReport, listPeriods, prevPeriodKey, statsOf, normalize } from '../src/services/analytics/periodReport.js';
+import { buildPeriodReport, listPeriods, prevPeriodKey, statsOf, normalize, listStrategyNames, strategyNameOf } from '../src/services/analytics/periodReport.js';
 let fails = 0;
 const ok = (n, c) => { console.log(`${c ? '✓' : '✗'} ${n}`); if (!c) fails++; };
 const real = (pnl, closedAt, o = {}) => ({ status: 'closed', pnl, closedAt, ticker: 'SBER', direction: 'long', ...o });
@@ -48,6 +48,18 @@ ok('прошлый год — 2025, пусто, без дельты по вин�
 ok('список периодов: октябрь, затем сентябрь', listPeriods(realTrades, paperTrades, 'month').map((x) => x.key).join() === '2026-10,2026-09');
 ok('список лет', listPeriods(realTrades, paperTrades, 'year').map((x) => x.key).join() === '2026');
 ok('январь → декабрь прошлого года', prevPeriodKey('month', '2026-01') === '2025-12');
-ok('пустой период не падает', buildPeriodReport({ realTrades: [], paperTrades: [], scope: 'all', type: 'month', key: '2026-10' }).empty === true && statsOf([]).total === 0);
+// Фильтр по стратегиям: названия и счёт сделок за всё время.
+ok('название стратегии: реальная без названия — «Вручную», бумажная — «Без названия»', strategyNameOf({}, 'real') === 'Вручную' && strategyNameOf({}, 'paper') === 'Без названия');
+ok('название стратегии: берётся entryStrategyName, у реальных запасной strategyName', strategyNameOf({ entryStrategyName: 'А' }, 'real') === 'А' && strategyNameOf({ strategyName: 'Б' }, 'real') === 'Б');
+const names = listStrategyNames(realTrades, paperTrades, 'all');
+ok('стратегии «всё вместе»: Вручную (5), А (2), Б (1) — по убыванию числа сделок', names.map((n) => `${n.name}:${n.count}`).join() === 'Вручную:5,А:2,Б:1');
+ok('стратегии только бумажных: А и Б', listStrategyNames(realTrades, paperTrades, 'paper').map((n) => n.name).join() === 'А,Б');
+// Отчёт по одной стратегии: те же функции, на отфильтрованных сделках.
+const onlyA = paperTrades.filter((t) => strategyNameOf(t, 'paper') === 'А');
+const ra = buildPeriodReport({ realTrades: [], paperTrades: onlyA, scope: 'paper', type: 'month', key: '2026-10' });
+ok('отчёт только по стратегии А: 2 закрытые, +150, одна строка в «Стратегиях»', ra.stats.total === 2 && ra.stats.pnl === 150 && ra.byStrategy.length === 1);
+ok('открытая бумажная сделка в отчёт не попала («плавающего» результата нет)', ra.items.every((x) => x.raw.status === 'closed'));
+
+ok('пустой период не падает',buildPeriodReport({ realTrades: [], paperTrades: [], scope: 'all', type: 'month', key: '2026-10' }).empty === true && statsOf([]).total === 0);
 if (fails) { console.log(`\nПровалено: ${fails}`); process.exit(1); }
 console.log('\nВсе проверки отчёта за период прошли ✓');

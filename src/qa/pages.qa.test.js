@@ -134,6 +134,22 @@ run('страницы для просмотра глазами', () => {
         const html = `<!doctype html><html lang="ru" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${name}</title><style>${css}</style></head><body>${document.body.innerHTML}</body></html>`;
         fs.writeFileSync(path.join(OUT, `${name}-${theme}.html`), html, 'utf8');
         fs.writeFileSync(path.join(OUT, `${name}-${theme}.errors.txt`), errors.join('\n---\n'), 'utf8');
+        // Отчёт: ещё два снимка — с открытым окном выбора месяца и с выбранной одной стратегией.
+        if (name === 'report') {
+          const snap = (suffix) => fs.writeFileSync(path.join(OUT, `${name}-${suffix}-${theme}.html`),
+            `<!doctype html><html lang="ru" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${name}</title><style>${css}</style></head><body>${document.body.innerHTML}</body></html>`, 'utf8');
+          const label = host.querySelector('.mr-period-label');
+          if (label) {
+            await act(async () => { label.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+            snap('popover');
+            await act(async () => { label.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+          }
+          const chip = [...host.querySelectorAll('.mr-chip')].find((c) => c.textContent.startsWith('Пробой'));
+          if (chip) {
+            await act(async () => { chip.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+            snap('filtered');
+          }
+        }
         console.error = origErr;
         act(() => root.unmount());
       }, 30000);
