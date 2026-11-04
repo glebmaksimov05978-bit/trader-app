@@ -99,6 +99,7 @@ run('страницы для просмотра глазами', () => {
     cockpit: ['/cockpit', require('../components/cockpit/Cockpit').default],
     calculator: ['/calculator', require('../components/calculator/Calculator').default],
     settings: ['/settings', require('../components/settings/Settings').default],
+    backtest: ['/backtest', require('../components/backtest/Backtest').default],
   };
   const css = allCss();
   fs.mkdirSync(OUT, { recursive: true });

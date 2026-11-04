@@ -63,7 +63,7 @@ export default function Backtest() {
   // М5/М15 — только с привязанным токеном Т-Инвестиций (см. availableTimeframes).
   const [timeframe, setTimeframe] = useState(cache.timeframe ?? DEFAULT_TIMEFRAME);
   // Strongest, most universal finding of the 2026-08-13/17 session (see
-  // HANDOFF_NEXT_SESSION.md): block new LONG entries while the index (IMOEXF, D1) is
+  // ПАСПОРТ_АЛГОРИТМИЧЕСКИХ_СТРАТЕГИЙ_И_ИСТОРИЯ_РАБОТЫ.md (раздел АРХИВ)): block new LONG entries while the index (IMOEXF, D1) is
   // itself below its own SMA50. Validated across 3 unrelated strategies, not just the
   // pattern one — improved every single one. Off by default (opt-in, changes trade count
   // a lot, every saved strategy was tuned without it) — same convention as trailEnabled.
@@ -413,9 +413,9 @@ export default function Backtest() {
     <div className="page">
       <div className="page-header">
         <div>
-          <h1 className="page-title">Бэктест (внутренний инструмент)</h1>
+          <h1 className="page-title">Бэктест</h1>
           <p className="page-subtitle">
-            Прогон сохранённой стратегии по реальной истории. Видно только тебе — цифры ещё калибруются, для клиентов пока не показываем.
+            Проверка вашей стратегии на реальной истории: что было бы, если бы вы торговали по ней раньше. Доступно только вам — расчёты ещё калибруются.
           </p>
         </div>
       </div>
@@ -423,6 +423,11 @@ export default function Backtest() {
       <div className="card" style={{marginBottom:16}}>
         <div className="section-title"><div className="section-title-icon"><Icon name="settings" size={15} /></div>Параметры прогона</div>
 
+        <div style={{display:'flex', alignItems:'baseline', gap:8, margin:'18px 0 10px'}}>
+          <span style={{fontSize:12, fontWeight:700, color:'var(--accent-primary)'}}>Шаг 1</span>
+          <span style={{fontSize:14, fontWeight:700}}>Что проверяем</span>
+          <span style={{fontSize:12, color:'var(--text-muted)'}}>стратегия, инструмент, глубина истории</span>
+        </div>
         <div className="input-group" style={{maxWidth:320, marginBottom:12}}>
           <label className="input-label">Стратегия</label>
           <select className="input" value={selectedStrategyId} onChange={(e) => setSelectedStrategyId(e.target.value)}>
@@ -483,47 +488,12 @@ export default function Backtest() {
           </p>
         )}
 
-        {/* Strongest, most universal finding of the session (HANDOFF_NEXT_SESSION.md,
-            2026-08-13/17): blocking longs while the index is itself below its own SMA50
-            improved every strategy tested, not just this one's pattern logic. Placed above
-            the exit-rule editor since it's an ENTRY filter, not an exit rule — belongs with
-            instrument/timeframe choice, not alongside stop/take/trail. */}
-        <div style={{padding:'10px 14px', borderRadius:10, background:'var(--bg-surface-2)', border:'1px solid var(--border-subtle)', marginBottom:16}}>
-          <label className="flex gap-2" style={{alignItems:'center', fontSize:13, cursor:'pointer', fontWeight:600}}>
-            <input type="checkbox" checked={marketRegimeFilterEnabled}
-              onChange={(e) => setMarketRegimeFilterEnabled(e.target.checked)} />
-            Фильтр рынка (не лонговать, когда индекс ниже своей SMA50)
-          </label>
-          <div className="input-hint" style={{marginTop:4}}>Самое сильное улучшение сессии, шортов не касается.</div>
+        <div style={{borderTop:'1px solid var(--border-subtle)'}} />
+        <div style={{display:'flex', alignItems:'baseline', gap:8, margin:'18px 0 10px'}}>
+          <span style={{fontSize:12, fontWeight:700, color:'var(--accent-primary)'}}>Шаг 2</span>
+          <span style={{fontSize:14, fontWeight:700}}>Как считать результат</span>
+          <span style={{fontSize:12, color:'var(--text-muted)'}}>в процентах или в рублях с учётом риска и ГО</span>
         </div>
-
-        <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:8}}>
-          Правила выхода — подставлены из выбранной стратегии, можно временно подкрутить для этого прогона (в Капитале не сохранится)
-        </div>
-        <div style={{marginBottom:16}}>
-          <ExitRulesEditor value={exitRules} onChange={setExitRules} maxBarsEnabled={maxBarsEnabled} onMaxBarsEnabledChange={handleMaxBarsEnabledChange} barUnitLabel={barUnitLabel(TIMEFRAMES[timeframe].minutes)} />
-        </div>
-
-        <div className="flex gap-2" style={{marginBottom:16, alignItems:'center', flexWrap:'wrap'}}>
-          <label className="flex gap-2" style={{alignItems:'center', fontSize:13, cursor:'pointer'}}>
-            <input type="checkbox" checked={holdoutEnabled} onChange={(e) => setHoldoutEnabled(e.target.checked)} />
-            Отложить конец истории для честной проверки (не подглядывать при настройке)
-          </label>
-          {holdoutEnabled && (
-            <>
-              <NumberInput className="input" min="5" max="50" step="5" value={holdoutPct}
-                onChange={(v) => setHoldoutPct(Math.round(v))} style={{width:70}} />
-              <span style={{fontSize:12, color:'var(--text-muted)'}}>% истории — отложенный кусок в конце</span>
-            </>
-          )}
-        </div>
-        {holdoutEnabled && (
-          <p className="text-xs text-muted" style={{marginTop:-10, marginBottom:16}}>
-            Крути параметры сколько угодно, глядя только на «Тренировочный период» ниже. «Отложенный период» смотри
-            в последнюю очередь и только один раз — если стратегия там тоже в плюсе, доверия к ней сильно больше.
-          </p>
-        )}
-
         {/* Real user report: the old checkbox wording ("Реальный риск-менеджмент вместо
             100% реинвестирования") was confusing enough that the trader couldn't tell
             what it actually meant. Two clearly-named buttons instead — same pattern
@@ -606,6 +576,55 @@ export default function Backtest() {
           </div>
         )}
 
+        <details style={{marginBottom:16, borderTop:'1px solid var(--border-subtle)', paddingTop:14}} open={marketRegimeFilterEnabled || holdoutEnabled}>
+          <summary style={{cursor:'pointer', fontSize:14, fontWeight:700, listStyle:'none'}}>
+            <span style={{fontSize:12, fontWeight:700, color:'var(--accent-primary)', marginRight:8}}>Шаг 3</span>
+            Дополнительно <span style={{fontSize:12, fontWeight:400, color:'var(--text-muted)'}}>— необязательно: фильтр рынка, правила выхода, проверка на отложенной истории</span>
+          </summary>
+          <div style={{marginTop:14}}>
+        {/* Strongest, most universal finding of the session (ПАСПОРТ_АЛГОРИТМИЧЕСКИХ_СТРАТЕГИЙ_И_ИСТОРИЯ_РАБОТЫ.md (раздел АРХИВ),
+            2026-08-13/17): blocking longs while the index is itself below its own SMA50
+            improved every strategy tested, not just this one's pattern logic. Placed above
+            the exit-rule editor since it's an ENTRY filter, not an exit rule — belongs with
+            instrument/timeframe choice, not alongside stop/take/trail. */}
+        <div style={{padding:'10px 14px', borderRadius:10, background:'var(--bg-surface-2)', border:'1px solid var(--border-subtle)', marginBottom:16}}>
+          <label className="flex gap-2" style={{alignItems:'center', fontSize:13, cursor:'pointer', fontWeight:600}}>
+            <input type="checkbox" checked={marketRegimeFilterEnabled}
+              onChange={(e) => setMarketRegimeFilterEnabled(e.target.checked)} />
+            Фильтр рынка (не лонговать, когда индекс ниже своей SMA50)
+          </label>
+          <div className="input-hint" style={{marginTop:4}}>Самое сильное улучшение сессии, шортов не касается.</div>
+        </div>
+
+        <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:8}}>
+          Правила выхода — подставлены из выбранной стратегии, можно временно подкрутить для этого прогона (в Капитале не сохранится)
+        </div>
+        <div style={{marginBottom:16}}>
+          <ExitRulesEditor value={exitRules} onChange={setExitRules} maxBarsEnabled={maxBarsEnabled} onMaxBarsEnabledChange={handleMaxBarsEnabledChange} barUnitLabel={barUnitLabel(TIMEFRAMES[timeframe].minutes)} />
+        </div>
+
+        <div className="flex gap-2" style={{marginBottom:16, alignItems:'center', flexWrap:'wrap'}}>
+          <label className="flex gap-2" style={{alignItems:'center', fontSize:13, cursor:'pointer'}}>
+            <input type="checkbox" checked={holdoutEnabled} onChange={(e) => setHoldoutEnabled(e.target.checked)} />
+            Отложить конец истории для честной проверки (не подглядывать при настройке)
+          </label>
+          {holdoutEnabled && (
+            <>
+              <NumberInput className="input" min="5" max="50" step="5" value={holdoutPct}
+                onChange={(v) => setHoldoutPct(Math.round(v))} style={{width:70}} />
+              <span style={{fontSize:12, color:'var(--text-muted)'}}>% истории — отложенный кусок в конце</span>
+            </>
+          )}
+        </div>
+        {holdoutEnabled && (
+          <p className="text-xs text-muted" style={{marginTop:-10, marginBottom:16}}>
+            Крути параметры сколько угодно, глядя только на «Тренировочный период» ниже. «Отложенный период» смотри
+            в последнюю очередь и только один раз — если стратегия там тоже в плюсе, доверия к ней сильно больше.
+          </p>
+        )}
+
+          </div>
+        </details>
         <button className="btn btn-primary" onClick={run} disabled={loading}>
           {loading ? <span className="spinner" style={{width:14,height:14}}/> : '▶'} Запустить бэктест
         </button>
