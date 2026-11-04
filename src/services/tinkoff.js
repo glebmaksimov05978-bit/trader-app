@@ -181,6 +181,25 @@ export class TinkoffAPI {
     return (data.positions || []).map(parsePortfolioPosition);
   }
 
+  // Страница истории операций по счёту (для автоимпорта сделок): курсорная выгрузка, до 1000 операций за раз.
+  // Только чтение. Возвращает { items, hasNext, nextCursor }. Список типов сужает выдачу до сделок.
+  async getOperationsPage({ accountId, from, to, cursor = '', operationTypes = [], limit = 1000 }) {
+    const body = {
+      accountId,
+      from: (from instanceof Date ? from : new Date(from)).toISOString(),
+      to: (to instanceof Date ? to : new Date(to ?? Date.now())).toISOString(),
+      limit,
+      state: 'OPERATION_STATE_EXECUTED',
+      withoutCommissions: false,
+      withoutTrades: false,
+      withoutOvernights: true,
+    };
+    if (cursor) body.cursor = cursor;
+    if (operationTypes.length) body.operationTypes = operationTypes;
+    const data = await this.request('/tinkoff.public.invest.api.contract.v1.OperationsService/GetOperationsByCursor', body);
+    return { items: data.items || [], hasNext: !!data.hasNext, nextCursor: data.nextCursor || '' };
+  }
+
   // Исполненные операции за период. `figi` не обязателен — без него приходят все
   // инструменты, что и нужно, когда сопоставляем сразу несколько открытых сделок.
   // Пагинация у GetOperations отсутствует, ответ ограничен периодом — поэтому запрашиваем
