@@ -3,44 +3,75 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Users collection
+    // Профиль пользователя: читать и менять свой может каждый, НО поле role (admin/pro/free)
+    // сам себе менять нельзя — иначе любой зарегистрированный сделал бы себя админом и
+    // читал бы чужие профили и сделки (дыра найдена 2026-11-02). Роль выставляет только админ
+    // (панель «Админ») или приложение при первом входе (free).
+    function isAdmin() {
+      return request.auth != null &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+    function ordinaryRole(role) {
+      return role == null || role == 'free' || role == 'user';
+    }
+
     match /users/{userId} {
-      // Users can read/write their own profile
-      allow read, write: if request.auth != null && request.auth.uid == userId;
-      // Admins can read all profiles
-      allow read: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-      // Admins can write any profile
-      allow write: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow read: if isOwner(userId) || isAdmin();
+
+      // Новый профиль — только с обычной ролью (или без неё).
+      allow create: if isOwner(userId) && ordinaryRole(request.resource.data.get('role', null));
+
+      // Свой профиль: роль остаётся прежней; если роли не было вовсе — можно проставить обычную.
+      allow update: if isOwner(userId) && (
+        request.resource.data.get('role', null) == resource.data.get('role', null) ||
+        (resource.data.get('role', null) == null && ordinaryRole(request.resource.data.get('role', null)))
+      );
+
+      allow delete: if isOwner(userId);
+
+      // Админ может всё (создавать, менять роли, удалять).
+      allow write: if isAdmin();
+    }
+
+    // Общее правило для личных коллекций (сделки, радар, артефакты импорта, бумажные сделки): документ
+    // принадлежит тому, чей uid в поле uid. Читать, менять и удалять его может только владелец; создать —
+    // только на своё имя; при изменении поле uid ПОМЕНЯТЬ нельзя. Раньше менять было можно: пользователь мог
+    // «подарить» свой документ чужому uid и засорить чужой журнал или радар (проверено разбором правил 2026-11-04).
+    function ownsExisting() {
+      return request.auth != null && request.auth.uid == resource.data.uid;
+    }
+    function createsOwn() {
+      return request.auth != null && request.auth.uid == request.resource.data.uid;
+    }
+    function keepsOwner() {
+      return request.resource.data.uid == resource.data.uid;
     }
 
     // Trades collection
     match /trades/{tradeId} {
-      // Users can CRUD their own trades
-      allow read, write: if request.auth != null &&
-        request.auth.uid == resource.data.uid;
-      allow create: if request.auth != null &&
-        request.auth.uid == request.resource.data.uid;
-      // Admins can read all trades
-      allow read: if request.auth != null &&
-        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow read: if ownsExisting() || isAdmin(); // админ читает все сделки
+      allow create: if createsOwn();
+      allow update: if ownsExisting() && keepsOwner();
+      allow delete: if ownsExisting();
     }
 
     // Import artifacts: unmatched closings / REPO legs kept for a future "rebuild journal" feature
     match /importArtifacts/{artifactId} {
-      allow read, write: if request.auth != null &&
-        request.auth.uid == resource.data.uid;
-      allow create: if request.auth != null &&
-        request.auth.uid == request.resource.data.uid;
+      allow read: if ownsExisting();
+      allow create: if createsOwn();
+      allow update: if ownsExisting() && keepsOwner();
+      allow delete: if ownsExisting();
     }
 
     // Radar: watchlist of tickers with a setup forming, before they become real trades
     match /radarItems/{itemId} {
-      allow read, write: if request.auth != null &&
-        request.auth.uid == resource.data.uid;
-      allow create: if request.auth != null &&
-        request.auth.uid == request.resource.data.uid;
+      allow read: if ownsExisting();
+      allow create: if createsOwn();
+      allow update: if ownsExisting() && keepsOwner();
+      allow delete: if ownsExisting();
     }
 
     // Бумажные сделки: их открывает и ведёт фоновый робот по радару, реальных денег они
@@ -51,20 +82,26 @@ service cloud.firestore {
     // Робот ходит через firebase-admin и правила обходит по определению — эти правила
     // защищают браузер: один пользователь не должен видеть чужие бумажные сделки.
     match /paperTrades/{tradeId} {
-      allow read, write: if request.auth != null &&
-        request.auth.uid == resource.data.uid;
-      allow create: if request.auth != null &&
-        request.auth.uid == request.resource.data.uid;
+      allow read: if ownsExisting();
+      allow create: if createsOwn();
+      allow update: if ownsExisting() && keepsOwner();
+      allow delete: if ownsExisting();
     }
 
     // Логотипы инструментов с серверов Т-Банка — открытая справочная картинка (какой
     // логотип у SBER), не личные данные ни одного трейдера. Общая коллекция на всех:
     // логотип, узнанный одним пользователем, сразу доступен остальным без повторного
-    // похода в Т-Банк. Читать/писать может любой вошедший — писать сюда, по сути, значит
-    // только «я только что увидел этот логотип у Т-Банка», подделка не даёт злоумышленнику
-    // ничего, кроме неверной картинки у чужого тикера.
+    // похода в Т-Банк. Читать может любой вошедший. Писать — тоже, но только имя файла логотипа
+    // (латиница, цифры, _ - .), без «..», слэшей и знаков адреса: имя подставляется в ссылку на
+    // картинку, и без этого можно было подсунуть чужой путь на сервере логотипов. Удалять нельзя.
     match /instrumentLogos/{key} {
-      allow read, write: if request.auth != null;
+      allow read: if request.auth != null;
+      allow create, update: if request.auth != null
+        && request.resource.data.keys().hasOnly(['logoName', 'updatedAt'])
+        && request.resource.data.logoName is string
+        && request.resource.data.logoName.matches('^[A-Za-z0-9_.-]{1,80}$')
+        && !request.resource.data.logoName.matches('.*[.][.].*');
+      allow delete: if false;
     }
   }
 }
