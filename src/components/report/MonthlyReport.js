@@ -18,6 +18,8 @@ import { buildMonthlyReport, reportVerdict } from '../../services/analytics/mont
 import { buildPeriodReport, listPeriods, listStrategyNames, strategyNameOf, monthKey, SCOPES } from '../../services/analytics/periodReport';
 import { buildEntryStats } from '../../services/analytics/entryStats';
 import { PeriodSwitcher, StrategyFilter } from './ReportControls';
+import ReportExportModal from './ReportExportModal';
+import { computeHabitsFor } from '../../services/analytics/insightsEngine';
 import { formatCurrency, formatPercent, tradesWord } from '../../utils/money';
 import { computeClosePnl } from '../../services/tradeClose';
 import { MIN_SAMPLE } from '../../services/analytics/insightsEngine';
@@ -41,6 +43,7 @@ export default function MonthlyReport() {
   const [type, setType] = useState('month');
   const [pickedKey, setPickedKey] = useState(null);
   const [pickedStrategies, setPickedStrategies] = useState([]); // пусто = все стратегии
+  const [exportOpen, setExportOpen] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -117,9 +120,18 @@ export default function MonthlyReport() {
           <p className="page-subtitle">Как идёт торговля — относительно прошлого периода, системы и стратегий</p>
         </div>
         <div className="mr-header-actions">
+          <button className="btn btn-primary" onClick={() => setExportOpen(true)} data-tour="report-export">Выгрузить отчёт</button>
           <button className="btn btn-ghost" onClick={() => window.print()}>Печать</button>
         </div>
       </div>
+      <ReportExportModal
+        open={exportOpen} onClose={() => setExportOpen(false)}
+        realTrades={realAll} paperTrades={paperAll} strategyList={strategyNames}
+        defaultScope={scope} defaultStrategies={chosen}
+        profile={{ ...(userProfile || {}), __activeExitRules: activeStrategy?.exitRules || null }}
+        legPnl={legPnl} habitsFn={computeHabitsFor} userName={userProfile?.displayName || user?.displayName || ''}
+        pageRange={key ? { type, key, label: rep?.label || key } : null}
+      />
 
       <div className="mr-controls">
         <div className="mr-seg" role="tablist" aria-label="Срез">

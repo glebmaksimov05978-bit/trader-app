@@ -1,0 +1,38 @@
+/* src/components/report/ReportExport.css — окно «Выгрузить отчёт». Сдержанно: матовые поверхности, один акцент. */
+.rx-overlay { position: fixed; inset: 0; z-index: 1200; background: rgba(8, 12, 24, 0.62); display: flex; align-items: center; justify-content: center; padding: 16px; backdrop-filter: blur(2px); }
+.rx-modal { width: min(680px, 100%); max-height: calc(100vh - 32px); display: flex; flex-direction: column; background: var(--bg-surface); border: 1px solid var(--border-medium); border-radius: var(--radius); box-shadow: var(--shadow-pop); overflow: hidden; }
+.rx-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 20px 12px; border-bottom: 1px solid var(--border-subtle); }
+.rx-head h2 { margin: 0; font-size: 18px; color: var(--text-primary); }
+.rx-head p { margin: 3px 0 0; font-size: 13px; color: var(--text-secondary); }
+.rx-x { background: transparent; border: none; color: var(--text-muted); cursor: pointer; padding: 6px; border-radius: 8px; }
+.rx-x:hover { background: var(--bg-surface-2); color: var(--text-primary); }
+.rx-body { padding: 14px 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 18px; }
+.rx-block h3 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); font-weight: 700; }
+.rx-dates { display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+.rx-dates label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-secondary); }
+.rx-note { margin: 8px 0 0; font-size: 12px; color: var(--text-muted); }
+.rx-error { margin: 8px 0 0; font-size: 12px; color: var(--red); }
+.rx-seg { display: inline-flex; background: var(--bg-surface-2); border-radius: var(--radius-sm); padding: 3px; gap: 2px; flex-wrap: wrap; }
+.rx-seg button { border: none; background: transparent; padding: 7px 14px; border-radius: 8px; font: inherit; font-size: 13px; color: var(--text-secondary); cursor: pointer; }
+.rx-seg button.on { background: var(--bg-surface-3); color: var(--text-primary); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); }
+.rx-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.rx-chip { padding: 5px 11px; font: inherit; font-size: 12px; color: var(--text-secondary); background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: 999px; cursor: pointer; }
+.rx-chip.on { background: var(--accent-primary); border-color: var(--accent-primary); color: #fff; }
+.rx-sections { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; }
+.rx-check { display: flex; gap: 9px; align-items: flex-start; cursor: pointer; font-size: 13px; color: var(--text-primary); }
+.rx-check input { margin-top: 3px; }
+.rx-check b { display: block; font-weight: 600; }
+.rx-check small { display: block; color: var(--text-muted); font-size: 11.5px; line-height: 1.35; }
+.rx-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 12px 20px 16px; border-top: 1px solid var(--border-subtle); background: var(--bg-surface-2); }
+.rx-summary { margin: 0; font-size: 13px; color: var(--text-secondary); flex: 1; min-width: 200px; }
+.rx-summary.warn { color: var(--gold); }
+.rx-actions { display: flex; gap: 8px; }
+.rx-actions .btn { display: inline-flex; align-items: center; gap: 6px; }
+
+@media (max-width: 640px) {
+  .rx-overlay { padding: 0; align-items: flex-end; }
+  .rx-modal { max-height: 94vh; border-radius: var(--radius) var(--radius) 0 0; }
+  .rx-sections { grid-template-columns: minmax(0, 1fr); }
+  .rx-actions { width: 100%; }
+  .rx-actions .btn { flex: 1; justify-content: center; }
+}

@@ -8,7 +8,7 @@
 //
 // Hard rule: a detector only yields a "confirmed" conclusion at n >= MIN_SAMPLE.
 // Below that it's tagged 'hypothesis' and must never be presented as settled fact.
-import { resolveOpenedAt, resolveClosedAt } from '../trades';
+import { resolveOpenedAt, resolveClosedAt } from '../tradeDates';
 
 export const MIN_SAMPLE = 25;
 

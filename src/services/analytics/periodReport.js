@@ -165,7 +165,7 @@ export function buildCurve(items, type, key) {
 }
 
 /** Группировка: по ключу → {label,count,wins,winrate,pnl,avg,profitFactor}. */
-function groupBy(items, keyFn) {
+export function groupBy(items, keyFn) {
   const map = new Map();
   for (const x of items) {
     const k = keyFn(x);

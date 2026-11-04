@@ -168,6 +168,11 @@ run('страницы для просмотра глазами', () => {
             await act(async () => { chip.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
             snap('filtered');
           }
+          const exportBtn = [...host.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Выгрузить отчёт');
+          if (exportBtn) {
+            await act(async () => { exportBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+            snap('export');
+          }
         }
         if (name === 'trainer') {
           const snap = (suffix) => fs.writeFileSync(path.join(OUT, `${name}-${suffix}-${theme}.html`),
