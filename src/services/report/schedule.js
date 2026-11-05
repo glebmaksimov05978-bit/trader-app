@@ -21,6 +21,28 @@ export const FREQUENCIES = [
   { id: 'once', label: 'Один раз' },
 ];
 
+// Куда можно присылать отчёт. Telegram работает всегда (чат робота); почта и MAX — когда в роботе заданы ключи (GitHub Secrets),
+// об этом робот сообщает приложению в профиле (reportDelivery), чтобы не обещать то, что не подключено.
+export const CHANNELS = [
+  { id: 'telegram', label: 'Telegram', hint: 'PDF-файлом в чат робота — туда же, где уведомления' },
+  { id: 'email', label: 'Почта', hint: 'PDF-файлом во вложении письма' },
+  { id: 'max', label: 'MAX', hint: 'PDF-файлом в личный чат с ботом в MAX' },
+];
+export const CHANNEL_IDS = CHANNELS.map((c) => c.id);
+export const channelLabel = (id) => CHANNELS.find((c) => c.id === id)?.label || id;
+/** «Отправить сейчас» живёт сутки: если за это время доставить не удалось, запрос считается устаревшим (иначе робот пытался бы вечно). */
+export const MANUAL_TTL_MS = 24 * 3600 * 1000;
+
+/** Один адрес электронной почты: без пробелов, переводов строк, запятых и точек с запятой (защита от «двух получателей» и вставки заголовков). */
+export function isValidEmail(v) {
+  return typeof v === 'string' && v.length <= 120 && /^[^\s@,;<>"'\\]+@[^\s@,;<>"'\\]+\.[^\s@,;<>"'\\.]{2,}$/.test(v);
+}
+
+/** Ждёт ли расписание запроса «Отправить сейчас» (свежий — не старше суток — и новее последней отправки). */
+export function manualPending(s, state, nowMs) {
+  return !!(s.sendNowAt && s.sendNowAt > (state?.lastSentAt || 0) && nowMs - s.sendNowAt < MANUAL_TTL_MS);
+}
+
 const pad = (n) => String(n).padStart(2, '0');
 const MONTHS_GEN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 
@@ -41,7 +63,7 @@ export function defaultSchedule(over = {}) {
     id: newId(), enabled: true, name: '',
     frequency: 'monthly', dayOfWeek: 0, dayOfMonth: 1, date: '', hour: 9,
     period: 'last_month', scope: 'real', strategies: [], sections: DEFAULT_SECTIONS.slice(),
-    channel: 'telegram', sendNowAt: null,
+    channels: ['telegram'], email: '', sendNowAt: null,
     ...over,
   };
 }
@@ -64,7 +86,11 @@ export function normalizeSchedule(raw) {
   const ids = SECTIONS.map((x) => x.id);
   const secs = Array.isArray(raw.sections) ? raw.sections.filter((x) => ids.includes(x)) : [];
   s.sections = secs.length ? secs : DEFAULT_SECTIONS.slice();
-  s.channel = 'telegram';
+  s.email = isValidEmail(typeof raw.email === 'string' ? raw.email.trim() : '') ? raw.email.trim() : '';
+  const ch = Array.isArray(raw.channels) ? raw.channels.filter((x, i, a) => CHANNEL_IDS.includes(x) && a.indexOf(x) === i) : [];
+  // почта без корректного адреса — не канал; ничего не выбрано (или старая запись без каналов) — как раньше, только Telegram
+  const okCh = ch.filter((x) => x !== 'email' || s.email);
+  s.channels = okCh.length ? okCh : ['telegram'];
   s.sendNowAt = Number.isFinite(raw.sendNowAt) ? raw.sendNowAt : null;
   if (s.frequency === 'once' && !s.date) return null; // разовая без даты — смысла нет
   return s;
@@ -92,7 +118,7 @@ function dueDay(s, p) {
 export function isScheduleDue(s, nowMs, state = {}) {
   if (!s.enabled) return { send: false, reason: 'выключено' };
   // «Отправить сейчас»: запрос новее последней отправки — слать на ближайшем проходе, расписание не нужно
-  if (s.sendNowAt && s.sendNowAt > (state.lastSentAt || 0)) return { send: true, reason: 'по запросу «Отправить сейчас»', manual: true };
+  if (manualPending(s, state, nowMs)) return { send: true, reason: 'по запросу «Отправить сейчас»', manual: true };
   const p = mskParts(nowMs);
   if (s.frequency === 'once' && state.lastSentOn) return { send: false, reason: 'разовая отправка уже состоялась' };
   if (!dueDay(s, p)) return { send: false, reason: 'сегодня не день отправки' };
@@ -104,7 +130,7 @@ export function isScheduleDue(s, nowMs, state = {}) {
 /** Ближайший момент отправки (мс) — для надписи «Следующая отправка». null: больше не будет (разовая уже прошла) или выключено. */
 export function nextRunAt(s, nowMs, state = {}) {
   if (!s.enabled) return null;
-  if (s.sendNowAt && s.sendNowAt > (state.lastSentAt || 0)) return nowMs;
+  if (manualPending(s, state, nowMs)) return nowMs;
   if (s.frequency === 'once' && state.lastSentOn) return null;
   const startDay = Math.floor((nowMs + MSK_MS) / 86400000); // номер московских суток
   for (let i = 0; i <= 400; i++) {
@@ -135,7 +161,9 @@ export function describeWhen(s) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s.date || '');
   return m ? `Один раз: ${Number(m[3])} ${MONTHS_GEN[Number(m[2]) - 1]} ${m[1]} в ${hhmm(s.hour)}` : 'Один раз (дата не выбрана)';
 }
-export const describeSchedule = (s) => `${describeWhen(s)} · за ${periodWords(s.period)}`;
+/** «Telegram, почта you@mail.ru» — куда уйдёт отчёт. */
+export const describeChannels = (s) => (s.channels || ['telegram']).map((id) => (id === 'email' && s.email ? `почта ${s.email}` : channelLabel(id))).join(', ');
+export const describeSchedule =(s) => `${describeWhen(s)} · за ${periodWords(s.period)}`;
 
 /** Замечание, если период не подходит к частоте (например, каждую неделю отчёт «за прошлый год»). */
 export function mismatchHint(s) {

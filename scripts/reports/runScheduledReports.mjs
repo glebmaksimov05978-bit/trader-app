@@ -1,9 +1,10 @@
 // scripts/reports/runScheduledReports.mjs
 //
 // Отчёты по расписанию: для каждого пользователя из ALERT_UIDS смотрит расписания (users/<uid>.reportSchedules), собирает PDF
-// за выбранный период и присылает файлом в Telegram. Запускается тем же заданием, что и остальные роботы (каждые 15 минут),
+// за выбранный период и присылает файлом (Telegram / почта / MAX). Запускается тем же заданием, что и остальные роботы (каждые 15 минут),
 // поэтому «пора слать» определяется самим скриптом (services/report/schedule.js), а отметка «сегодня уже слали» хранится в
-// профиле (users/<uid>.reportSendLog[id]) — три будильника отчёт не дублируют.
+// профиле (users/<uid>.reportSendLog[id]) — три будильника отчёт не дублируют. Куда слать, задано в расписании: Telegram, почта и/или
+// MAX (доставка на почту и в MAX — scripts/reports/deliver.mjs).
 //
 // Флаги: --dry — собрать PDF и показать, что ушло бы, но ничего не отправлять и не записывать (--out <папка> — сложить PDF туда);
 //        --force — слать все включённые расписания независимо от дня и часа (для проверки).
@@ -12,6 +13,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
+import { emailParts, sendEmail, sendMaxDocument, smtpConfigFromEnv, createSmtpTransport, maxConfigFromEnv, channelStatusFromEnv } from './deliver.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../..');
@@ -82,21 +84,35 @@ const MAX_TRIES_PER_DAY = 6;
 
 /**
  * Один проход по пользователям. Всё внешнее передаётся снаружи, чтобы проверять тестом без базы и сети.
- * @param {{db, uids: string[], M: object, now?: number, dry?: boolean, force?: boolean, send: Function, outDir?: string, log?: Function}} a
+ * Куда слать, определяет расписание (channels: telegram / email / max); за каждый канал отвечает своя функция из senders
+ * ({ telegram, email, max }), а старый параметр send — это просто senders.telegram. Если один канал сработал, а другой нет,
+ * на следующем проходе того же запуска повторяется только упавший (в профиле хранится partial: { key, done }).
+ * channelStatus ({ telegram, email, max } — что подключено) робот записывает в профиль (reportDelivery), чтобы приложение
+ * не обещало почту или MAX, пока не заданы ключи.
+ * @param {{db, uids: string[], M: object, now?: number, dry?: boolean, force?: boolean, send?: Function, senders?: object, channelStatus?: object, outDir?: string, log?: Function}} a
  */
-export async function runScheduledReports({ db, uids, M, now = Date.now(), dry = false, force = false, send, outDir = null, log = console.log }) {
+export async function runScheduledReports({ db, uids, M, now = Date.now(), dry = false, force = false, send, senders = {}, channelStatus = null, outDir = null, log = console.log }) {
   const results = [];
+  const sendBy = { ...(send ? { telegram: send } : {}), ...senders };
   for (const uid of uids) {
     const profileSnap = await db.collection('users').doc(uid).get();
     const profile = profileSnap.data() || {};
+    if (channelStatus && !dry) {
+      const cur = profile.reportDelivery || {};
+      if (['telegram', 'email', 'max'].some((k) => !!cur[k] !== !!channelStatus[k])) {
+        await db.collection('users').doc(uid).set({ reportDelivery: { telegram: !!channelStatus.telegram, email: !!channelStatus.email, max: !!channelStatus.max, checkedAt: now } }, { merge: true });
+      }
+    }
     const schedules = M.normalizeSchedules(profile.reportSchedules);
     const sendLog = profile.reportSendLog || {};
     const today = M.mskParts(now).date;
+    const gates = new Map();
     const due = schedules.filter((s) => {
       const st = sendLog[s.id] || {};
       if (!force && (st.lastErrorDay === today && (st.tries || 0) >= MAX_TRIES_PER_DAY)) { log(`[${uid}] «${s.name || s.id}»: на сегодня исчерпаны попытки (${st.tries})`); return false; }
       const gate = force ? (s.enabled ? { send: true, reason: 'принудительно' } : { send: false, reason: 'выключено' }) : M.isScheduleDue(s, now, st);
       if (!gate.send) log(`[${uid}] «${s.name || s.id}»: ${gate.reason}`);
+      gates.set(s.id, gate);
       return gate.send;
     });
     if (!due.length) continue;
@@ -116,23 +132,39 @@ export async function runScheduledReports({ db, uids, M, now = Date.now(), dry =
       const buffer = await M.renderPdfBuffer(M.buildPdfDefinition(model));
       const filename = M.reportFileName(model, 'pdf');
       const caption = reportCaption(model, s, M);
+      const channels = s.channels?.length ? s.channels : ['telegram'];
       if (dry) {
         if (outDir) { fs.mkdirSync(outDir, { recursive: true }); fs.writeFileSync(path.join(outDir, filename), buffer); }
-        log(`[${uid}] «${s.name || s.id}» (сухо): ${filename}, ${Math.round(buffer.length / 1024)} КБ\n${caption}`);
+        log(`[${uid}] «${s.name || s.id}» (сухо): ${filename}, ${Math.round(buffer.length / 1024)} КБ → ${M.describeChannels(s)}\n${caption}`);
         results.push({ uid, id: s.id, dry: true, filename, size: buffer.length });
         continue;
       }
-      const r = await send({ filename, buffer, caption });
       const prev = sendLog[s.id] || {};
-      if (r.ok) {
-        log(`[${uid}] «${s.name || s.id}»: отправлен ${filename}`);
-        await db.collection('users').doc(uid).set({ reportSendLog: { [s.id]: { lastSentOn: today, lastSentAt: now, lastTitle: model.meta.period.title, lastError: null, tries: 0, lastErrorDay: null } } }, { merge: true });
-      } else {
-        const tries = prev.lastErrorDay === today ? (prev.tries || 0) + 1 : 1;
-        log(`[${uid}] «${s.name || s.id}»: НЕ отправлен — ${r.error} (попытка ${tries})`);
-        await db.collection('users').doc(uid).set({ reportSendLog: { [s.id]: { ...prev, lastError: String(r.error).slice(0, 200), lastErrorDay: today, tries, lastTryAt: now } } }, { merge: true });
+      const runKey = gates.get(s.id)?.manual ? `m${s.sendNowAt}` : `d${today}`;
+      const doneBefore = prev.partial?.key === runKey && Array.isArray(prev.partial.done) ? prev.partial.done : [];
+      const att = {}; // итоги по каналам в этом проходе
+      for (const ch of channels) {
+        if (doneBefore.includes(ch)) continue; // этот канал в этом запуске уже доставлен — не дублируем
+        const fn = sendBy[ch];
+        const base = { filename, buffer, caption, schedule: s, model };
+        try { att[ch] = fn ? await fn(ch === 'email' ? { ...base, ...emailParts(model, caption) } : base) : { ok: false, error: `канал «${M.channelLabel(ch)}» в роботе не подключён` }; }
+        catch (e) { att[ch] = { ok: false, error: String(e?.message || e).slice(0, 200) }; }
       }
-      results.push({ uid, id: s.id, ok: !!r.ok, filename, size: buffer.length });
+      const delivered = channels.filter((ch) => doneBefore.includes(ch) || att[ch]?.ok);
+      const failed = channels.filter((ch) => !delivered.includes(ch));
+      const chLog = {};
+      for (const ch of Object.keys(att)) chLog[ch] = { ok: !!att[ch].ok, at: now, error: att[ch].ok ? null : String(att[ch].error || 'ошибка').slice(0, 200) };
+      if (!failed.length) {
+        log(`[${uid}] «${s.name || s.id}»: отправлен ${filename} → ${M.describeChannels(s)}`);
+        await db.collection('users').doc(uid).set({ reportSendLog: { [s.id]: { lastSentOn: today, lastSentAt: now, lastTitle: model.meta.period.title, lastError: null, tries: 0, lastErrorDay: null, partial: null, channels: chLog } } }, { merge: true });
+      } else {
+        const errText = failed.map((ch) => (channels.length > 1 || ch !== 'telegram' ? `${M.channelLabel(ch)}: ${att[ch]?.error || 'ошибка'}` : (att[ch]?.error || 'ошибка'))).join('; ').slice(0, 300);
+        const tries = prev.lastErrorDay === today ? (prev.tries || 0) + 1 : 1;
+        log(`[${uid}] «${s.name || s.id}»: НЕ отправлен — ${errText} (попытка ${tries})`);
+        const partial = delivered.length ? { key: runKey, done: delivered } : null;
+        await db.collection('users').doc(uid).set({ reportSendLog: { [s.id]: { ...prev, lastError: errText, lastErrorDay: today, tries, lastTryAt: now, partial, channels: chLog } } }, { merge: true });
+      }
+      results.push({ uid, id: s.id, ok: !failed.length, filename, size: buffer.length, delivered, failed });
     }
   }
   return results;
@@ -153,11 +185,26 @@ async function main() {
   db.settings({ ignoreUndefinedProperties: true });
   const M = await loadModules();
   const token = process.env.TELEGRAM_BOT_TOKEN, chatId = process.env.TELEGRAM_CHAT_ID;
-  const send = async (a) => {
-    if (!token || !chatId) return { ok: false, error: 'нет TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID' };
-    return sendDocument({ token, chatId, apiBase: process.env.TELEGRAM_API_BASE || 'https://api.telegram.org', ...a });
+  const senders = {
+    telegram: async (a) => {
+      if (!token || !chatId) return { ok: false, error: 'нет TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID' };
+      return sendDocument({ token, chatId, apiBase: process.env.TELEGRAM_API_BASE || 'https://api.telegram.org', filename: a.filename, buffer: a.buffer, caption: a.caption });
+    },
   };
-  await runScheduledReports({ db, uids, M, dry: DRY, force: FORCE, send, outDir });
+  const smtp = smtpConfigFromEnv();
+  let transport = null;
+  senders.email = async (a) => {
+    if (!smtp) return { ok: false, error: 'почта не подключена: в роботе нет SMTP_HOST / SMTP_USER / SMTP_PASS' };
+    if (!a.schedule.email) return { ok: false, error: 'в расписании не указан адрес почты' };
+    try { transport = transport || await createSmtpTransport(smtp); } catch (e) { return { ok: false, error: String(e.message || e) }; }
+    return sendEmail({ transport, from: smtp.from, to: a.schedule.email, subject: a.subject, text: a.text, filename: a.filename, buffer: a.buffer, secrets: [smtp.pass] });
+  };
+  const max = maxConfigFromEnv();
+  senders.max = async (a) => {
+    if (!max) return { ok: false, error: 'MAX не подключён: в роботе нет MAX_BOT_TOKEN / MAX_USER_ID' };
+    return sendMaxDocument({ token: max.token, userId: max.userId, chatId: max.chatId, apiBase: max.apiBase, filename: a.filename, buffer: a.buffer, caption: a.caption });
+  };
+  await runScheduledReports({ db, uids, M, dry: DRY, force: FORCE, senders, channelStatus: channelStatusFromEnv(), outDir });
 }
 
 const isDirectRun = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;

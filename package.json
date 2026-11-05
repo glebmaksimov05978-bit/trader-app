@@ -51,7 +51,7 @@
     "test:tgchart": "node scripts/telegramChartTests.mjs",
     "test:watchdog": "node scripts/watchdogTests.mjs",
     "test:aiguard": "node scripts/aiGuardTests.mjs",
-    "test:exportreport": "node scripts/exportReportTests.mjs && node scripts/reportRenderTests.mjs && node scripts/reportScheduleTests.mjs && node scripts/scheduledReportsTests.mjs",
+    "test:exportreport": "node scripts/exportReportTests.mjs && node scripts/reportRenderTests.mjs && node scripts/reportScheduleTests.mjs && node scripts/deliverTests.mjs && node scripts/scheduledReportsTests.mjs",
     "test:trainer": "node scripts/patternGeneratorTests.mjs && node scripts/patternQuizTests.mjs && node scripts/trainerSimTests.mjs && node scripts/liveSimTests.mjs",
     "eval:patterns": "node scripts/patternGeneratorEval.mjs",
     "test:apiimport": "node scripts/tbankApiImportTests.mjs",

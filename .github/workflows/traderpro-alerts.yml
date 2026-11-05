@@ -59,7 +59,8 @@ jobs:
           # Все пакеты ставятся одной командой (npm --no-save убирает «лишние» пакеты прошлой установки).
           # Не встала рисовалка — ставим без неё (картинок не будет); не встал pdfmake — только firebase-admin (отчёты по расписанию
           # не уйдут, остальные роботы работают).
-          npm install firebase-admin@12 @resvg/resvg-js@2.6.2 pdfmake@0.3.13 --no-save || npm install firebase-admin@12 pdfmake@0.3.13 --no-save || npm install firebase-admin@12 --no-save
+          # nodemailer — отправка отчётов на почту (SMTP); ставится вместе с pdfmake.
+          npm install firebase-admin@12 @resvg/resvg-js@2.6.2 pdfmake@0.3.13 nodemailer@6.9.16 --no-save || npm install firebase-admin@12 pdfmake@0.3.13 nodemailer@6.9.16 --no-save || npm install firebase-admin@12 pdfmake@0.3.13 --no-save || npm install firebase-admin@12 --no-save
           fc-list | grep -qi dejavu || (sudo apt-get update -qq && sudo apt-get install -y -qq fonts-dejavu-core) || true
 
       # Сторож: если в торговое время давно не было запусков от будильников — предупреждение в Telegram.
@@ -95,8 +96,9 @@ jobs:
             node scripts/alerts/morningDigest.mjs
           fi
 
-      # Отчёты по расписанию: PDF за выбранный период файлом в Telegram (расписания настраиваются в приложении: Отчёт → Выгрузить отчёт →
-      # «По расписанию»). Дешёвый шаг: если сегодня слать нечего, скрипт ничего не собирает. Отметка «сегодня слали» — в профиле
+      # Отчёты по расписанию: PDF за выбранный период файлом в Telegram, на почту (SMTP_*) и/или в MAX (MAX_*) — на выбор для каждого
+      # расписания (настраиваются в приложении: Отчёт → Выгрузить отчёт → «По расписанию»). Ключи почты и MAX — в GitHub Secrets; пока их
+      # нет, этот канал просто не работает (в приложении видно «не подключено»), а остальные не страдают. Дешёвый шаг: если сегодня слать нечего, скрипт ничего не собирает. Отметка «сегодня слали» — в профиле
       # (users/<uid>.reportSendLog), поэтому три будильника отчёт не дублируют. При ручном запуске с галочкой «paper_dry» — только проверка.
       - name: Отчёты по расписанию
         timeout-minutes: 4
@@ -107,6 +109,14 @@ jobs:
           ALERT_UIDS: ${{ secrets.ALERT_UIDS }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          MAX_BOT_TOKEN: ${{ secrets.MAX_BOT_TOKEN }}
+          MAX_USER_ID: ${{ secrets.MAX_USER_ID }}
+          MAX_CHAT_ID: ${{ secrets.MAX_CHAT_ID }}
         run: |
           if [ "${{ github.event.inputs.paper_dry }}" = "true" ]; then
             node scripts/reports/runScheduledReports.mjs --dry --out report_dry

@@ -181,9 +181,10 @@ test('без права на расписания вкладки «По расп
   expect(byText('По расписанию')).toBeUndefined();
 });
 
-test('вкладка расписаний: пустой список и пояснение про Telegram', async () => {
+test('вкладка расписаний: пустой список и пояснение про каналы доставки', async () => {
   await mountSched();
-  expect(document.body.textContent).toContain('PDF-файлом в Telegram');
+  expect(document.body.textContent).toContain('PDF-файлом');
+  expect(document.body.textContent).toMatch(/в Telegram.*на почту или в MAX/);
   expect(document.body.textContent).toContain('Расписаний пока нет');
   expect(byText('Добавить расписание')).toBeTruthy();
 });
@@ -197,10 +198,65 @@ test('новое расписание: по умолчанию — раз в м�
   expect(saves.length).toBe(1);
   const s = saves[0].reportSchedules[0];
   expect(s.frequency).toBe('monthly'); expect(s.period).toBe('last_month'); expect(s.hour).toBe(9); expect(s.name).toBe('Итоги месяца'); expect(s.enabled).toBe(true);
-  expect(s.sections).toContain('summary'); expect(s.channel).toBe('telegram');
+  expect(s.sections).toContain('summary'); expect(s.channels).toEqual(['telegram']); expect(s.email).toBe('');
   expect(document.body.textContent).toContain('Итоги месяца');
   expect(document.body.textContent).toContain('Каждый месяц, 1-го числа, в 9:00 · за прошлый месяц');
   expect(document.body.textContent).toContain('Следующая отправка');
+});
+
+const chBox = (label) => [...document.body.querySelectorAll('.rx-check')].find((b) => b.querySelector('b')?.textContent === label)?.querySelector('input');
+
+test('куда присылать: по умолчанию только Telegram, и последний выбранный канал снять нельзя', async () => {
+  await mountSched();
+  await click(byText('Добавить расписание'));
+  expect(chBox('Telegram').checked).toBe(true);
+  expect(chBox('Telegram').disabled).toBe(true);
+  expect(chBox('Почта').checked).toBe(false);
+  expect(document.body.querySelector('input[type="email"]')).toBeNull();
+});
+
+test('почта: поле адреса появляется при выборе; без правильного адреса расписание не сохраняется; с адресом — сохраняется вместе с Telegram', async () => {
+  const toast = require('react-hot-toast').default;
+  const saves = await mountSched();
+  await click(byText('Добавить расписание'));
+  await click(chBox('Почта'));
+  const email = document.body.querySelector('input[type="email"]');
+  expect(email).toBeTruthy();
+  await click(byText('Сохранить расписание'));
+  expect(saves.length).toBe(0);
+  expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('адрес почты'));
+  await change(email, 'не адрес');
+  await click(byText('Сохранить расписание'));
+  expect(saves.length).toBe(0);
+  await change(email, ' me@mail.ru ');
+  await click(byText('Сохранить расписание'));
+  await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
+  const s = saves[0].reportSchedules[0];
+  expect(s.channels).toEqual(['telegram', 'email']); expect(s.email).toBe('me@mail.ru');
+  expect(document.body.textContent).toContain('Куда: Telegram, почта me@mail.ru');
+});
+
+test('новое расписание подставляет адрес почты из предыдущего', async () => {
+  await mountSched({ reportSchedules: [{ id: 'rs_1', enabled: true, name: 'А', frequency: 'weekly', dayOfWeek: 0, hour: 9, period: 'last_week', scope: 'real', strategies: [], sections: ['summary'], channels: ['email'], email: 'old@mail.ru' }] });
+  await click(byText('Добавить расписание'));
+  await click(chBox('Почта'));
+  expect(document.body.querySelector('input[type="email"]').value).toBe('old@mail.ru');
+});
+
+test('статус подключения каналов берётся из профиля, который заполняет робот: не подключено / подключено / ещё неизвестно', async () => {
+  await mountSched({ reportDelivery: { telegram: true, email: false, max: true } });
+  await click(byText('Добавить расписание'));
+  await click(chBox('Почта'));
+  await click(chBox('MAX'));
+  const text = document.body.textContent;
+  expect(text).toContain('В роботе пока нет ключей почты');
+  expect(text).toContain('Подключено в роботе.');
+  expect(text).toContain('только на компанию, ИП или самозанятого');
+  act(() => root.unmount()); host.remove();
+  await mountSched({});
+  await click(byText('Добавить расписание'));
+  await click(chBox('MAX'));
+  expect(document.body.textContent).toContain('Статус подключения появится после ближайшего запуска робота');
 });
 
 test('еженедельное расписание: смена частоты подставляет «Прошлая неделя»; несоответствие периода и частоты — подсказка', async () => {
@@ -243,6 +299,7 @@ test('включить/выключить, «Отправить сейчас» �
   const last = saves[saves.length - 1].reportSchedules[0];
   expect(typeof last.sendNowAt).toBe('number');
   expect(document.body.textContent).toContain('Запрос «Отправить сейчас» принят');
+  expect(require('react-hot-toast').default.success).toHaveBeenCalledWith(expect.stringContaining('Telegram'));
   jest.spyOn(window, 'confirm').mockReturnValue(true);
   await click(byText('Удалить'));
   await act(async () => { await new Promise((r) => setTimeout(r, 10)); });

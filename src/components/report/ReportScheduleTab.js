@@ -2,20 +2,32 @@
 //
 // Вкладка «По расписанию» в окне «Выгрузить отчёт»: список расписаний автоотправки и форма настройки (когда слать, за какой
 // период, что внутри). Расписания лежат в профиле (reportSchedules); отправляет фоновый робот (scripts/reports/runScheduledReports.mjs)
-// — PDF файлом в Telegram. Логика «когда пора» — services/report/schedule.js.
+// — PDF файлом в Telegram, на почту и/или в MAX (что из этого подключено в роботе, он сообщает в профиле: reportDelivery).
+// Логика «когда пора» — services/report/schedule.js.
 import React, { useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import Icon from '../shared/Icon';
 import { SCOPES } from '../../services/analytics/periodReport';
 import { SECTIONS } from '../../services/report/exportReport';
 import {
-  FREQUENCIES, HOURS, SCHEDULE_PERIODS, MAX_SCHEDULES, defaultSchedule, normalizeSchedule, normalizeSchedules, describeSchedule, periodWords,
-  nextRunAt, mismatchHint, mskParts,
+  FREQUENCIES, HOURS, SCHEDULE_PERIODS, MAX_SCHEDULES, CHANNELS, defaultSchedule, normalizeSchedule, normalizeSchedules, describeSchedule, describeChannels, periodWords,
+  nextRunAt, mismatchHint, mskParts, isValidEmail, manualPending,
 } from '../../services/report/schedule';
 
 const MONTHS_GEN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 const WEEKDAY_NAMES = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
 const PERIOD_LABEL = { last_week: 'Прошлая неделя', this_week: 'Эта неделя (с понедельника)', last_month: 'Прошлый месяц', this_month: 'Этот месяц (с 1-го числа)', last_quarter: 'Прошлый квартал', this_quarter: 'Этот квартал (с начала)', last_year: 'Прошлый год', this_year: 'Этот год (с 1 января)', last_30: 'Последние 30 дней', last_90: 'Последние 90 дней' };
+
+// Что показываем под каждым каналом в форме: подключён ли он в роботе (робот сам сообщает об этом в профиль).
+function channelState(ch, delivery) {
+  if (ch === 'telegram') return null;
+  const v = delivery?.[ch];
+  if (v === true) return { cls: 'ok', text: 'Подключено в роботе.' };
+  if (v === false) return { cls: 'bad', text: ch === 'email'
+    ? 'В роботе пока нет ключей почты — письма не уйдут, пока они не добавлены (см. инструкцию в ЧТО_ПРОВЕРИТЬ, п. 11).'
+    : 'Бот MAX в роботе пока не подключён — сообщения не уйдут, пока не добавлены токен бота и ваш номер в MAX (см. инструкцию в ЧТО_ПРОВЕРИТЬ, п. 11).' };
+  return { cls: '', text: 'Статус подключения появится после ближайшего запуска робота.' };
+}
 
 const dateText = (ms) => {
   const p = mskParts(ms);
@@ -26,6 +38,7 @@ const dayText = (ms) => { const p = mskParts(ms); return `${p.d} ${MONTHS_GEN[p.
 export default function ReportScheduleTab({ profile, updateUserProfile, strategyList = [], defaultSections }) {
   const list = useMemo(() => normalizeSchedules(profile?.reportSchedules), [profile?.reportSchedules]);
   const log = profile?.reportSendLog || {};
+  const delivery = profile?.reportDelivery || null;
   const [editing, setEditing] = useState(null);   // расписание в форме
   const [isNew, setIsNew] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -38,10 +51,12 @@ export default function ReportScheduleTab({ profile, updateUserProfile, strategy
     finally { setBusy(false); }
   }
 
-  const startNew = () => { setEditing(defaultSchedule(defaultSections ? { sections: defaultSections.slice() } : {})); setIsNew(true); };
+  const lastEmail = [...list].reverse().find((x) => x.email)?.email || '';
+  const startNew = () => { setEditing(defaultSchedule({ ...(defaultSections ? { sections: defaultSections.slice() } : {}), email: lastEmail })); setIsNew(true); };
   const startEdit = (s) => { setEditing({ ...s }); setIsNew(false); };
 
   async function submit() {
+    if ((editing.channels || []).includes('email') && !isValidEmail((editing.email || '').trim())) { toast.error('Укажите один правильный адрес почты, например name@mail.ru'); return; }
     const s = normalizeSchedule(editing);
     if (!s) { toast.error('Для разовой отправки выберите дату'); return; }
     if (s.frequency === 'once' && s.date < mskParts(Date.now()).date) { toast.error('Дата уже прошла — выберите сегодняшнюю или будущую'); return; }
@@ -51,13 +66,14 @@ export default function ReportScheduleTab({ profile, updateUserProfile, strategy
   const toggle = (s) => save(list.map((x) => (x.id === s.id ? { ...x, enabled: !x.enabled } : x)));
   const remove = async (s) => { if (window.confirm('Удалить это расписание?')) await save(list.filter((x) => x.id !== s.id)); };
   const sendNow = async (s) => {
-    if (await save(list.map((x) => (x.id === s.id ? { ...x, sendNowAt: Date.now() } : x)))) toast.success('Запрос принят: отчёт придёт в Telegram в течение 15 минут');
+    if (await save(list.map((x) => (x.id === s.id ? { ...x, sendNowAt: Date.now() } : x)))) toast.success(`Запрос принят: отчёт придёт (${describeChannels(s)}) в течение 15 минут`);
   };
 
   if (editing) {
     const e = editing;
     const set = (patch) => setEditing((cur) => ({ ...cur, ...patch }));
     const toggleSec = (id) => set({ sections: e.sections.includes(id) ? e.sections.filter((x) => x !== id) : [...e.sections, id] });
+    const toggleCh = (id) => set({ channels: e.channels.includes(id) ? e.channels.filter((x) => x !== id) : [...e.channels, id] });
     const toggleStrat = (n) => set({ strategies: e.strategies.includes(n) ? e.strategies.filter((x) => x !== n) : [...e.strategies, n] });
     const hint = mismatchHint(e);
     return (
@@ -65,6 +81,28 @@ export default function ReportScheduleTab({ profile, updateUserProfile, strategy
         <section className="rx-block">
           <h3>Название (по желанию)</h3>
           <input className="input" value={e.name} maxLength={60} placeholder="Например: Итоги недели" onChange={(ev) => set({ name: ev.target.value })} />
+        </section>
+
+        <section className="rx-block">
+          <h3>Куда присылать</h3>
+          <div className="rx-sections">
+            {CHANNELS.map((c) => {
+              const on = e.channels.includes(c.id);
+              const st = channelState(c.id, delivery);
+              return (
+                <label key={c.id} className="rx-check">
+                  <input type="checkbox" checked={on} disabled={on && e.channels.length === 1} onChange={() => toggleCh(c.id)} />
+                  <span><b>{c.label}</b><small>{c.hint}</small>{on && st && <small className={st.cls ? `rx-chstate ${st.cls}` : 'rx-chstate'}>{st.text}</small>}</span>
+                </label>
+              );
+            })}
+          </div>
+          {e.channels.includes('email') && (
+            <label className="rx-email">Адрес почты
+              <input type="email" className="input" value={e.email} maxLength={120} placeholder="name@mail.ru" autoComplete="email" onChange={(ev) => set({ email: ev.target.value })} />
+            </label>
+          )}
+          {e.channels.includes('max') && <p className="rx-note">Бот в MAX можно создать только на компанию, ИП или самозанятого (российского резидента) — подробности в инструкции. Если бота нет, оставьте Telegram или почту.</p>}
         </section>
 
         <section className="rx-block">
@@ -140,7 +178,7 @@ export default function ReportScheduleTab({ profile, updateUserProfile, strategy
     <div className="rx-body">
       <div className="rx-info">
         <Icon name="send" size={15} />
-        <p>Отчёт придёт <b>PDF-файлом в Telegram</b> — в тот же чат, куда приходят уведомления робота. Вы выбираете, когда слать, за какой период и что внутри. Почтовая отправка пока не подключена.</p>
+        <p>Отчёт приходит <b>PDF-файлом</b>: в Telegram (тот же чат, куда приходят уведомления робота), на почту или в MAX — на выбор для каждого расписания. Вы выбираете, когда слать, за какой период и что внутри.</p>
       </div>
 
       {list.length === 0 && <p className="rx-note" style={{ margin: '4px 0' }}>Расписаний пока нет. Например: «каждый понедельник — итоги прошлой недели» или «1-го числа — итоги месяца».</p>}
@@ -148,7 +186,7 @@ export default function ReportScheduleTab({ profile, updateUserProfile, strategy
       {list.map((s) => {
         const st = log[s.id] || {};
         const next = nextRunAt(s, now, st);
-        const pending = s.sendNowAt && s.sendNowAt > (st.lastSentAt || 0);
+        const pending = manualPending(s, st, now);
         return (
           <article key={s.id} className={`rx-sched ${s.enabled ? '' : 'off'}`}>
             <div className="rx-sched-head">
@@ -164,6 +202,7 @@ export default function ReportScheduleTab({ profile, updateUserProfile, strategy
             <p className="rx-sched-line">
               {s.scope === 'real' ? 'Реальные' : s.scope === 'paper' ? 'Бумажные' : 'Всё вместе'} · {s.strategies.length ? s.strategies.join(', ') : 'все стратегии'} · разделов: {s.sections.length}
             </p>
+            <p className="rx-sched-line">Куда: {describeChannels(s)}</p>
             <p className="rx-sched-line">
               {!s.enabled ? 'Выключено.' : pending ? 'Запрос «Отправить сейчас» принят — придёт в течение 15 минут.' : next ? `Следующая отправка: ${next <= now + 60000 ? 'при ближайшем проходе робота (сегодня)' : dateText(next)} · за ${periodWords(s.period)}.` : 'Больше отправок не будет.'}
             </p>

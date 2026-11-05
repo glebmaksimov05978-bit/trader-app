@@ -92,6 +92,76 @@ const sent4 = [];
 await runScheduledReports({ db, uids: [UID], M, now: msk(2026, 11, 1, 10, 0), send: async (a) => { sent4.push(a); return { ok: true }; }, log: quiet });
 ok('за пустой период тоже присылает короткий отчёт с пометкой', sent4.length === 1 && /закрытых сделок не было/.test(sent4[0].caption));
 
+// --- несколько каналов: Telegram + почта + MAX ---
+const multi = (o = {}) => sched({ channels: ['telegram', 'email', 'max'], email: 'me@mail.ru', ...o });
+const recorder = () => {
+  const got = { telegram: [], email: [], max: [] };
+  const mk = (ch, result = () => ({ ok: true })) => async (a) => { got[ch].push(a); return result(a); };
+  return { got, mk };
+};
+db = fakeDb({ reportSchedules: [multi()] });
+let rec = recorder();
+let senders = { telegram: rec.mk('telegram'), email: rec.mk('email'), max: rec.mk('max') };
+res = await runScheduledReports({ db, uids: [UID], M, now: msk(2026, 11, 1, 10, 0), senders, log: quiet });
+ok('три канала: один и тот же PDF уходит в Telegram, на почту и в MAX', rec.got.telegram.length === 1 && rec.got.email.length === 1 && rec.got.max.length === 1 && rec.got.email[0].buffer === rec.got.max[0].buffer && res[0].ok && res[0].delivered.join() === 'telegram,email,max');
+ok('на почту уходит тема и текст письма, адрес берётся из расписания', rec.got.email[0].subject === 'TraderPro — отчёт: Октябрь 2026' && /вложении/.test(rec.got.email[0].text) && rec.got.email[0].schedule.email === 'me@mail.ru');
+ok('в отметке — итоги по каждому каналу, «отправлено» выставлено', db.users[UID].reportSendLog.s1.lastSentOn === '2026-11-01' && ['telegram', 'email', 'max'].every((c) => db.users[UID].reportSendLog.s1.channels[c].ok === true) && db.users[UID].reportSendLog.s1.partial === null);
+await runScheduledReports({ db, uids: [UID], M, now: msk(2026, 11, 1, 10, 15), senders, log: quiet });
+ok('повторный проход того же дня не дублирует ни в один канал', rec.got.telegram.length === 1 && rec.got.email.length === 1 && rec.got.max.length === 1);
+
+// почта упала, Telegram дошёл: повторяется ТОЛЬКО почта
+db = fakeDb({ reportSchedules: [multi({ channels: ['telegram', 'email'] })] });
+rec = recorder();
+let emailOk = false;
+senders = { telegram: rec.mk('telegram'), email: rec.mk('email', () => (emailOk ? { ok: true } : { ok: false, error: 'Invalid login' })) };
+res = await runScheduledReports({ db, uids: [UID], M, now: msk(2026, 11, 1, 10, 0), senders, log: quiet });
+let lg = db.users[UID].reportSendLog.s1;
+ok('почта упала: дело не закрыто, ошибка подписана названием канала, Telegram засчитан', res[0].ok === false && !lg.lastSentOn && lg.lastError === 'Почта: Invalid login' && lg.partial.done.join() === 'telegram' && lg.channels.telegram.ok === true && lg.channels.email.ok === false && lg.tries === 1);
+emailOk = true;
+await runScheduledReports({ db, uids: [UID], M, now: msk(2026, 11, 1, 10, 15), senders, log: quiet });
+lg = db.users[UID].reportSendLog.s1;
+ok('следующий проход: Telegram второй раз НЕ шлётся, письмо уходит, ошибка сброшена', rec.got.telegram.length === 1 && rec.got.email.length === 2 && lg.lastSentOn === '2026-11-01' && lg.lastError === null && lg.partial === null && lg.channels.email.ok === true);
+
+// канал не подключён в роботе (нет ключей) — понятная ошибка, остальные работают
+db = fakeDb({ reportSchedules: [multi({ channels: ['telegram', 'max'] })] });
+rec = recorder();
+res = await runScheduledReports({ db, uids: [UID], M, now: msk(2026, 11, 1, 10, 0), senders: { telegram: rec.mk('telegram') }, log: quiet });
+lg = db.users[UID].reportSendLog.s1;
+ok('канал без ключей в роботе: «MAX в роботе не подключён», Telegram при этом доставлен', rec.got.telegram.length === 1 && /MAX: канал «MAX» в роботе не подключён/.test(lg.lastError) && lg.partial.done.join() === 'telegram');
+// исключение внутри отправщика не валит остальных
+db = fakeDb({ reportSchedules: [multi({ channels: ['email', 'telegram'] })] });
+rec = recorder();
+res = await runScheduledReports({ db, uids: [UID], M, now: msk(2026, 11, 1, 10, 0), senders: { telegram: rec.mk('telegram'), email: async () => { throw new Error('socket hang up'); } }, log: quiet });
+ok('исключение в почтовой отправке не мешает Telegram и записывается как ошибка', rec.got.telegram.length === 1 && /Почта: socket hang up/.test(db.users[UID].reportSendLog.s1.lastError));
+// «Отправить сейчас» с частичным успехом: ключ запуска — запрос, а не дата
+db = fakeDb({ reportSchedules: [multi({ channels: ['telegram', 'email'], sendNowAt: msk(2026, 11, 4, 14, 0) })] });
+rec = recorder(); emailOk = false;
+senders = { telegram: rec.mk('telegram'), email: rec.mk('email', () => (emailOk ? { ok: true } : { ok: false, error: 'x' })) };
+await runScheduledReports({ db, uids: [UID], M, now: msk(2026, 11, 4, 14, 10), senders, log: quiet });
+emailOk = true;
+await runScheduledReports({ db, uids: [UID], M, now: msk(2026, 11, 4, 14, 25), senders, log: quiet });
+ok('«Отправить сейчас»: упавшая почта догоняется, Telegram не дублируется', rec.got.telegram.length === 1 && rec.got.email.length === 2 && db.users[UID].reportSendLog.s1.lastSentAt === msk(2026, 11, 4, 14, 25));
+// запрос «Отправить сейчас» старше суток не повторяется вечно
+db = fakeDb({ reportSchedules: [multi({ channels: ['email'], sendNowAt: msk(2026, 11, 3, 10, 0) })] });
+rec = recorder();
+await runScheduledReports({ db, uids: [UID], M, now: msk(2026, 11, 4, 14, 0), senders: { email: rec.mk('email', () => ({ ok: false, error: 'x' })) }, log: quiet });
+ok('устаревший запрос «Отправить сейчас» (больше суток) не выполняется', rec.got.email.length === 0);
+// сухой режим показывает, куда ушло бы
+const dryLog = [];
+db = fakeDb({ reportSchedules: [multi({ channels: ['telegram', 'email'] })] });
+await runScheduledReports({ db, uids: [UID], M, now: msk(2026, 11, 1, 10, 0), dry: true, senders: { telegram: async () => ({ ok: true }) }, channelStatus: { telegram: true, email: true, max: false }, log: (t) => dryLog.push(t) });
+ok('«сухой» режим: пишет, куда ушло бы, и не трогает профиль (статус каналов тоже)', dryLog.some((t) => /→ Telegram, почта me@mail\.ru/.test(t)) && db.writes.length === 0);
+
+// статус подключённых каналов записывается в профиль, только когда изменился
+db = fakeDb({ reportSchedules: [] });
+await runScheduledReports({ db, uids: [UID], M, now: msk(2026, 11, 1, 10, 0), senders: {}, channelStatus: { telegram: true, email: false, max: false }, log: quiet });
+ok('робот сообщает приложению, что подключено (Telegram — да, почта и MAX — нет)', db.users[UID].reportDelivery.telegram === true && db.users[UID].reportDelivery.email === false && db.users[UID].reportDelivery.max === false && typeof db.users[UID].reportDelivery.checkedAt === 'number');
+const w0 = db.writes.length;
+await runScheduledReports({ db, uids: [UID], M, now: msk(2026, 11, 1, 10, 15), senders: {}, channelStatus: { telegram: true, email: false, max: false }, log: quiet });
+ok('если ничего не изменилось — в базу ничего не пишется (лишние записи не нужны)', db.writes.length === w0);
+await runScheduledReports({ db, uids: [UID], M, now: msk(2026, 11, 1, 10, 30), senders: {}, channelStatus: { telegram: true, email: true, max: false }, log: quiet });
+ok('появились ключи почты — статус обновляется', db.users[UID].reportDelivery.email === true && db.writes.length === w0 + 1);
+
 // --- отправка в Telegram ---
 const calls = [];
 const fakeFetch = async (url, init) => { calls.push({ url, init }); return { status: 200, json: async () => ({ ok: true }) }; };

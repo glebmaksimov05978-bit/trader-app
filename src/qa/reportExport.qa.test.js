@@ -34,8 +34,9 @@ run('окно выгрузки отчёта', () => {
     { status: 'closed', pnl: 900, closedAt: iso(5), ticker: 'SBER', direction: 'long', entryStrategyName: 'Пробой' },
   ];
   const profile = {
+    reportDelivery: { telegram: true, email: false, max: false, checkedAt: Date.now() },
     reportSchedules: [
-      { id: 'a', enabled: true, name: 'Итоги недели', frequency: 'weekly', dayOfWeek: 0, hour: 9, period: 'last_week', scope: 'real', strategies: [], sections: ['summary', 'curve', 'habits'] },
+      { id: 'a', enabled: true, name: 'Итоги недели', frequency: 'weekly', dayOfWeek: 0, hour: 9, period: 'last_week', scope: 'real', strategies: [], sections: ['summary', 'curve', 'habits'], channels: ['telegram', 'email'], email: 'trader@mail.ru' },
       { id: 'b', enabled: true, name: '', frequency: 'monthly', dayOfMonth: 1, hour: 10, period: 'last_month', scope: 'all', strategies: ['Пробой'], sections: ['summary', 'curve', 'instruments', 'strategies', 'habits'] },
       { id: 'c', enabled: false, name: 'Годовой', frequency: 'once', date: '2026-12-31', hour: 12, period: 'this_year', scope: 'real', strategies: [], sections: ['summary'] },
     ],
@@ -62,6 +63,9 @@ run('окно выгрузки отчёта', () => {
       snap('schedules');
       await click(byText('Добавить расписание'));
       snap('editor');
+      const box = (label) => [...document.body.querySelectorAll('.rx-check')].find((b) => b.querySelector('b')?.textContent === label)?.querySelector('input');
+      await click(box('Почта')); await click(box('MAX'));
+      snap('channels');
       act(() => root.unmount());
     }, 30000);
   }

@@ -2,6 +2,7 @@
 // «отправить сейчас», разовая отправка, нормализация испорченных данных, описание словами, ближайшая отправка.
 import {
   defaultSchedule, normalizeSchedule, normalizeSchedules, isScheduleDue, nextRunAt, describeSchedule, describeWhen, mismatchHint, mskParts, MAX_SCHEDULES, HOURS,
+  isValidEmail, describeChannels, manualPending,
 } from '../src/services/report/schedule.js';
 
 let fails = 0;
@@ -52,7 +53,17 @@ ok('выключенная — нет ближайшей', nextRunAt(off, now) =
 ok('испорченные данные приводятся к допустимым', (() => { const s = normalizeSchedule({ frequency: 'daily', hour: 3, dayOfWeek: 9, dayOfMonth: 40, period: 'next_decade', scope: 'x', sections: ['zzz'], strategies: [1, 'А'] }); return s.frequency === 'monthly' && s.hour === 9 && s.dayOfWeek === 0 && s.dayOfMonth === 1 && s.period === 'last_month' && s.scope === 'real' && s.sections.includes('summary') && s.strategies.join() === 'А'; })());
 ok('разовая без даты отбрасывается; не объект — null', normalizeSchedule({ frequency: 'once' }) === null && normalizeSchedule(null) === null && normalizeSchedule('x') === null);
 ok('список ограничен пятью расписаниями', normalizeSchedules(Array.from({ length: 9 }, () => ({ frequency: 'weekly' }))).length === MAX_SCHEDULES);
-ok('канал всегда «telegram» (почта пока не подключена)', normalizeSchedule({ frequency: 'weekly', channel: 'email' }).channel === 'telegram');
+// каналы доставки
+ok('по умолчанию — только Telegram; старая запись без каналов читается как Telegram', defaultSchedule().channels.join() === 'telegram' && normalizeSchedule({ frequency: 'weekly' }).channels.join() === 'telegram' && normalizeSchedule({ frequency: 'weekly', channel: 'email' }).channels.join() === 'telegram');
+ok('каналы: лишнее и повторы отбрасываются, порядок сохраняется', normalizeSchedule({ frequency: 'weekly', channels: ['max', 'sms', 'max', 'telegram'] }).channels.join() === 'max,telegram');
+ok('почта с корректным адресом — канал; адрес обрезается по краям', (() => { const s = normalizeSchedule({ frequency: 'weekly', channels: ['telegram', 'email'], email: '  me@mail.ru ' }); return s.channels.join() === 'telegram,email' && s.email === 'me@mail.ru'; })());
+ok('почта без адреса или с испорченным адресом — не канал (иначе письмо ушло бы «в никуда»)', normalizeSchedule({ frequency: 'weekly', channels: ['telegram', 'email'], email: 'не адрес' }).channels.join() === 'telegram' && normalizeSchedule({ frequency: 'weekly', channels: ['email'] }).channels.join() === 'telegram');
+ok('адрес почты: проверка (один адрес, без пробелов, запятых и переводов строк)', isValidEmail('a.b+c@mail.ru') && isValidEmail('x@sub.domain.com') && !isValidEmail('a@b') && !isValidEmail('a b@mail.ru') && !isValidEmail('a@mail.ru,b@mail.ru') && !isValidEmail('a@mail.ru\nBcc: x@y.ru') && !isValidEmail('') && !isValidEmail(null) && !isValidEmail(`${'a'.repeat(120)}@mail.ru`));
+ok('описание каналов: «Telegram, почта me@mail.ru»', describeChannels({ channels: ['telegram', 'email'], email: 'me@mail.ru' }) === 'Telegram, почта me@mail.ru' && describeChannels({ channels: ['max'] }) === 'MAX');
+// «Отправить сейчас» живёт сутки
+const stale = { ...weekly, sendNowAt: now - 25 * 3600 * 1000 };
+ok('«Отправить сейчас» старше суток считается устаревшим: робот не пытается вечно', !isScheduleDue(stale, now, {}).send && !manualPending(stale, {}, now) && manualPending({ ...weekly, sendNowAt: now - 23 * 3600 * 1000 }, {}, now));
+ok('устаревший запрос не показывается как «ближайшая отправка сейчас»', nextRunAt(stale, now, {}) !== now);
 ok('часы — только те, когда работают будильники (7–22)', HOURS[0] === 7 && HOURS[HOURS.length - 1] === 22);
 ok('расписание проходит через JSON без потерь', JSON.stringify(JSON.parse(JSON.stringify(weekly))) === JSON.stringify(weekly));
 
