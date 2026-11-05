@@ -157,3 +157,103 @@ test('ошибка сборки показывается сообщением, �
   expect(mockDownload).not.toHaveBeenCalled();
   expect(byText('Скачать PDF').disabled).toBe(false);
 });
+
+// ---------- вкладка «По расписанию» ----------
+function SchedHarness({ initial = {}, saves }) {
+  const [profile, setProfile] = React.useState(initial);
+  const update = async (d) => { saves.push(d); setProfile((p) => ({ ...p, ...d })); };
+  return (
+    <ReportExportModal open onClose={() => {}} realTrades={trades} paperTrades={[]} strategyList={[{ name: 'Пробой', count: 2 }, { name: 'Отскок', count: 1 }]}
+      defaultScope="real" defaultStrategies={[]} pageRange={null} profile={profile} canSchedule updateUserProfile={update} />
+  );
+}
+async function mountSched(initial = {}) {
+  const saves = [];
+  host = document.createElement('div'); document.body.appendChild(host);
+  root = createRoot(host);
+  await act(async () => { root.render(<SchedHarness initial={initial} saves={saves} />); });
+  await click(byText('По расписанию'));
+  return saves;
+}
+
+test('без права на расписания вкладки «По расписанию» нет', async () => {
+  await mount();
+  expect(byText('По расписанию')).toBeUndefined();
+});
+
+test('вкладка расписаний: пустой список и пояснение про Telegram', async () => {
+  await mountSched();
+  expect(document.body.textContent).toContain('PDF-файлом в Telegram');
+  expect(document.body.textContent).toContain('Расписаний пока нет');
+  expect(byText('Добавить расписание')).toBeTruthy();
+});
+
+test('новое расписание: по умолчанию — раз в месяц за прошлый месяц; сохраняется в профиль и появляется в списке', async () => {
+  const saves = await mountSched();
+  await click(byText('Добавить расписание'));
+  await change(document.body.querySelector('input[placeholder^="Например"]'), 'Итоги месяца');
+  await click(byText('Сохранить расписание'));
+  await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
+  expect(saves.length).toBe(1);
+  const s = saves[0].reportSchedules[0];
+  expect(s.frequency).toBe('monthly'); expect(s.period).toBe('last_month'); expect(s.hour).toBe(9); expect(s.name).toBe('Итоги месяца'); expect(s.enabled).toBe(true);
+  expect(s.sections).toContain('summary'); expect(s.channel).toBe('telegram');
+  expect(document.body.textContent).toContain('Итоги месяца');
+  expect(document.body.textContent).toContain('Каждый месяц, 1-го числа, в 9:00 · за прошлый месяц');
+  expect(document.body.textContent).toContain('Следующая отправка');
+});
+
+test('еженедельное расписание: смена частоты подставляет «Прошлая неделя»; несоответствие периода и частоты — подсказка', async () => {
+  const saves = await mountSched();
+  await click(byText('Добавить расписание'));
+  await click(byText('Каждую неделю'));
+  expect(document.body.querySelector('select[aria-label="Период отчёта"]').value).toBe('last_week');
+  await change(document.body.querySelector('select[aria-label="Период отчёта"]'), 'last_year');
+  expect(document.body.textContent).toContain('будут одинаковыми');
+  await change(document.body.querySelector('select[aria-label="Период отчёта"]'), 'last_week');
+  await click(byText('Сохранить расписание'));
+  await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
+  expect(saves[0].reportSchedules[0].frequency).toBe('weekly');
+  expect(document.body.textContent).toContain('Каждый понедельник');
+});
+
+test('разовая отправка без даты не сохраняется; прошедшая дата отклоняется', async () => {
+  const saves = await mountSched();
+  await click(byText('Добавить расписание'));
+  await click(byText('Один раз'));
+  await click(byText('Сохранить расписание'));
+  expect(saves.length).toBe(0);
+  await change(document.body.querySelector('.rx-dates input[type="date"]'), '2020-01-01');
+  await click(byText('Сохранить расписание'));
+  expect(saves.length).toBe(0);
+});
+
+test('включить/выключить, «Отправить сейчас» и удаление', async () => {
+  const existing = { reportSchedules: [{ id: 'rs_1', enabled: true, name: 'Недельный', frequency: 'weekly', dayOfWeek: 4, hour: 18, period: 'last_week', scope: 'real', strategies: [], sections: ['summary'] }] };
+  const saves = await mountSched(existing);
+  expect(document.body.textContent).toContain('Каждую пятницу в 18:00 · за прошлую неделю');
+  await click(document.body.querySelector('.rx-switch input'));
+  await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
+  expect(saves[0].reportSchedules[0].enabled).toBe(false);
+  expect(document.body.textContent).toContain('Выключено');
+  await click(document.body.querySelector('.rx-switch input'));
+  await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
+  await click(byText('Отправить сейчас'));
+  await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
+  const last = saves[saves.length - 1].reportSchedules[0];
+  expect(typeof last.sendNowAt).toBe('number');
+  expect(document.body.textContent).toContain('Запрос «Отправить сейчас» принят');
+  jest.spyOn(window, 'confirm').mockReturnValue(true);
+  await click(byText('Удалить'));
+  await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
+  expect(saves[saves.length - 1].reportSchedules).toEqual([]);
+});
+
+test('статус последней отправки и ошибка показываются из журнала отправок', async () => {
+  const existing = {
+    reportSchedules: [{ id: 'rs_1', enabled: true, name: '', frequency: 'monthly', dayOfMonth: 1, hour: 9, period: 'last_month', scope: 'real', strategies: [], sections: ['summary'] }],
+    reportSendLog: { rs_1: { lastSentOn: '2026-11-01', lastSentAt: Date.UTC(2026, 10, 1, 7, 5), lastTitle: 'Октябрь 2026', lastError: null } },
+  };
+  await mountSched(existing);
+  expect(document.body.textContent).toMatch(/Последняя отправка: 1 ноября 2026 — «Октябрь 2026»/);
+});

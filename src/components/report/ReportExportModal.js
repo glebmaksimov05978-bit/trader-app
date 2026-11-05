@@ -11,6 +11,7 @@ import { SCOPES } from '../../services/analytics/periodReport';
 import {
   PERIOD_PRESETS, SECTIONS, DEFAULT_SECTIONS, resolvePeriod, buildExportReport, toDateInput, fmtMoney, plural,
 } from '../../services/report/exportReport';
+import ReportScheduleTab from './ReportScheduleTab';
 import { buildPdfBlob, buildDocxBlob, downloadBlob, reportFileName } from '../../services/report/exportClient';
 import './ReportExport.css';
 
@@ -21,8 +22,9 @@ const tzOffset = () => -new Date().getTimezoneOffset();
 
 export default function ReportExportModal({
   open, onClose, realTrades = [], paperTrades = [], strategyList = [], defaultScope = 'real', defaultStrategies = [],
-  profile = {}, legPnl = null, habitsFn = null, userName = '', pageRange = null,
+  profile = {}, legPnl = null, habitsFn = null, userName = '', pageRange = null, canSchedule = false, updateUserProfile = null,
 }) {
+  const [tab, setTab] = useState('now');
   const saved = useMemo(readPrefs, []);
   const [preset, setPreset] = useState(saved.preset || 'last_month');
   const [from, setFrom] = useState(saved.from || '');
@@ -32,7 +34,7 @@ export default function ReportExportModal({
   const [sections, setSections] = useState(Array.isArray(saved.sections) && saved.sections.length ? saved.sections : DEFAULT_SECTIONS);
   const [busy, setBusy] = useState('');
 
-  useEffect(() => { if (open) { setScope(defaultScope); setPicked(defaultStrategies); } }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open) { setScope(defaultScope); setPicked(defaultStrategies); setTab('now'); } }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
@@ -102,6 +104,16 @@ export default function ReportExportModal({
           <button type="button" className="rx-x" aria-label="Закрыть" onClick={onClose}><Icon name="close" size={16} /></button>
         </header>
 
+        {canSchedule && (
+          <div className="rx-tabs" role="tablist" aria-label="Режим">
+            <button type="button" role="tab" aria-selected={tab === 'now'} className={tab === 'now' ? 'on' : ''} onClick={() => setTab('now')}>Скачать сейчас</button>
+            <button type="button" role="tab" aria-selected={tab === 'schedule'} className={tab === 'schedule' ? 'on' : ''} onClick={() => setTab('schedule')}>По расписанию</button>
+          </div>
+        )}
+
+        {tab === 'schedule' && canSchedule ? (
+          <ReportScheduleTab profile={profile} updateUserProfile={updateUserProfile} strategyList={strategyList} defaultSections={sections} />
+        ) : (<>
         <div className="rx-body">
           <section className="rx-block">
             <h3>Период</h3>
@@ -158,6 +170,7 @@ export default function ReportExportModal({
             </button>
           </div>
         </footer>
+        </>)}
       </div>
     </div>,
     document.body,

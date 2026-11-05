@@ -317,4 +317,10 @@ export function buildVerdict(m) {
   return lines.join(' ');
 }
 
+/** Имя файла без кириллицы и пробелов: надёжно открывается на любой системе и в Telegram. */
+export function reportFileName(model, ext) {
+  const day = (ms) => new Date(ms + MSK_OFFSET_MIN * MIN).toISOString().slice(0, 10);
+  return `TraderPro_report_${day(model.meta.period.from)}_${day(model.meta.period.to)}.${ext}`;
+}
+
 export { strategyNameOf };

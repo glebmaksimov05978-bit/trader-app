@@ -19,6 +19,7 @@ import { buildPeriodReport, listPeriods, listStrategyNames, strategyNameOf, mont
 import { buildEntryStats } from '../../services/analytics/entryStats';
 import { PeriodSwitcher, StrategyFilter } from './ReportControls';
 import ReportExportModal from './ReportExportModal';
+import { TRUSTED_UIDS } from '../../constants/trustedUids';
 import { computeHabitsFor } from '../../services/analytics/insightsEngine';
 import { formatCurrency, formatPercent, tradesWord } from '../../utils/money';
 import { computeClosePnl } from '../../services/tradeClose';
@@ -35,7 +36,7 @@ const px = (v) => { const n = Number(v); return Number.isFinite(n) ? String(Math
 const sgn = (v) => (v > 0 ? 'up' : v < 0 ? 'down' : '');
 
 export default function MonthlyReport() {
-  const { user, userProfile } = useAuth();
+  const { user, userProfile, updateUserProfile, isAdmin } = useAuth();
   const [realAll, setReal] = useState([]);
   const [paperAll, setPaper] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -131,6 +132,7 @@ export default function MonthlyReport() {
         profile={{ ...(userProfile || {}), __activeExitRules: activeStrategy?.exitRules || null }}
         legPnl={legPnl} habitsFn={computeHabitsFor} userName={userProfile?.displayName || user?.displayName || ''}
         pageRange={key ? { type, key, label: rep?.label || key } : null}
+        canSchedule={!!(isAdmin || TRUSTED_UIDS.includes(user?.uid))} updateUserProfile={updateUserProfile}
       />
 
       <div className="mr-controls">

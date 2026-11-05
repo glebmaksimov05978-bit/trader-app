@@ -54,11 +54,12 @@ jobs:
 
       # @resvg/resvg-js — рисует PNG-картинку графика для сообщения о входе (без него сообщение
       # просто уходит текстом). Шрифт с кириллицей для подписей на картинке — DejaVu.
-      - name: Установить firebase-admin и рисовалку графиков
+      - name: Установить firebase-admin, рисовалку графиков и сборщик PDF
         run: |
-          # Оба пакета ставятся одной командой (npm --no-save убирает «лишние» пакеты прошлой установки).
-          # Не встала рисовалка — ставим только firebase-admin: роботы работают, картинок просто не будет.
-          npm install firebase-admin@12 @resvg/resvg-js@2.6.2 --no-save || npm install firebase-admin@12 --no-save
+          # Все пакеты ставятся одной командой (npm --no-save убирает «лишние» пакеты прошлой установки).
+          # Не встала рисовалка — ставим без неё (картинок не будет); не встал pdfmake — только firebase-admin (отчёты по расписанию
+          # не уйдут, остальные роботы работают).
+          npm install firebase-admin@12 @resvg/resvg-js@2.6.2 pdfmake@0.3.13 --no-save || npm install firebase-admin@12 pdfmake@0.3.13 --no-save || npm install firebase-admin@12 --no-save
           fc-list | grep -qi dejavu || (sudo apt-get update -qq && sudo apt-get install -y -qq fonts-dejavu-core) || true
 
       # Сторож: если в торговое время давно не было запусков от будильников — предупреждение в Telegram.
@@ -92,6 +93,25 @@ jobs:
             node scripts/alerts/morningDigest.mjs --dry
           else
             node scripts/alerts/morningDigest.mjs
+          fi
+
+      # Отчёты по расписанию: PDF за выбранный период файлом в Telegram (расписания настраиваются в приложении: Отчёт → Выгрузить отчёт →
+      # «По расписанию»). Дешёвый шаг: если сегодня слать нечего, скрипт ничего не собирает. Отметка «сегодня слали» — в профиле
+      # (users/<uid>.reportSendLog), поэтому три будильника отчёт не дублируют. При ручном запуске с галочкой «paper_dry» — только проверка.
+      - name: Отчёты по расписанию
+        timeout-minutes: 4
+        if: always()
+        continue-on-error: true
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ALERT_UIDS: ${{ secrets.ALERT_UIDS }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ "${{ github.event.inputs.paper_dry }}" = "true" ]; then
+            node scripts/reports/runScheduledReports.mjs --dry --out report_dry
+          else
+            node scripts/reports/runScheduledReports.mjs
           fi
 
       - name: Снимок для меню Telegram (ранний, чтобы меню не «старело», если дальше что-то зависнет)

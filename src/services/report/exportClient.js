@@ -4,11 +4,7 @@
 // (динамический import), поэтому на размер основной части сайта они не влияют.
 import { equityCurveSvg, hBarsSvg, vBarsSvg } from './charts';
 
-/** Имя файла без кириллицы и пробелов: надёжно открывается на любой системе. */
-export function reportFileName(model, ext) {
-  const day = (ms) => new Date(ms + 180 * 60000).toISOString().slice(0, 10);
-  return `TraderPro_report_${day(model.meta.period.from)}_${day(model.meta.period.to)}.${ext}`;
-}
+export { reportFileName } from './exportReport';
 
 export function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);

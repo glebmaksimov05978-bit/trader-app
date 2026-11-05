@@ -36,3 +36,27 @@
   .rx-actions { width: 100%; }
   .rx-actions .btn { flex: 1; justify-content: center; }
 }
+
+/* Вкладки окна и расписания */
+.rx-tabs { display: flex; gap: 4px; padding: 10px 20px 0; border-bottom: 1px solid var(--border-subtle); }
+.rx-tabs button { border: none; background: transparent; padding: 8px 14px 10px; font: inherit; font-size: 13px; color: var(--text-secondary); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.rx-tabs button.on { color: var(--text-primary); border-bottom-color: var(--accent-primary); font-weight: 600; }
+.rx-info { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; background: var(--bg-surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-xs); font-size: 13px; color: var(--text-secondary); line-height: 1.5; }
+.rx-info p { margin: 0; }
+.rx-info svg { flex: none; margin-top: 3px; color: var(--accent-primary); }
+.rx-sched { border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); padding: 12px 14px; background: var(--bg-surface); display: flex; flex-direction: column; gap: 4px; }
+.rx-sched.off { opacity: 0.65; }
+.rx-sched-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.rx-sched-head b { display: block; font-size: 14px; color: var(--text-primary); }
+.rx-sched-sub { display: block; font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+.rx-sched-line { margin: 0; font-size: 12.5px; color: var(--text-secondary); line-height: 1.45; }
+.rx-sched-line.ok { color: var(--green); }
+.rx-sched-line.bad { color: var(--red); }
+.rx-sched-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.rx-sched-actions .btn { display: inline-flex; align-items: center; gap: 5px; }
+.rx-switch { position: relative; width: 38px; height: 22px; flex: none; }
+.rx-switch input { opacity: 0; width: 100%; height: 100%; position: absolute; inset: 0; margin: 0; cursor: pointer; z-index: 1; }
+.rx-switch span { position: absolute; inset: 0; background: var(--bg-surface-3); border: 1px solid var(--border-medium); border-radius: 999px; transition: var(--transition); }
+.rx-switch span::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--text-muted); transition: var(--transition); }
+.rx-switch input:checked + span { background: var(--accent-primary); border-color: var(--accent-primary); }
+.rx-switch input:checked + span::after { left: 18px; background: #fff; }
