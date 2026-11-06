@@ -6,6 +6,7 @@
 // коллекцию trainerTrades и никогда не попадает в реальный журнал и статистику.
 //
 // «Слепой режим» (по умолчанию): тикер и даты скрыты, пока сделка не закрыта — иначе игрок «вспоминает», что было дальше.
+import confirmDialog from '../shared/confirmDialog';
 import React, { useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import CandleChart from '../shared/CandleChart';
@@ -247,7 +248,7 @@ export default function ReplayDesk({ onSaved }) {
             <div className="tr-steps" data-tour="trainer-steps">
               <button type="button" className="btn btn-primary" onClick={() => step(1)}>Следующая свеча</button>
               <button type="button" className="btn btn-secondary" onClick={() => step(5)}>+5 свечей</button>
-              <button type="button" className="btn btn-ghost" onClick={() => { if (!position || window.confirm('Позиция открыта — выйти без записи сделки?')) again(); }}>Прервать попытку</button>
+              <button type="button" className="btn btn-ghost" onClick={async () => { if (!position || await confirmDialog({ title: 'Прервать попытку?', text: 'Позиция открыта — выйти без записи сделки?', confirmLabel: 'Прервать' })) again(); }}>Прервать попытку</button>
             </div>
           )}
         </div>

@@ -10,6 +10,7 @@
 import { PERIOD_PRESETS, SECTIONS, DEFAULT_SECTIONS } from './exportReport.js';
 
 export const MSK_MS = 3 * 3600 * 1000;
+export const MSK_TZ = 'Europe/Moscow';
 export const MAX_SCHEDULES = 5;
 export const HOURS = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22]; // окно, когда работают будильники
 export const SCHEDULE_PERIODS = ['last_week', 'last_month', 'last_quarter', 'last_year', 'this_week', 'this_month', 'this_quarter', 'this_year', 'last_30', 'last_90'];
@@ -46,9 +47,61 @@ export function manualPending(s, state, nowMs) {
 const pad = (n) => String(n).padStart(2, '0');
 const MONTHS_GEN = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 
-/** Московские дата (YYYY-MM-DD), час, день недели (Пн=0) и число месяца для момента nowMs. */
-export function mskParts(nowMs) {
-  const d = new Date(nowMs + MSK_MS);
+// ---- часовые пояса ----
+// Расписание живёт в часовом поясе, который выбрал пользователь (по умолчанию — Москва). Робот работает по Москве (07:00–23:45),
+// поэтому в других поясах доступны только те часы, на которые он успевает (hoursForZone).
+const fmtCache = new Map();
+function zoneFormatter(tz) {
+  let f = fmtCache.get(tz);
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    fmtCache.set(tz, f);
+  }
+  return f;
+}
+
+/** Существует ли такой часовой пояс (например «Asia/Yekaterinburg»). */
+export function isValidTimeZone(tz) {
+  if (typeof tz !== 'string' || !tz || tz.length > 60) return false;
+  try { zoneFormatter(tz); return true; } catch { return false; }
+}
+
+/** Сдвиг часового пояса от UTC (мс) в момент ms — с учётом летнего времени. */
+export function zoneOffsetMs(tz, ms) {
+  if (!tz || tz === MSK_TZ) return MSK_MS;
+  const parts = zoneFormatter(tz).formatToParts(new Date(ms));
+  const g = (type) => Number(parts.find((q) => q.type === type).value);
+  const asUtc = Date.UTC(g('year'), g('month') - 1, g('day'), g('hour') % 24, g('minute'), g('second'));
+  return asUtc - Math.floor(ms / 1000) * 1000;
+}
+
+/** Местное время (год, месяц 0–11, число, час) в поясе tz → момент в UTC (мс). */
+export function zonedToUtc(y, m, d, h, tz) {
+  const guess = Date.UTC(y, m, d, h);
+  const first = guess - zoneOffsetMs(tz, guess);
+  return guess - zoneOffsetMs(tz, first);
+}
+
+/** Подпись пояса: «UTC+3», «UTC+5:30». */
+export function utcLabel(tz, atMs = Date.now()) {
+  const min = Math.round(zoneOffsetMs(tz, atMs) / 60000);
+  const sign = min < 0 ? '−' : '+';
+  const a = Math.abs(min);
+  return `UTC${sign}${Math.floor(a / 60)}${a % 60 ? `:${String(a % 60).padStart(2, '0')}` : ''}`;
+}
+
+/** Часы (местные), на которые робот успевает: ему нужно окно 07:00–23:45 по Москве. */
+export function hoursForZone(tz, atMs = Date.now()) {
+  const delta = Math.round((zoneOffsetMs(tz, atMs) - MSK_MS) / 3600000); // на сколько часов пояс «впереди» Москвы
+  return Array.from({ length: 24 }, (_, h) => h).filter((h) => {
+    const msk = (((h - delta) % 24) + 24) % 24;
+    return msk >= 7 && msk <= 22;
+  });
+}
+
+/** Дата (YYYY-MM-DD), час, день недели (Пн=0) и число месяца для момента nowMs в поясе tz (по умолчанию — Москва). */
+export function mskParts(nowMs, tz = MSK_TZ) {
+  const d = new Date(nowMs + zoneOffsetMs(tz, nowMs));
   return {
     date: `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`,
     y: d.getUTCFullYear(), m: d.getUTCMonth(), d: d.getUTCDate(), hour: d.getUTCHours(), dow: (d.getUTCDay() + 6) % 7,
@@ -63,7 +116,7 @@ export function defaultSchedule(over = {}) {
     id: newId(), enabled: true, name: '',
     frequency: 'monthly', dayOfWeek: 0, dayOfMonth: 1, date: '', hour: 9,
     period: 'last_month', scope: 'real', strategies: [], sections: DEFAULT_SECTIONS.slice(),
-    channels: ['telegram'], email: '', sendNowAt: null,
+    channels: ['telegram'], email: '', sendNowAt: null, tz: MSK_TZ,
     ...over,
   };
 }
@@ -79,7 +132,8 @@ export function normalizeSchedule(raw) {
   s.dayOfWeek = Number.isInteger(raw.dayOfWeek) && raw.dayOfWeek >= 0 && raw.dayOfWeek <= 6 ? raw.dayOfWeek : 0;
   s.dayOfMonth = raw.dayOfMonth === 'last' ? 'last' : (Number.isInteger(raw.dayOfMonth) && raw.dayOfMonth >= 1 && raw.dayOfMonth <= 28 ? raw.dayOfMonth : 1);
   s.date = /^\d{4}-\d{2}-\d{2}$/.test(raw.date || '') ? raw.date : '';
-  s.hour = HOURS.includes(raw.hour) ? raw.hour : 9;
+  s.tz = isValidTimeZone(raw.tz) ? raw.tz : MSK_TZ;
+  s.hour = hoursForZone(s.tz).includes(raw.hour) ? raw.hour : (hoursForZone(s.tz).includes(9) ? 9 : hoursForZone(s.tz)[0]);
   s.period = SCHEDULE_PERIODS.includes(raw.period) ? raw.period : (s.frequency === 'weekly' ? 'last_week' : 'last_month');
   s.scope = ['real', 'paper', 'all'].includes(raw.scope) ? raw.scope : 'real';
   s.strategies = Array.isArray(raw.strategies) ? raw.strategies.filter((x) => typeof x === 'string').slice(0, 30) : [];
@@ -119,7 +173,7 @@ export function isScheduleDue(s, nowMs, state = {}) {
   if (!s.enabled) return { send: false, reason: 'выключено' };
   // «Отправить сейчас»: запрос новее последней отправки — слать на ближайшем проходе, расписание не нужно
   if (manualPending(s, state, nowMs)) return { send: true, reason: 'по запросу «Отправить сейчас»', manual: true };
-  const p = mskParts(nowMs);
+  const p = mskParts(nowMs, s.tz);
   if (s.frequency === 'once' && state.lastSentOn) return { send: false, reason: 'разовая отправка уже состоялась' };
   if (!dueDay(s, p)) return { send: false, reason: 'сегодня не день отправки' };
   if (p.hour < s.hour) return { send: false, reason: `ещё рано (${p.hour}:00 МСК, нужно с ${s.hour}:00)` };
@@ -132,12 +186,17 @@ export function nextRunAt(s, nowMs, state = {}) {
   if (!s.enabled) return null;
   if (manualPending(s, state, nowMs)) return nowMs;
   if (s.frequency === 'once' && state.lastSentOn) return null;
-  const startDay = Math.floor((nowMs + MSK_MS) / 86400000); // номер московских суток
+  const tz = s.tz || MSK_TZ;
+  const now = mskParts(nowMs, tz);                          // сегодняшняя дата в поясе расписания
   for (let i = 0; i <= 400; i++) {
-    const dayMs = (startDay + i) * 86400000 - MSK_MS;      // начало суток по Москве в UTC-мс
-    const p = mskParts(dayMs + 3600000);
+    const cal = new Date(Date.UTC(now.y, now.m, now.d + i)); // календарные сутки без привязки к поясу
+    const p = {
+      date: `${cal.getUTCFullYear()}-${pad(cal.getUTCMonth() + 1)}-${pad(cal.getUTCDate())}`,
+      y: cal.getUTCFullYear(), m: cal.getUTCMonth(), d: cal.getUTCDate(), dow: (cal.getUTCDay() + 6) % 7,
+      dim: new Date(Date.UTC(cal.getUTCFullYear(), cal.getUTCMonth() + 1, 0)).getUTCDate(),
+    };
     if (!dueDay(s, p)) continue;
-    const at = dayMs + s.hour * 3600000;
+    const at = zonedToUtc(p.y, p.m, p.d, s.hour, tz);
     if (i === 0) {
       if (state.lastSentOn === p.date) continue;           // сегодня уже отправлено — смотрим дальше
       return Math.max(at, nowMs);                          // сегодня и ещё не слали: час наступил — «сейчас», иначе в назначенный час
@@ -154,16 +213,27 @@ const PERIOD_WORDS = {
 };
 export const periodWords = (id) => PERIOD_WORDS[id] || (PERIOD_PRESETS.find((p) => p.id === id)?.label || id).toLowerCase();
 
-const hhmm = (h) => `${h}:00`;
+// Час с пометкой пояса, если он не московский: «9:00 (UTC+5)»
+const hhmm = (h, s) => `${h}:00${s && s.tz && s.tz !== MSK_TZ ? ` (${utcLabel(s.tz)})` : ''}`;
 export function describeWhen(s) {
-  if (s.frequency === 'weekly') return `${EVERY[s.dayOfWeek]} ${WEEKDAYS[s.dayOfWeek]} в ${hhmm(s.hour)}`;
-  if (s.frequency === 'monthly') return s.dayOfMonth === 'last' ? `В последний день каждого месяца в ${hhmm(s.hour)}` : `Каждый месяц, ${s.dayOfMonth}-го числа, в ${hhmm(s.hour)}`;
+  if (s.frequency === 'weekly') return `${EVERY[s.dayOfWeek]} ${WEEKDAYS[s.dayOfWeek]} в ${hhmm(s.hour, s)}`;
+  if (s.frequency === 'monthly') return s.dayOfMonth === 'last' ? `В последний день каждого месяца в ${hhmm(s.hour, s)}` : `Каждый месяц, ${s.dayOfMonth}-го числа, в ${hhmm(s.hour, s)}`;
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s.date || '');
-  return m ? `Один раз: ${Number(m[3])} ${MONTHS_GEN[Number(m[2]) - 1]} ${m[1]} в ${hhmm(s.hour)}` : 'Один раз (дата не выбрана)';
+  return m ? `Один раз: ${Number(m[3])} ${MONTHS_GEN[Number(m[2]) - 1]} ${m[1]} в ${hhmm(s.hour, s)}` : 'Один раз (дата не выбрана)';
 }
 /** «Telegram, почта you@mail.ru» — куда уйдёт отчёт. */
 export const describeChannels = (s) => (s.channels || ['telegram']).map((id) => (id === 'email' && s.email ? `почта ${s.email}` : channelLabel(id))).join(', ');
 export const describeSchedule =(s) => `${describeWhen(s)} · за ${periodWords(s.period)}`;
+
+/** Одинаковое ли по смыслу другое расписание из списка (когда, период, срез, стратегии, разделы, куда) — тогда отчёт придёт дважды. */
+export function findDuplicate(list, s) {
+  const norm = (x) => JSON.stringify([
+    x.frequency, x.frequency === 'weekly' ? x.dayOfWeek : x.frequency === 'monthly' ? x.dayOfMonth : x.date, x.hour, x.tz || MSK_TZ, x.period, x.scope,
+    [...(x.strategies || [])].sort(), [...(x.sections || [])].sort(), [...(x.channels || [])].sort(), x.email || '',
+  ]);
+  const me = norm(s);
+  return (list || []).find((x) => x.id !== s.id && norm(x) === me) || null;
+}
 
 /** Замечание, если период не подходит к частоте (например, каждую неделю отчёт «за прошлый год»). */
 export function mismatchHint(s) {

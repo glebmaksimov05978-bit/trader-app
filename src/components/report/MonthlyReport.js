@@ -19,6 +19,7 @@ import { buildPeriodReport, listPeriods, listStrategyNames, strategyNameOf, mont
 import { buildEntryStats } from '../../services/analytics/entryStats';
 import { PeriodSwitcher, StrategyFilter } from './ReportControls';
 import ReportExportModal from './ReportExportModal';
+import TradeViewModal from './TradeViewModal';
 import { TRUSTED_UIDS } from '../../constants/trustedUids';
 import { computeHabitsFor } from '../../services/analytics/insightsEngine';
 import { formatCurrency, formatPercent, tradesWord } from '../../utils/money';
@@ -45,6 +46,7 @@ export default function MonthlyReport() {
   const [pickedKey, setPickedKey] = useState(null);
   const [pickedStrategies, setPickedStrategies] = useState([]); // пусто = все стратегии
   const [exportOpen, setExportOpen] = useState(false);
+  const [viewItem, setViewItem] = useState(null); // сделка, открытая «посмотреть на графике»
 
   useEffect(() => {
     if (!user) return;
@@ -122,7 +124,6 @@ export default function MonthlyReport() {
         </div>
         <div className="mr-header-actions">
           <button className="btn btn-primary" onClick={() => setExportOpen(true)} data-tour="report-export">Выгрузить отчёт</button>
-          <button className="btn btn-ghost" onClick={() => window.print()}>Печать</button>
         </div>
       </div>
       <ReportExportModal
@@ -134,6 +135,7 @@ export default function MonthlyReport() {
         pageRange={key ? { type, key, label: rep?.label || key } : null}
         canSchedule={!!(isAdmin || TRUSTED_UIDS.includes(user?.uid))} updateUserProfile={updateUserProfile}
       />
+      {viewItem && <TradeViewModal item={viewItem} userProfile={userProfile} onClose={() => setViewItem(null)} />}
 
       <div className="mr-controls">
         <div className="mr-seg" role="tablist" aria-label="Срез">
@@ -187,11 +189,11 @@ export default function MonthlyReport() {
 
           {/* Лучшая и худшая сделка — в ряд, «По инструментам» — на всю ширину: так внизу нет пустых мест */}
           <div className="mr-extremes">
-            <TradeCard title="Лучшая сделка" item={rep.stats.best} />
-            <TradeCard title="Худшая сделка" item={rep.stats.worst} />
+            <TradeCard title="Лучшая сделка" item={rep.stats.best} onOpen={setViewItem} />
+            <TradeCard title="Худшая сделка" item={rep.stats.worst} onOpen={setViewItem} />
           </div>
 
-          <InstrumentsCard rows={rep.byInstrument} />
+          <InstrumentsCard rows={rep.byInstrument} items={rep.items} onOpen={setViewItem} />
 
 
           {entryStats && entryStats.groups.length > 0 && (
@@ -625,12 +627,15 @@ function Discipline({ d }) {
   );
 }
 
-function TradeCard({ title, item }) {
+function TradeCard({ title, item, onOpen }) {
   if (!item) return <div className="card mr-block"><div className="section-title">{title}</div><p className="mr-note" style={{ marginTop: 0 }}>Нужно хотя бы две закрытые сделки за период.</p></div>;
   const t = item.raw || {};
   const closed = item.closed instanceof Date ? item.closed.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) : null;
   return (
-    <div className="card mr-block mr-tradecard">
+    <div
+      className={`card mr-block mr-tradecard${onOpen ? ' mr-clickable' : ''}`}
+      {...(onOpen ? { role: 'button', tabIndex: 0, title: 'Открыть график сделки', onClick: () => onOpen(item), onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(item); } } } : {})}
+    >
       <div className="section-title">{title}</div>
       <div className="mr-trade">
         <div>
@@ -639,6 +644,7 @@ function TradeCard({ title, item }) {
             {item.direction === 'short' ? 'Шорт' : 'Лонг'}{t.entryPrice ? ` · вход ${px(t.entryPrice)}` : ''}{t.exitPrice ? ` → выход ${px(t.exitPrice)}` : ''}
           </div>
           <div className="mr-trade-meta">{[item.strategy, closed ? `закрыта ${closed}` : null].filter(Boolean).join(' · ')}</div>
+          {onOpen && <div className="mr-open-hint">Открыть график сделки →</div>}
         </div>
         <div className={`mr-trade-pnl mr-num ${sgn(item.pnl)}`}>{money(item.pnl)}</div>
       </div>
@@ -647,9 +653,14 @@ function TradeCard({ title, item }) {
 }
 
 // «По инструментам» — на всю ширину: сколько сделок, доля прибыльных, итог и полоска вклада в результат.
-function InstrumentsCard({ rows }) {
-  const shown = rows.slice(0, 12);
+// Строку можно раскрыть — увидеть сделки по инструменту; сделку — открыть на графике (где вход, выход, фиксации).
+const INSTR_SHOWN = 12;
+function InstrumentsCard({ rows, items = [], onOpen }) {
+  const [all, setAll] = useState(false);
+  const [openTicker, setOpenTicker] = useState(null);
+  const shown = all ? rows : rows.slice(0, INSTR_SHOWN);
   const maxAbs = Math.max(1, ...shown.map((i) => Math.abs(i.pnl)));
+  const tradesOf = (ticker) => items.filter((x) => x.ticker === ticker).sort((p, q) => q.closed - p.closed);
   return (
     <div className="card mr-block">
       <div className="section-title">По инструментам</div>
@@ -657,19 +668,50 @@ function InstrumentsCard({ rows }) {
         <table className="table table-compact mr-instruments">
           <thead><tr><th>Тикер</th><th>Сделок</th><th>Прибыльных</th><th>Вклад в результат</th><th style={{ textAlign: 'right' }}>Итог</th></tr></thead>
           <tbody>
-            {shown.map((i) => (
-              <tr key={i.label}>
-                <td style={{ fontWeight: 600 }}>{i.label}</td>
-                <td>{i.count || '—'}</td>
-                <td>{i.count ? `${Math.round(i.winrate)}%` : '—'}</td>
-                <td className="mr-ibar-cell"><div className="mr-ibar"><i className={sgn(i.pnl)} style={{ width: `${Math.max(2, (Math.abs(i.pnl) / maxAbs) * 100)}%` }} /></div></td>
-                <td className={`mr-num ${sgn(i.pnl)}`}>{money(i.pnl)}</td>
-              </tr>
-            ))}
+            {shown.map((i) => {
+              const isOpen = openTicker === i.label;
+              return (
+                <React.Fragment key={i.label}>
+                  <tr
+                    className={`mr-row-click${isOpen ? ' open' : ''}`} tabIndex={0} role="button" aria-expanded={isOpen}
+                    title="Показать сделки по инструменту" onClick={() => setOpenTicker(isOpen ? null : i.label)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpenTicker(isOpen ? null : i.label); } }}
+                  >
+                    <td style={{ fontWeight: 600 }}><span className="mr-chev">{isOpen ? '▾' : '▸'}</span> {i.label}</td>
+                    <td>{i.count || '—'}</td>
+                    <td>{i.count ? `${Math.round(i.winrate)}%` : '—'}</td>
+                    <td className="mr-ibar-cell"><div className="mr-ibar"><i className={sgn(i.pnl)} style={{ width: `${Math.max(2, (Math.abs(i.pnl) / maxAbs) * 100)}%` }} /></div></td>
+                    <td className={`mr-num ${sgn(i.pnl)}`}>{money(i.pnl)}</td>
+                  </tr>
+                  {isOpen && (
+                    <tr className="mr-sub">
+                      <td colSpan={5}>
+                        <div className="mr-sublist">
+                          {tradesOf(i.label).map((x, k) => (
+                            <button key={x.raw?.id || k} type="button" className="mr-subrow" onClick={() => onOpen?.(x)} title="Открыть график сделки">
+                              <span>{x.closed instanceof Date ? x.closed.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' }) : '—'}</span>
+                              <span>{x.direction === 'short' ? 'Шорт' : 'Лонг'} <i className="mr-src">{x.src === 'paper' ? 'бумага' : 'реал'}</i></span>
+                              <span className="mr-subnote">{x.strategy || ''}</span>
+                              <b className={`mr-num ${sgn(x.pnl)}`}>{money(x.pnl)}</b>
+                              <em>график →</em>
+                            </button>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
+              );
+            })}
           </tbody>
         </table>
       </div>
-      {rows.length > shown.length && <div className="mr-note">Показаны {shown.length} из {rows.length}.</div>}
+      {rows.length > INSTR_SHOWN && (
+        <div className="mr-note">
+          {all ? `Показаны все ${rows.length}.` : `Показаны ${shown.length} из ${rows.length}.`}{' '}
+          <button type="button" className="mr-linkbtn" onClick={() => setAll((v) => !v)}>{all ? 'Свернуть' : `Показать все ${rows.length}`}</button>
+        </div>
+      )}
     </div>
   );
 }

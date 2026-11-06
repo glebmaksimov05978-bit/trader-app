@@ -6,6 +6,7 @@ import { act } from 'react-dom/test-utils';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
+jest.mock('../../services/report/deviceZone', () => ({ deviceZone: jest.fn() }));
 jest.mock('react-hot-toast', () => { const t = jest.fn(); t.success = jest.fn(); t.error = jest.fn(); return { __esModule: true, default: t }; });
 const mockPdf = jest.fn();
 const mockDocx = jest.fn();
@@ -46,6 +47,7 @@ async function mount(props = {}) {
   });
 }
 beforeEach(() => {
+  require('../../services/report/deviceZone').deviceZone.mockReturnValue('Europe/Moscow'); // пояс устройства (resetMocks сбрасывает его)
   localStorage.clear();
   mockPdf.mockReset(); mockDocx.mockReset(); mockDownload.mockReset();
   mockPdf.mockImplementation(async () => new Blob(['pdf']));
@@ -79,20 +81,39 @@ test('свои даты: без дат кнопки выключены и вид
   await change(document.body.querySelector('select[aria-label="Период"]'), 'custom');
   expect(document.body.textContent).toContain('Укажите обе даты');
   expect(byText('Скачать PDF').disabled).toBe(true);
-  const d = (ms) => new Date(ms).toISOString().slice(0, 10);
-  const inputs = document.body.querySelectorAll('.rx-dates input[type="date"]');
+  const d = (ms) => new Date(ms).toISOString().slice(0, 10).split('-').reverse().join('.'); // дд.мм.гггг — так вводят в поле даты
+  const inputs = document.body.querySelectorAll('.rx-dates .dp-input');
   await change(inputs[0], d(NOW - 60 * 86400000));
-  await change(document.body.querySelectorAll('.rx-dates input[type="date"]')[1], d(NOW));
+  await change(document.body.querySelectorAll('.rx-dates .dp-input')[1], d(NOW));
   expect(document.body.querySelector('.rx-summary').textContent).toMatch(/3 сделки/);
   expect(byText('Скачать PDF').disabled).toBe(false);
 });
 
-test('конец периода раньше начала — понятная ошибка', async () => {
+test('конец периода раньше начала не принимается полем даты (и не доходит до выгрузки)', async () => {
   await mount();
   await change(document.body.querySelector('select[aria-label="Период"]'), 'custom');
-  await change(document.body.querySelectorAll('.rx-dates input[type="date"]')[0], '2026-10-20');
-  await change(document.body.querySelectorAll('.rx-dates input[type="date"]')[1], '2026-10-10');
-  expect(document.body.textContent).toContain('Дата конца раньше даты начала');
+  await change(document.body.querySelectorAll('.rx-dates .dp-input')[0], '20.10.2026');
+  await change(document.body.querySelectorAll('.rx-dates .dp-input')[1], '10.10.2026');
+  expect(document.body.textContent).toContain('Укажите обе даты');
+  expect(byText('Скачать PDF').disabled).toBe(true);
+});
+
+test('календарь: открывается по кнопке, день выбирается кликом и попадает в поле; «Очистить» убирает дату', async () => {
+  await mount();
+  await change(document.body.querySelector('select[aria-label="Период"]'), 'custom');
+  await click(document.body.querySelectorAll('.rx-dates .dp-btn')[0]);
+  const pop = document.body.querySelector('.dp-pop');
+  expect(pop).toBeTruthy();
+  expect(pop.textContent).toMatch(/(Январь|Февраль|Март|Апрель|Май|Июнь|Июль|Август|Сентябрь|Октябрь|Ноябрь|Декабрь) \d{4}/);
+  expect(pop.querySelectorAll('.dp-day').length).toBe(42);
+  const day = [...pop.querySelectorAll('.dp-day:not(.out):not(:disabled)')][4];
+  await click(day);
+  expect(document.body.querySelector('.dp-pop')).toBeNull();
+  const iso = day.getAttribute('data-date');
+  expect(document.body.querySelectorAll('.rx-dates .dp-input')[0].value).toBe(iso.split('-').reverse().join('.'));
+  await click(document.body.querySelectorAll('.rx-dates .dp-btn')[0]);
+  await click([...document.body.querySelectorAll('.dp-link')].find((b) => b.textContent === 'Очистить'));
+  expect(document.body.querySelectorAll('.rx-dates .dp-input')[0].value).toBe('');
 });
 
 test('«Скачать PDF» собирает модель выбранного периода и запускает скачивание', async () => {
@@ -259,6 +280,41 @@ test('статус подключения каналов берётся из п�
   expect(document.body.textContent).toContain('Статус подключения появится после ближайшего запуска робота');
 });
 
+test('пояс устройства не московский: новое расписание берёт его, час — по нему, можно переключить на Москву', async () => {
+  require('../../services/report/deviceZone').deviceZone.mockReturnValue('Asia/Yekaterinburg');
+  const saves = await mountSched();
+  await click(byText('Добавить расписание'));
+  expect(document.body.textContent).toContain('Моё время (UTC+5');
+  expect(document.body.querySelector('select[aria-label="Час отправки"]').value).toBe('9');
+  await click(byText('По Москве'));
+  expect(document.body.querySelector('select[aria-label="Час отправки"]').value).toBe('9');
+  await click(document.body.querySelector('.rx-seg[aria-label="Часовой пояс"] button:first-child'));
+  await click(byText('Сохранить расписание'));
+  await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
+  expect(saves[0].reportSchedules[0].tz).toBe('Asia/Yekaterinburg');
+  expect(document.body.textContent).toContain('в 9:00 (UTC+5)');
+});
+
+test('у московского устройства выбора пояса нет — только пометка «по Москве»', async () => {
+  await mountSched();
+  await click(byText('Добавить расписание'));
+  expect(document.body.querySelector('.rx-seg[aria-label="Часовой пояс"]')).toBeNull();
+  expect(document.body.textContent).toContain('Время указано по Москве');
+});
+
+test('второе такое же расписание — предупреждение, что отчёт придёт дважды (сохранить всё равно можно)', async () => {
+  const saves = await mountSched();
+  await click(byText('Добавить расписание'));
+  expect(document.body.textContent).not.toContain('Точно такое же расписание');
+  await click(byText('Сохранить расписание'));
+  await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
+  await click(byText('Добавить расписание'));
+  expect(document.body.textContent).toContain('Точно такое же расписание уже есть');
+  await change(document.body.querySelector('select[aria-label="Час отправки"]'), '10');
+  expect(document.body.textContent).not.toContain('Точно такое же расписание');
+  expect(saves.length).toBe(1);
+});
+
 test('еженедельное расписание: смена частоты подставляет «Прошлая неделя»; несоответствие периода и частоты — подсказка', async () => {
   const saves = await mountSched();
   await click(byText('Добавить расписание'));
@@ -279,7 +335,7 @@ test('разовая отправка без даты не сохраняетс�
   await click(byText('Один раз'));
   await click(byText('Сохранить расписание'));
   expect(saves.length).toBe(0);
-  await change(document.body.querySelector('.rx-dates input[type="date"]'), '2020-01-01');
+  await change(document.body.querySelector('.rx-dates .dp-input'), '01.01.2020');
   await click(byText('Сохранить расписание'));
   expect(saves.length).toBe(0);
 });
@@ -300,8 +356,16 @@ test('включить/выключить, «Отправить сейчас» �
   expect(typeof last.sendNowAt).toBe('number');
   expect(document.body.textContent).toContain('Запрос «Отправить сейчас» принят');
   expect(require('react-hot-toast').default.success).toHaveBeenCalledWith(expect.stringContaining('Telegram'));
-  jest.spyOn(window, 'confirm').mockReturnValue(true);
   await click(byText('Удалить'));
+  // окно подтверждения в стиле приложения (а не системное): сначала «Отмена» — ничего не удаляется
+  expect(document.body.querySelector('.dlg-modal')).toBeTruthy();
+  const before = saves.length;
+  await click([...document.body.querySelectorAll('.dlg-modal button')].find((b) => b.textContent === 'Отмена'));
+  await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
+  expect(saves.length).toBe(before);
+  expect(document.body.querySelector('.dlg-modal')).toBeNull();
+  await click(byText('Удалить'));
+  await click([...document.body.querySelectorAll('.dlg-modal button')].find((b) => b.textContent === 'Удалить'));
   await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
   expect(saves[saves.length - 1].reportSchedules).toEqual([]);
 });

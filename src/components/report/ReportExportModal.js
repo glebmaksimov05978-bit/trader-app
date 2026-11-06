@@ -13,6 +13,7 @@ import {
 } from '../../services/report/exportReport';
 import ReportScheduleTab from './ReportScheduleTab';
 import { buildPdfBlob, buildDocxBlob, downloadBlob, reportFileName } from '../../services/report/exportClient';
+import DatePicker from '../shared/DatePicker';
 import './ReportExport.css';
 
 const LS_KEY = 'tp_report_export_v1';
@@ -123,8 +124,8 @@ export default function ReportExportModal({
             </select>
             {preset === 'custom' && (
               <div className="rx-dates">
-                <label>С <input type="date" className="input" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} /></label>
-                <label>По <input type="date" className="input" value={to} min={from || undefined} max={toDateInput(Date.now(), tzOffset())} onChange={(e) => setTo(e.target.value)} /></label>
+                <label>С <DatePicker value={from} max={to || undefined} onChange={setFrom} ariaLabel="Начало периода" /></label>
+                <label>По <DatePicker value={to} min={from || undefined} max={toDateInput(Date.now(), tzOffset())} onChange={setTo} ariaLabel="Конец периода" /></label>
               </div>
             )}
             {customError && <p className="rx-error">{customError}</p>}

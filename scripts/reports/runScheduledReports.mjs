@@ -105,11 +105,12 @@ export async function runScheduledReports({ db, uids, M, now = Date.now(), dry =
     }
     const schedules = M.normalizeSchedules(profile.reportSchedules);
     const sendLog = profile.reportSendLog || {};
-    const today = M.mskParts(now).date;
+    // дата — в часовом поясе самого расписания (у каждого он свой)
+    const todayOf = (s) => M.mskParts(now, s.tz).date;
     const gates = new Map();
     const due = schedules.filter((s) => {
       const st = sendLog[s.id] || {};
-      if (!force && (st.lastErrorDay === today && (st.tries || 0) >= MAX_TRIES_PER_DAY)) { log(`[${uid}] «${s.name || s.id}»: на сегодня исчерпаны попытки (${st.tries})`); return false; }
+      if (!force && (st.lastErrorDay === todayOf(s) && (st.tries || 0) >= MAX_TRIES_PER_DAY)) { log(`[${uid}] «${s.name || s.id}»: на сегодня исчерпаны попытки (${st.tries})`); return false; }
       const gate = force ? (s.enabled ? { send: true, reason: 'принудительно' } : { send: false, reason: 'выключено' }) : M.isScheduleDue(s, now, st);
       if (!gate.send) log(`[${uid}] «${s.name || s.id}»: ${gate.reason}`);
       gates.set(s.id, gate);
@@ -124,7 +125,8 @@ export async function runScheduledReports({ db, uids, M, now = Date.now(), dry =
     const realTrades = docs(tSnap), paperTrades = docs(pSnap);
 
     for (const s of due) {
-      const period = M.resolvePeriod({ preset: s.period, now });
+      const today = todayOf(s);
+      const period = M.resolvePeriod({ preset: s.period, now, tzOffsetMin: Math.round(M.zoneOffsetMs(s.tz, now) / 60000) });
       const model = M.buildExportReport({
         realTrades, paperTrades, scope: s.scope, strategyNames: s.strategies, period, sections: s.sections,
         profile, habitsFn: M.computeHabitsFor, userName: profile.displayName || '', now,

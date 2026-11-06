@@ -2,6 +2,7 @@
 //
 // «Разбор»: сводка в R и поведенческие наблюдения по учебным сделкам. Считает services/trainer/trainerStats.js —
 // только сделки с kind === 'trainer'. Реальных сделок здесь нет и быть не может; об этом сказано на экране прямо.
+import confirmDialog from '../shared/confirmDialog';
 import React from 'react';
 import Icon from '../shared/Icon';
 import { analyze, MIN_N } from '../../services/trainer/trainerStats';
@@ -20,7 +21,7 @@ export default function TrainerReview({ trades, onChanged }) {
   const rows = (trades || []).filter((t) => t.status === 'closed').slice(0, 30);
 
   async function remove(id) {
-    if (!window.confirm('Удалить эту учебную сделку из разбора?')) return;
+    if (!(await confirmDialog({ title: 'Удалить учебную сделку?', text: 'Она пропадёт из разбора. Реальные сделки это не затрагивает.' }))) return;
     try { await deleteTrainerTrade(id); onChanged?.(); } catch { toast.error('Не удалось удалить'); }
   }
 

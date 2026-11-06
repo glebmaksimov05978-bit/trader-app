@@ -2,7 +2,7 @@
 // «отправить сейчас», разовая отправка, нормализация испорченных данных, описание словами, ближайшая отправка.
 import {
   defaultSchedule, normalizeSchedule, normalizeSchedules, isScheduleDue, nextRunAt, describeSchedule, describeWhen, mismatchHint, mskParts, MAX_SCHEDULES, HOURS,
-  isValidEmail, describeChannels, manualPending,
+  isValidEmail, describeChannels, manualPending, isValidTimeZone, zoneOffsetMs, zonedToUtc, utcLabel, hoursForZone, findDuplicate, MSK_TZ,
 } from '../src/services/report/schedule.js';
 
 let fails = 0;
@@ -74,6 +74,35 @@ ok('описание: склонение по каждому дню недели
 ok('описание: «Каждый месяц, 1-го числа, в 9:00 · за прошлый месяц»', describeSchedule(defaultSchedule()) === 'Каждый месяц, 1-го числа, в 9:00 · за прошлый месяц');
 ok('описание разовой: «Один раз: 31 декабря 2026 в 12:00»', describeWhen(once) === 'Один раз: 31 декабря 2026 в 12:00');
 ok('подсказка о несоответствии: еженедельно за «прошлый год»', /одинаковыми/.test(mismatchHint({ frequency: 'weekly', period: 'last_year' })) && mismatchHint(weekly) === '');
+
+
+// ---- часовые пояса ----
+ok('пояс: настоящие названия принимаются, мусор — нет', isValidTimeZone('Asia/Yekaterinburg') && isValidTimeZone('Europe/Moscow') && !isValidTimeZone('Mars/Olympus') && !isValidTimeZone('') && !isValidTimeZone(null));
+ok('сдвиг пояса: Москва +3, Екатеринбург +5; Нью-Йорк зимой −5, летом −4', zoneOffsetMs('Europe/Moscow', 0) === 3 * 3600e3 && zoneOffsetMs('Asia/Yekaterinburg', Date.UTC(2026, 10, 4)) === 5 * 3600e3
+  && zoneOffsetMs('America/New_York', Date.UTC(2026, 10, 4)) === -5 * 3600e3 && zoneOffsetMs('America/New_York', Date.UTC(2026, 6, 4)) === -4 * 3600e3);
+ok('местное время → UTC: 9:00 в Нью-Йорке — 14:00 UTC зимой и 13:00 UTC летом (переход 1 ноября 2026)', zonedToUtc(2026, 10, 2, 9, 'America/New_York') === Date.UTC(2026, 10, 2, 14) && zonedToUtc(2026, 9, 30, 9, 'America/New_York') === Date.UTC(2026, 9, 30, 13)
+  && zonedToUtc(2026, 10, 2, 9, 'Europe/Moscow') === Date.UTC(2026, 10, 2, 6));
+ok('подпись пояса: UTC+3, UTC+5, UTC+5:30, UTC−5', utcLabel('Europe/Moscow') === 'UTC+3' && utcLabel('Asia/Yekaterinburg', Date.UTC(2026, 10, 4)) === 'UTC+5' && utcLabel('Asia/Kolkata') === 'UTC+5:30' && utcLabel('America/New_York', Date.UTC(2026, 10, 4)) === 'UTC−5');
+ok('доступные часы: в Москве 7–22; в Екатеринбурге (+2 к Москве) 9–23 и 0 (робот успевает)', hoursForZone('Europe/Moscow').join() === '7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22' && hoursForZone('Asia/Yekaterinburg', Date.UTC(2026, 10, 4)).join() === '0,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23');
+const ekb = defaultSchedule({ frequency: 'weekly', dayOfWeek: 0, hour: 9, tz: 'Asia/Yekaterinburg' });
+ok('расписание по умолчанию — московское; в запись пояс сохраняется', defaultSchedule().tz === MSK_TZ && normalizeSchedule(ekb).tz === 'Asia/Yekaterinburg' && normalizeSchedule({ frequency: 'weekly', tz: 'Mars/X' }).tz === MSK_TZ && normalizeSchedule({ frequency: 'weekly' }).tz === MSK_TZ);
+ok('екатеринбургское «понедельник 9:00» наступает в 07:00 по Москве (и не раньше)', isScheduleDue(ekb, msk(2026, 11, 2, 7, 0)).send && !isScheduleDue(ekb, msk(2026, 11, 2, 6, 45)).send);
+ok('день недели считается в поясе расписания: воскресенье 23:30 по Москве — это уже понедельник в Екатеринбурге, но 9:00 ещё нет', !isScheduleDue(ekb, msk(2026, 11, 1, 23, 30)).send);
+ok('«сегодня уже отправлено» — по дате в поясе расписания', !isScheduleDue(ekb, msk(2026, 11, 2, 12, 0), { lastSentOn: '2026-11-02' }).send && isScheduleDue(ekb, msk(2026, 11, 2, 12, 0), { lastSentOn: '2026-10-26' }).send);
+ok('ближайшая отправка в поясе расписания: следующий понедельник 9:00 по Екатеринбургу = 07:00 по Москве', nextRunAt(ekb, msk(2026, 11, 4, 15, 0)) === msk(2026, 11, 9, 7, 0));
+const nyBad = normalizeSchedule(defaultSchedule({ frequency: 'weekly', dayOfWeek: 6, hour: 18, tz: 'America/New_York' })); // 18:00 в Нью-Йорке — 02:00 ночи по Москве, робот в это время не работает
+ok('час вне окна робота для этого пояса при чтении заменяется допустимым', hoursForZone('America/New_York').includes(nyBad.hour) && nyBad.hour !== 18);
+const nyOk = defaultSchedule({ frequency: 'weekly', dayOfWeek: 6, hour: 12, tz: 'America/New_York' });
+ok('летнее время учитывается: воскресенье 12:00 в Нью-Йорке — 16:00 UTC летом, 17:00 UTC зимой (переход 1 ноября 2026)', nextRunAt(nyOk, Date.UTC(2026, 10, 2, 12)) === Date.UTC(2026, 10, 8, 17) && nextRunAt(nyOk, Date.UTC(2026, 9, 19, 12)) === Date.UTC(2026, 9, 25, 16) && nextRunAt(nyOk, Date.UTC(2026, 9, 26, 12)) === Date.UTC(2026, 10, 1, 17));
+ok('описание: у московского расписания поясу нет пометки, у другого — «(UTC+5)»', describeWhen(defaultSchedule({ frequency: 'weekly', dayOfWeek: 0, hour: 9 })) === 'Каждый понедельник в 9:00' && describeWhen(ekb) === 'Каждый понедельник в 9:00 (UTC+5)');
+
+// ---- одинаковые расписания ----
+const a1 = normalizeSchedule(defaultSchedule({ id: 'a', frequency: 'weekly', dayOfWeek: 4, hour: 9, period: 'last_week', sections: ['summary', 'curve'] }));
+const a2 = normalizeSchedule(defaultSchedule({ id: 'b', frequency: 'weekly', dayOfWeek: 4, hour: 9, period: 'last_week', sections: ['curve', 'summary'] }));
+ok('одинаковые по смыслу расписания находятся (порядок разделов не важен)', findDuplicate([a1], a2)?.id === 'a');
+ok('другой час, период, срез, канал или пояс — уже не дубль', findDuplicate([a1], { ...a2, hour: 10 }) === null && findDuplicate([a1], { ...a2, period: 'last_month' }) === null && findDuplicate([a1], { ...a2, scope: 'paper' }) === null
+  && findDuplicate([a1], { ...a2, channels: ['telegram', 'max'] }) === null && findDuplicate([a1], { ...a2, tz: 'Asia/Yekaterinburg', hour: 11 }) === null);
+ok('само с собой (тот же id) — не дубль', findDuplicate([a1], a1) === null);
 
 if (fails) { console.log(`\nПровалено: ${fails}`); process.exit(1); }
 console.log('\nВсе проверки расписания отчёта прошли ✓');

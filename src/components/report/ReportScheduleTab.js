@@ -7,10 +7,13 @@
 import React, { useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
 import Icon from '../shared/Icon';
+import DatePicker from '../shared/DatePicker';
+import confirmDialog from '../shared/confirmDialog';
+import { deviceZone } from '../../services/report/deviceZone';
 import { SCOPES } from '../../services/analytics/periodReport';
 import { SECTIONS } from '../../services/report/exportReport';
 import {
-  FREQUENCIES, HOURS, SCHEDULE_PERIODS, MAX_SCHEDULES, CHANNELS, defaultSchedule, normalizeSchedule, normalizeSchedules, describeSchedule, describeChannels, periodWords,
+  FREQUENCIES, MSK_TZ, hoursForZone, utcLabel, findDuplicate, SCHEDULE_PERIODS, MAX_SCHEDULES, CHANNELS, defaultSchedule, normalizeSchedule, normalizeSchedules, describeSchedule, describeChannels, periodWords,
   nextRunAt, mismatchHint, mskParts, isValidEmail, manualPending,
 } from '../../services/report/schedule';
 
@@ -29,11 +32,13 @@ function channelState(ch, delivery) {
   return { cls: '', text: 'Статус подключения появится после ближайшего запуска робота.' };
 }
 
-const dateText = (ms) => {
-  const p = mskParts(ms);
+const dateText = (ms, tz) => {
+  const p = mskParts(ms, tz);
   return `${p.d} ${MONTHS_GEN[p.m]}, ${String(p.hour).padStart(2, '0')}:${String(new Date(ms).getUTCMinutes()).padStart(2, '0')}`;
 };
-const dayText = (ms) => { const p = mskParts(ms); return `${p.d} ${MONTHS_GEN[p.m]} ${p.y}`; };
+const dayText = (ms, tz) => { const p = mskParts(ms, tz); return `${p.d} ${MONTHS_GEN[p.m]} ${p.y}`; };
+
+const zoneTitle = (tz) => (tz === MSK_TZ ? 'по Москве' : `${utcLabel(tz)}, ${String(tz).split('/').pop().replace(/_/g, ' ')}`);
 
 export default function ReportScheduleTab({ profile, updateUserProfile, strategyList = [], defaultSections }) {
   const list = useMemo(() => normalizeSchedules(profile?.reportSchedules), [profile?.reportSchedules]);
@@ -52,19 +57,27 @@ export default function ReportScheduleTab({ profile, updateUserProfile, strategy
   }
 
   const lastEmail = [...list].reverse().find((x) => x.email)?.email || '';
-  const startNew = () => { setEditing(defaultSchedule({ ...(defaultSections ? { sections: defaultSections.slice() } : {}), email: lastEmail })); setIsNew(true); };
+  const startNew = () => {
+    const tz = deviceZone(); // новое расписание по умолчанию — по времени устройства
+    const hours = hoursForZone(tz);
+    setEditing(defaultSchedule({ ...(defaultSections ? { sections: defaultSections.slice() } : {}), email: lastEmail, tz, hour: hours.includes(9) ? 9 : hours[0] }));
+    setIsNew(true);
+  };
   const startEdit = (s) => { setEditing({ ...s }); setIsNew(false); };
 
   async function submit() {
     if ((editing.channels || []).includes('email') && !isValidEmail((editing.email || '').trim())) { toast.error('Укажите один правильный адрес почты, например name@mail.ru'); return; }
     const s = normalizeSchedule(editing);
     if (!s) { toast.error('Для разовой отправки выберите дату'); return; }
-    if (s.frequency === 'once' && s.date < mskParts(Date.now()).date) { toast.error('Дата уже прошла — выберите сегодняшнюю или будущую'); return; }
+    if (s.frequency === 'once' && s.date < mskParts(Date.now(), s.tz).date) { toast.error('Дата уже прошла — выберите сегодняшнюю или будущую'); return; }
     const next = isNew ? [...list, s] : list.map((x) => (x.id === s.id ? s : x));
     if (await save(next)) { setEditing(null); toast.success('Расписание сохранено'); }
   }
   const toggle = (s) => save(list.map((x) => (x.id === s.id ? { ...x, enabled: !x.enabled } : x)));
-  const remove = async (s) => { if (window.confirm('Удалить это расписание?')) await save(list.filter((x) => x.id !== s.id)); };
+  const remove = async (s) => {
+    const ok = await confirmDialog({ title: 'Удалить расписание?', text: `«${s.name || describeSchedule(s)}» больше не будет присылать отчёты. Уже отправленные отчёты это не затрагивает.` });
+    if (ok) await save(list.filter((x) => x.id !== s.id));
+  };
   const sendNow = async (s) => {
     if (await save(list.map((x) => (x.id === s.id ? { ...x, sendNowAt: Date.now() } : x)))) toast.success(`Запрос принят: отчёт придёт (${describeChannels(s)}) в течение 15 минут`);
   };
@@ -76,6 +89,10 @@ export default function ReportScheduleTab({ profile, updateUserProfile, strategy
     const toggleCh = (id) => set({ channels: e.channels.includes(id) ? e.channels.filter((x) => x !== id) : [...e.channels, id] });
     const toggleStrat = (n) => set({ strategies: e.strategies.includes(n) ? e.strategies.filter((x) => x !== n) : [...e.strategies, n] });
     const hint = mismatchHint(e);
+    const zones = deviceZone() === MSK_TZ ? [MSK_TZ] : [deviceZone(), MSK_TZ];
+    const setZone = (z) => set({ tz: z, hour: hoursForZone(z).includes(e.hour) ? e.hour : (hoursForZone(z).includes(9) ? 9 : hoursForZone(z)[0]) });
+    const norm = normalizeSchedule(e);
+    const dup = norm ? findDuplicate(list, norm) : null;
     return (
       <div className="rx-body">
         <section className="rx-block">
@@ -124,11 +141,18 @@ export default function ReportScheduleTab({ profile, updateUserProfile, strategy
                 <option value="last">Последний день месяца</option></select></label>
             )}
             {e.frequency === 'once' && (
-              <label>Дата <input type="date" className="input" value={e.date} min={mskParts(Date.now()).date} onChange={(ev) => set({ date: ev.target.value })} /></label>
+              <label>Дата <DatePicker value={e.date} min={mskParts(Date.now(), e.tz).date} onChange={(v) => set({ date: v })} ariaLabel="Дата отправки" /></label>
             )}
-            <label>Время (по Москве) <select className="input" value={e.hour} onChange={(ev) => set({ hour: Number(ev.target.value) })}>
-              {HOURS.map((h) => <option key={h} value={h}>{h}:00</option>)}</select></label>
+            <label>Время <select className="input" value={e.hour} onChange={(ev) => set({ hour: Number(ev.target.value) })} aria-label="Час отправки">
+              {hoursForZone(e.tz).map((h) => <option key={h} value={h}>{h}:00</option>)}</select></label>
           </div>
+          {zones.length > 1 ? (
+            <div className="rx-seg" role="tablist" aria-label="Часовой пояс" style={{ marginTop: 8 }}>
+              {zones.map((z) => (
+                <button key={z} type="button" className={e.tz === z ? 'on' : ''} onClick={() => setZone(z)}>{z === MSK_TZ ? 'По Москве' : `Моё время (${zoneTitle(z)})`}</button>
+              ))}
+            </div>
+          ) : <p className="rx-note" style={{ marginTop: 6 }}>Время указано {zoneTitle(e.tz)}.</p>}
           <p className="rx-note">Робот проверяет расписание раз в 15 минут (с 7:00 до 23:45 по Москве), поэтому файл может прийти с небольшим опозданием.</p>
         </section>
 
@@ -139,6 +163,7 @@ export default function ReportScheduleTab({ profile, updateUserProfile, strategy
           </select>
           <p className="rx-note">Период считается в момент отправки: «Прошлый месяц» всегда означает последний завершённый месяц.</p>
           {hint && <p className="rx-error" style={{ color: 'var(--gold)' }}>{hint}</p>}
+          {dup && <p className="rx-error" style={{ color: 'var(--gold)' }}>Точно такое же расписание уже есть{dup.name ? ` («${dup.name}»)` : ''}: отчёт придёт дважды. Измените время или период — или не сохраняйте это расписание.</p>}
         </section>
 
         <section className="rx-block">
@@ -204,9 +229,9 @@ export default function ReportScheduleTab({ profile, updateUserProfile, strategy
             </p>
             <p className="rx-sched-line">Куда: {describeChannels(s)}</p>
             <p className="rx-sched-line">
-              {!s.enabled ? 'Выключено.' : pending ? 'Запрос «Отправить сейчас» принят — придёт в течение 15 минут.' : next ? `Следующая отправка: ${next <= now + 60000 ? 'при ближайшем проходе робота (сегодня)' : dateText(next)} · за ${periodWords(s.period)}.` : 'Больше отправок не будет.'}
+              {!s.enabled ? 'Выключено.' : pending ? 'Запрос «Отправить сейчас» принят — придёт в течение 15 минут.' : next ? `Следующая отправка: ${next <= now + 60000 ? 'при ближайшем проходе робота (сегодня)' : dateText(next, s.tz)} · за ${periodWords(s.period)}.` : 'Больше отправок не будет.'}
             </p>
-            {st.lastSentOn && !st.lastError && <p className="rx-sched-line ok">Последняя отправка: {dayText(st.lastSentAt || now)} — «{st.lastTitle}».</p>}
+            {st.lastSentOn && !st.lastError && <p className="rx-sched-line ok">Последняя отправка: {dayText(st.lastSentAt || now, s.tz)} — «{st.lastTitle}».</p>}
             {st.lastError && <p className="rx-sched-line bad">Ошибка последней попытки: {st.lastError}. Робот повторит позже в тот же день.</p>}
             <div className="rx-sched-actions">
               <button type="button" className="btn btn-secondary btn-sm" disabled={busy || !s.enabled || pending} onClick={() => sendNow(s)}><Icon name="send" size={12} /> Отправить сейчас</button>

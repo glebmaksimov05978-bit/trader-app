@@ -162,6 +162,17 @@ ok('если ничего не изменилось — в базу ничего
 await runScheduledReports({ db, uids: [UID], M, now: msk(2026, 11, 1, 10, 30), senders: {}, channelStatus: { telegram: true, email: true, max: false }, log: quiet });
 ok('появились ключи почты — статус обновляется', db.users[UID].reportDelivery.email === true && db.writes.length === w0 + 1);
 
+// --- свой часовой пояс у расписания ---
+db = fakeDb({ reportSchedules: [sched({ frequency: 'weekly', dayOfWeek: 0, hour: 9, period: 'last_week', tz: 'Asia/Yekaterinburg' })] });
+const sentTz = [];
+const sendTz = async (a) => { sentTz.push(a); return { ok: true }; };
+await runScheduledReports({ db, uids: [UID], M, now: msk(2026, 11, 2, 6, 50), send: sendTz, log: quiet });
+ok('расписание в поясе UTC+5: в 06:50 по Москве (08:50 у них) ещё не шлёт', sentTz.length === 0);
+await runScheduledReports({ db, uids: [UID], M, now: msk(2026, 11, 2, 7, 5), send: sendTz, log: quiet });
+ok('в 07:05 по Москве (09:05 у них) шлёт; отметка «сегодня» — с датой в их поясе', sentTz.length === 1 && db.users[UID].reportSendLog.s1.lastSentOn === '2026-11-02');
+await runScheduledReports({ db, uids: [UID], M, now: msk(2026, 11, 2, 7, 20), send: sendTz, log: quiet });
+ok('и в тот же день не дублирует', sentTz.length === 1);
+
 // --- отправка в Telegram ---
 const calls = [];
 const fakeFetch = async (url, init) => { calls.push({ url, init }); return { status: 200, json: async () => ({ ok: true }) }; };

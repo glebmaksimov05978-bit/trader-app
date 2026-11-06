@@ -1,0 +1,11 @@
+/* src/components/shared/Dialogs.css — небольшие окна подтверждения в стиле приложения. */
+.dlg-overlay { position: fixed; inset: 0; z-index: 1500; background: rgba(8, 12, 24, 0.62); display: flex; align-items: center; justify-content: center; padding: 16px; backdrop-filter: blur(2px); }
+.dlg-modal { width: min(400px, 100%); background: var(--bg-surface); border: 1px solid var(--border-medium); border-radius: var(--radius); box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.6); padding: 20px 22px 18px; color: var(--text-primary); }
+[data-theme="light"] .dlg-modal { box-shadow: 0 24px 60px -24px rgba(17, 26, 46, 0.4); }
+.dlg-modal h3 { margin: 0 0 8px; font-size: 16px; }
+.dlg-modal p { margin: 0 0 16px; font-size: 13.5px; line-height: 1.5; color: var(--text-secondary); }
+.dlg-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.dlg-modal p + .dlg-actions { margin-top: 0; }
+.btn-danger { background: var(--red); border: 1px solid var(--red); color: #fff; }
+.btn-danger:hover { filter: brightness(1.08); }
+@media (max-width: 640px) { .dlg-actions .btn { flex: 1; justify-content: center; } }

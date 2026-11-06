@@ -28,7 +28,7 @@ export async function buildPdfBlob(model) {
 
 /** SVG-строка → PNG (Uint8Array) через canvas; фон белый, вдвое выше разрешение для чёткости. */
 export function rasterizeSvg(svg, width, height, scale = 2) {
-  const safe = svg.split('font-family="Roboto"').join('font-family="Arial, Helvetica, sans-serif"');
+  const safe = svg.split('font-family="Roboto"').join('font-family="Calibri, Carlito, Arial, Helvetica, sans-serif"');
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(new Blob([safe], { type: 'image/svg+xml;charset=utf-8' }));
