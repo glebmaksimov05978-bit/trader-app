@@ -132,6 +132,8 @@ const TINKOFF_MAX_SPAN_DAYS = {
   CANDLE_INTERVAL_HOUR: 7, CANDLE_INTERVAL_DAY: 360,
 };
 
+const TINKOFF_PARALLEL_WINDOWS = 4;
+
 async function fetchCandlesFromTinkoff(ticker, instrumentType, from, to, token, tinkoffInterval) {
   const api = new TinkoffAPI(token);
   const instrument = instrumentType === 'future'
@@ -146,16 +148,26 @@ async function fetchCandlesFromTinkoff(ticker, instrumentType, from, to, token, 
     windows.push([new Date(windowStart), new Date(windowEnd)]);
   }
 
-  const allCandles = [];
-  for (const [wFrom, wTo] of windows) {
-    const data = await api.request('/tinkoff.public.invest.api.contract.v1.MarketDataService/GetCandles', {
-      figi: instrument.figi,
-      from: wFrom.toISOString(),
-      to: wTo.toISOString(),
-      interval: tinkoffInterval,
-    });
-    allCandles.push(...(data.candles || []));
-  }
+  // Окна запрашиваем по нескольку сразу (раньше — строго по одному): на М15 это 36 запросов подряд, на телефоне график грузился
+  // десятки секунд. Порядок результатов сохраняется по номеру окна. Небольшое число одновременных запросов — чтобы не упереться
+  // в лимит Т-Банка по запросам в минуту.
+  const results = new Array(windows.length);
+  let nextWindow = 0;
+  const runWorker = async () => {
+    while (nextWindow < windows.length) {
+      const i = nextWindow++;
+      const [wFrom, wTo] = windows[i];
+      const data = await api.request('/tinkoff.public.invest.api.contract.v1.MarketDataService/GetCandles', {
+        figi: instrument.figi,
+        from: wFrom.toISOString(),
+        to: wTo.toISOString(),
+        interval: tinkoffInterval,
+      });
+      results[i] = data.candles || [];
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(TINKOFF_PARALLEL_WINDOWS, windows.length) }, runWorker));
+  const allCandles = results.flat();
 
   // Adjacent windows share their boundary instant, which can hand back the same candle
   // twice — dedupe by timestamp before returning.

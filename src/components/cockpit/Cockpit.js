@@ -8,7 +8,7 @@
 // приходит из движка бэктеста (computeBothLines → engine.js), цифры позиции — из тех же
 // полей журнала, что показывает Журнал. Иначе панель и бэктест начнут расходиться, и
 // доверять будет нечему.
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
@@ -381,6 +381,17 @@ export default function Cockpit() {
   useEffect(() => {
     if (trade && taOpen && !taState.data && !taState.loading && taTicker) loadTa(null);
   }, [taOpen]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Инструмент открыт из радара (без сделки): как только свечи пришли, сразу показываем график — прокручиваем страницу к нему,
+  // а не оставляем трейдера с шапкой и кнопкой «Технический анализ». Один раз на инструмент (не дёргаем при обновлении данных).
+  const scrolledToChartFor = useRef(null);
+  useEffect(() => {
+    if (!previewTicker || trade) { scrolledToChartFor.current = null; return undefined; }
+    if (!taState.data?.candles?.length || scrolledToChartFor.current === previewTicker) return undefined;
+    scrolledToChartFor.current = previewTicker;
+    const timer = setTimeout(() => document.getElementById('ck-chart')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 120);
+    return () => clearTimeout(timer);
+  }, [previewTicker, trade, taState.data]);
 
   // Готовность к входу по условиям стратегии — вместо профит-/лосс-систем, которым без
   // открытой позиции нечего оценивать (они считают пик, просадку и число баров с входа).
@@ -1204,8 +1215,7 @@ export default function Cockpit() {
                 )}
               </div>
               <div className="ck-line-sub">
-                По инструменту сейчас нет ни твоей, ни бумажной сделки — можно посмотреть график,
-                технический анализ и готовность к входу.
+                По инструменту сейчас нет ни твоей, ни бумажной сделки. График — ниже; технический анализ и готовность к входу — кнопкой и панелью под ним.
               </div>
             </section>
           )}

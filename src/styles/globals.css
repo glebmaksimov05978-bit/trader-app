@@ -20,6 +20,7 @@
 
   --border-subtle: rgba(255,255,255,0.07);
   --border-medium: rgba(255,255,255,0.14);
+  --chart-grid: rgba(255,255,255,0.07);   /* сетка графика свечей */
 
   /* Цвета состояний */
   --gold: #d3a24a;
@@ -61,6 +62,7 @@
 
   --border-subtle: rgba(17, 26, 46, 0.07);
   --border-medium: rgba(17, 26, 46, 0.14);
+  --chart-grid: rgba(17, 26, 46, 0.12);
 
   --gold: #b7791f;
   --green: #12875f;

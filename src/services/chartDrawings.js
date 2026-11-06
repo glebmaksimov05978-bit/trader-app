@@ -12,8 +12,8 @@
 //
 // Чистые функции без зависимостей — подключаются и в приложение, и в робота.
 
-export const DRAWING_TYPES = ['hline', 'vline', 'trend', 'ray', 'rect', 'fib', 'text'];
-export const TWO_POINT = new Set(['trend', 'ray', 'rect', 'fib']);
+export const DRAWING_TYPES = ['hline', 'vline', 'trend', 'ray', 'arrow', 'rect', 'fib', 'text'];
+export const TWO_POINT = new Set(['trend', 'ray', 'arrow', 'rect', 'fib']);
 export const FIB_RATIOS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
 
 export const MAX_PER_CHART = 60;
@@ -24,6 +24,7 @@ export const TOOL_LABELS = {
   vline: 'Вертикальная линия',
   trend: 'Трендовая линия',
   ray: 'Луч',
+  arrow: 'Стрелка (прогноз)',
   rect: 'Прямоугольник',
   fib: 'Уровни Фибоначчи',
   text: 'Метка',
@@ -123,13 +124,15 @@ export function fibLevels(p1, p2) {
 
 /**
  * Линейка: что «стоит» ход между двумя точками.
- * @param {object} a { p1, p2, atr?, barSeconds? }
+ * @param {object} a { p1, p2, atr?, barSeconds?, barCount? }
  */
-export function rulerStats({ p1, p2, atr = null, barSeconds = null }) {
+export function rulerStats({ p1, p2, atr = null, barSeconds = null, barCount = null }) {
   const delta = p2.price - p1.price;
   const pct = p1.price !== 0 ? (delta / p1.price) * 100 : null;
   const seconds = Math.abs(p2.time - p1.time);
-  const bars = barSeconds && barSeconds > 0 ? Math.round(seconds / barSeconds) : null;
+  // Число баров лучше брать по номерам свечей (barCount): по секундам выходит больше настоящего — выходные и ночи в D1/часовых
+  // не торгуются, и календарные сутки не равны барам.
+  const bars = finite(barCount) ? Math.round(Math.abs(barCount)) : (barSeconds && barSeconds > 0 ? Math.round(seconds / barSeconds) : null);
   const atrMult = atr && atr > 0 ? delta / atr : null;
   return { delta, pct, bars, seconds, days: seconds / 86400, atrMult, direction: delta >= 0 ? 'up' : 'down' };
 }
@@ -152,10 +155,16 @@ export function rulerText(stats, { priceDigits = 2 } = {}) {
  * @param {{open,high,low,close}|null} candle
  * @param {number} threshold — в единицах цены (вызывающий переводит пиксели в цену)
  */
-export function snapPrice(price, candle, threshold) {
-  if (!candle || !finite(price) || !(threshold > 0)) return price;
+export function snapPrice(price, candle, threshold, reach = 0) {
+  if (!candle || !finite(price)) return price;
+  // «Сильный магнит»: клик внутри свечи (от минимума до максимума, плюс небольшой запас reach) всегда притягивается к ближайшей
+  // из O/H/L/C — иначе, нажав в середину тела, цена оставалась «где попало», и было непонятно, работает ли магнит.
+  // Далеко от свечи (пустое место, прогноз) цена остаётся свободной.
+  let limit = threshold;
+  if (reach > 0 && finite(candle.low) && finite(candle.high) && price >= candle.low - reach && price <= candle.high + reach) limit = Infinity;
+  if (!(limit > 0)) return price;
   let best = price;
-  let bestDist = threshold;
+  let bestDist = limit;
   for (const v of [candle.open, candle.high, candle.low, candle.close]) {
     if (!finite(v)) continue;
     const d = Math.abs(v - price);

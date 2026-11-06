@@ -12,6 +12,7 @@ const ICONS = {
   vline: <path d="M12 3v18" />,
   trend: <><path d="M4 18L20 6" /><circle cx="4" cy="18" r="1.6" /><circle cx="20" cy="6" r="1.6" /></>,
   ray: <><path d="M4 17L21 8" /><circle cx="4" cy="17" r="1.6" /><path d="M17 6l4 2-2 4" /></>,
+  arrow: <><path d="M4 18l15-12" strokeDasharray="3 2.5" /><path d="M13 5.5l6.2-.2-1.3 6.1" /></>,
   rect: <rect x="5" y="7" width="14" height="10" rx="1" />,
   fib: <><path d="M4 5h16M4 10h16M4 15h16M4 20h16" /><path d="M20 5L4 20" opacity=".6" /></>,
   text: <><path d="M6 6h12" /><path d="M12 6v12" /><path d="M9 18h6" /></>,
@@ -28,7 +29,7 @@ function Svg({ name }) {
   );
 }
 
-const TOOLS = ['cursor', 'hline', 'vline', 'trend', 'ray', 'rect', 'fib', 'text', 'ruler'];
+const TOOLS = ['cursor', 'hline', 'vline', 'trend', 'ray', 'arrow', 'rect', 'fib', 'text', 'ruler'];
 
 export default function ChartDrawingToolbar({
   open, onToggle, tool, onTool, color, onColor, magnet, onMagnet, label, onLabel,

@@ -5,8 +5,10 @@
 // поэтому рисунки двигаются и масштабируются вместе со свечами без отдельного наложенного слоя.
 //
 // Время ↔ координата переводится через ЛОГИЧЕСКИЙ индекс бара (между барами — линейно, за краями —
-// по типичному шагу), а не через timeToCoordinate: тот умеет только точное время бара, а линию
-// можно провести правее последней свечи или между двумя барами.
+// по СРЕДНЕМУ шагу между барами), а не через timeToCoordinate: тот умеет только точное время бара, а линию
+// можно провести правее последней свечи (прогноз) или между двумя барами. Средний шаг (а не последний):
+// у дневных свечей он учитывает выходные, поэтому «10 баров вперёд» после появления настоящих свечей
+// остаются примерно на месте.
 import { FIB_RATIOS, distToSegment } from '../../services/chartDrawings';
 
 const UP = '#3fb68b';
@@ -53,13 +55,22 @@ export class DrawingsPrimitive {
   }
 
   // ---- время / цена ↔ координаты ----
+  /** Средний шаг между барами (секунды) по последним ~200 барам. */
+  _avgStep() {
+    const ts = this._s.times;
+    const n = ts.length;
+    if (n < 2) return this._s.barSec || 86400;
+    const from = Math.max(0, n - 201);
+    const v = (ts[n - 1] - ts[from]) / (n - 1 - from);
+    return v > 0 ? v : (this._s.barSec || 86400);
+  }
+
   _logicalOfTime(t) {
     const ts = this._s.times;
     const n = ts.length;
     if (!n) return null;
-    const step = (a, b) => (b > a ? b - a : this._s.barSec || 86400);
-    if (t <= ts[0]) return (t - ts[0]) / step(ts[0], n > 1 ? ts[1] : ts[0] + this._s.barSec);
-    if (t >= ts[n - 1]) return (n - 1) + (t - ts[n - 1]) / step(n > 1 ? ts[n - 2] : ts[n - 1] - this._s.barSec, ts[n - 1]);
+    if (t <= ts[0]) return (t - ts[0]) / this._avgStep();
+    if (t >= ts[n - 1]) return (n - 1) + (t - ts[n - 1]) / this._avgStep();
     let lo = 0, hi = n - 1;
     while (hi - lo > 1) {
       const mid = (lo + hi) >> 1;
@@ -72,9 +83,8 @@ export class DrawingsPrimitive {
     const ts = this._s.times;
     const n = ts.length;
     if (!n) return null;
-    const step = (a, b) => (b > a ? b - a : this._s.barSec || 86400);
-    if (l <= 0) return ts[0] + l * step(ts[0], n > 1 ? ts[1] : ts[0] + this._s.barSec);
-    if (l >= n - 1) return ts[n - 1] + (l - (n - 1)) * step(n > 1 ? ts[n - 2] : ts[n - 1] - this._s.barSec, ts[n - 1]);
+    if (l <= 0) return ts[0] + l * this._avgStep();
+    if (l >= n - 1) return ts[n - 1] + (l - (n - 1)) * this._avgStep();
     const i = Math.floor(l);
     return ts[i] + (l - i) * (ts[i + 1] - ts[i]);
   }
@@ -152,6 +162,14 @@ export class DrawingsPrimitive {
           x2 = a.x; y2 = dy > 0 ? height + 20 : -20;
         }
         out.segs.push({ x1: a.x, y1: a.y, x2, y2, color, w: d.width });
+      } else if (d.type === 'arrow') {
+        // Стрелка «куда, по-моему, пойдёт цена»: пунктирное древко и наконечник на второй точке.
+        out.segs.push({ x1: a.x, y1: a.y, x2: b.x, y2: b.y, color, w: Math.max(2, d.width), dash: [7, 4] });
+        const ang = Math.atan2(b.y - a.y, b.x - a.x), len = 13, spread = 0.45;
+        out.segs.push(
+          { x1: b.x, y1: b.y, x2: b.x - len * Math.cos(ang - spread), y2: b.y - len * Math.sin(ang - spread), color, w: Math.max(2, d.width) },
+          { x1: b.x, y1: b.y, x2: b.x - len * Math.cos(ang + spread), y2: b.y - len * Math.sin(ang + spread), color, w: Math.max(2, d.width) },
+        );
       } else if (d.type === 'rect') {
         const x1 = Math.min(a.x, b.x), x2 = Math.max(a.x, b.x), y1 = Math.min(a.y, b.y), y2 = Math.max(a.y, b.y);
         out.fills.push({ x: x1, y: y1, w: x2 - x1, h: y2 - y1, color, alpha: 0.12 });
@@ -235,6 +253,15 @@ export class DrawingsPrimitive {
           }
           ctx.setLineDash([]);
           for (const l of sh.labels) this._label(ctx, l, alpha);
+          if (d.__preview) {
+            // Точки, в которые встанет рисунок (после магнита они могут отличаться от места курсора) — видно, куда «прилипло».
+            for (const h of sh.handles) {
+              ctx.fillStyle = d.color;
+              ctx.beginPath();
+              ctx.arc(h.x, h.y, 4, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
           if (selected) {
             for (const h of sh.handles) {
               ctx.fillStyle = '#fff';

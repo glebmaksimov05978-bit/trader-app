@@ -63,6 +63,25 @@ function themeColor(varName, fallback) {
   return v || fallback;
 }
 
+// Цвета графика из текущей темы. Читаются при создании и при каждой смене темы (data-theme на <html>): раньше — только при создании,
+// и после переключения светлая/тёмная сетка и подписи оставались от старой темы (на светлой сетки не было видно — «график в воздухе»).
+function chartThemeOptions() {
+  const grid = themeColor('--chart-grid', 'rgba(255,255,255,0.07)');
+  const border = themeColor('--border-subtle', 'rgba(255,255,255,0.06)');
+  return {
+    layout: { background: { color: 'transparent' }, textColor: themeColor('--text-secondary', '#9ca3af') },
+    grid: { vertLines: { color: grid }, horzLines: { color: grid } },
+    rightPriceScale: { borderColor: border },
+    timeScale: { borderColor: border },
+  };
+}
+
+/** Число баров между двумя точками по номерам свечей (выходные и ночи не считаются); null, если слой ещё не готов. */
+function barsBetween(prim, p1, p2) {
+  const a = prim?._logicalOfTime?.(p1.time), b = prim?._logicalOfTime?.(p2.time);
+  return a == null || b == null ? null : b - a;
+}
+
 function withAlpha(hex, alpha) {
   const m = /^#([0-9a-f]{6})$/i.exec(hex);
   if (!m) return hex;
@@ -374,21 +393,10 @@ export default function CandleChart({
   // Chart instance + crosshair tooltip created once per mount.
   useEffect(() => {
     if (!containerRef.current) return;
+    const themeOpts = chartThemeOptions();
     const chart = createChart(containerRef.current, {
-      layout: {
-        background: { color: 'transparent' },
-        textColor: themeColor('--text-secondary', '#9ca3af'),
-      },
-      grid: {
-        vertLines: { color: themeColor('--border-subtle', 'rgba(255,255,255,0.06)') },
-        horzLines: { color: themeColor('--border-subtle', 'rgba(255,255,255,0.06)') },
-      },
-      rightPriceScale: { borderColor: themeColor('--border-subtle', 'rgba(255,255,255,0.06)') },
-      timeScale: {
-        borderColor: themeColor('--border-subtle', 'rgba(255,255,255,0.06)'),
-        timeVisible: true,
-        secondsVisible: false,
-      },
+      ...themeOpts,
+      timeScale: { ...themeOpts.timeScale, timeVisible: true, secondsVisible: false },
       crosshair: { mode: CrosshairMode.Normal },
       autoSize: true,
     });
@@ -448,12 +456,18 @@ export default function CandleChart({
           const ts = prim._s.times;
           const l = chart.timeScale().coordinateToLogical(param.point.x);
           if (l != null && ts.length) {
-            const idx = Math.max(0, Math.min(ts.length - 1, Math.round(l)));
-            time = ts[idx];
-            const c = seriesRef.current.candleByTime?.get(time);
-            const y2 = prim.yToPrice(param.point.y + 10);
-            const thr = y2 != null ? Math.abs(price - Number(y2)) : 0;
-            price = snapPrice(price, c, thr);
+            const idx = Math.round(l);
+            if (idx >= 0 && idx <= ts.length - 1) {
+              // над свечой: время — к центру бара, цена — «сильный» магнит к ближайшей из O/H/L/C
+              time = ts[idx];
+              const c = seriesRef.current.candleByTime?.get(time);
+              const pricePerPx = (px) => { const y2 = prim.yToPrice(param.point.y + px); return y2 != null ? Math.abs(price - Number(y2)) : 0; };
+              price = snapPrice(price, c, pricePerPx(10), pricePerPx(28));
+            } else {
+              // правее последней свечи (прогноз) или левее первой: раньше точка «приклеивалась» к крайней свече, поэтому
+              // там нельзя было ни рисовать, ни мерить. Теперь — на «воображаемую» свечу нужного номера, цена как кликнули.
+              time = prim._timeOfLogical(idx);
+            }
           }
         }
         return { time, price };
@@ -503,7 +517,7 @@ export default function CandleChart({
         if (!pt) return;
         if (st.tool === 'ruler') {
           const bars = TIMEFRAMES[st.timeframe]?.minutes ? TIMEFRAMES[st.timeframe].minutes * 60 : null;
-          const stats = rulerStats({ p1: st.draft, p2: pt, atr: seriesRef.current.atr ?? null, barSeconds: bars });
+          const stats = rulerStats({ p1: st.draft, p2: pt, atr: seriesRef.current.atr ?? null, barSeconds: bars, barCount: barsBetween(prim, st.draft, pt) });
           prim.setState({ preview: null, ruler: { p1: st.draft, p2: pt, up: stats.delta >= 0, text: rulerText(stats, { priceDigits: 2 }) } });
         } else if (TWO_POINT.has(st.tool)) {
           prim.setState({ ruler: null, preview: { id: '__preview', type: st.tool, p1: st.draft, p2: pt, color: st.color, width: 1 } });
@@ -572,6 +586,22 @@ export default function CandleChart({
     };
   }, []);
 
+  // Смена светлой/тёмной темы без перезагрузки: обновляем сетку, подписи и цвета свечей.
+  useEffect(() => {
+    const apply = () => {
+      const chart = chartRef.current;
+      if (!chart) return;
+      chart.applyOptions(chartThemeOptions());
+      seriesRef.current.candles?.applyOptions({
+        upColor: themeColor('--green', '#10b981'), downColor: themeColor('--red', '#ef4444'),
+        wickUpColor: themeColor('--green', '#10b981'), wickDownColor: themeColor('--red', '#ef4444'),
+      });
+    };
+    const mo = new MutationObserver(apply);
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    return () => mo.disconnect();
+  }, []);
+
   // Candle data — separate effect so overlay toggles don't reload the base series (and
   // don't reset the trader's zoom/scroll).
   useEffect(() => {
@@ -593,7 +623,7 @@ export default function CandleChart({
     const bars = TIMEFRAMES[timeframe]?.minutes ? TIMEFRAMES[timeframe].minutes * 60 : 86400;
     let ruler = null;
     if (rulerDone) {
-      const stats = rulerStats({ p1: rulerDone.p1, p2: rulerDone.p2, atr: seriesRef.current.atr ?? null, barSeconds: bars });
+      const stats = rulerStats({ p1: rulerDone.p1, p2: rulerDone.p2, atr: seriesRef.current.atr ?? null, barSeconds: bars, barCount: barsBetween(prim, rulerDone.p1, rulerDone.p2) });
       ruler = { ...rulerDone, up: stats.delta >= 0, text: rulerText(stats, { priceDigits: 2 }) };
     }
     prim.setState({
@@ -635,6 +665,7 @@ export default function CandleChart({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drawingTools, drawOpen, selectedId, drawings]);
 
+  const viewKeyRef = useRef(null);
   // Visible range — separate from the data-load effect above because it must ALSO
   // re-run when just the selected trade changes with the SAME candle array (backtest
   // drill-down: `result.candles` stays constant while clicking through different trades
@@ -651,6 +682,13 @@ export default function CandleChart({
     // tail end of the array regardless of when the trade actually happened (real user
     // report — screenshot of a January 2024 entry showing an unrelated later stretch).
     const n = candles.length;
+    // Вид (масштаб и прокрутку) возвращаем к «по умолчанию» только когда график действительно другой — инструмент, таймфрейм,
+    // начало истории или сделка. Раньше это срабатывало при ЛЮБОМ обновлении массива свечей (минутное автообновление, пересчёт
+    // страницы после сохранения рисунка) — и выстроенный трейдером масштаб «слетал» в случайный момент.
+    const viewKey = [ticker || '', timeframe || '', String(toChartTime(candles[0].date)), trades?.length || 0,
+      String(entryMarker?.date || ''), String(exitMarker?.date || ''), String(legs?.length ? legs[0].timestampUtc : '')].join('|');
+    if (viewKey === viewKeyRef.current) return;
+    viewKeyRef.current = viewKey;
     const singleTradeDate = entryMarker?.date ?? (legs?.length ? toDate(legs[0].timestampUtc) : null);
     if (trades?.length) {
       chartRef.current.timeScale().fitContent();
@@ -665,7 +703,10 @@ export default function CandleChart({
       const to = Math.min(n - 1, Math.max(entryIdx, exitIdx) + 20);
       chartRef.current.timeScale().setVisibleLogicalRange({ from, to });
     } else if (n > 4) {
-      chartRef.current.timeScale().setVisibleLogicalRange({ from: n - Math.ceil(n / 4), to: n - 1 });
+      // с рисованием оставляем справа свободное место — там рисуют прогноз (траекторию, луч, фибо вперёд)
+      const span = Math.ceil(n / 4);
+      const pad = drawingTools ? Math.max(6, Math.round(span * 0.15)) : 0;
+      chartRef.current.timeScale().setVisibleLogicalRange({ from: n - span, to: n - 1 + pad });
     } else {
       chartRef.current.timeScale().fitContent();
     }

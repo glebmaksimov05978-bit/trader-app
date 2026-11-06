@@ -80,6 +80,10 @@ const rdown = rulerStats({ p1: { time: 0, price: 100 }, p2: { time: 86400 * 3, p
 ok('линейка вниз: −3%, 3 дня', rdown.pct === -3 && near(rdown.days, 3) && rdown.bars === null && rdown.atrMult === null);
 ok('текст линейки', rulerText(rs) === '+4 · +4% · 10 бар. · 2 ATR');
 ok('текст линейки вниз без баров — в днях', rulerText(rdown) === '−3 · −3% · 3 дн.');
+// число баров — по номерам свечей, а не по секундам (выходные не торгуются)
+const rbars = rulerStats({ p1: { time: 0, price: 100 }, p2: { time: 86400 * 14, price: 110 }, barSeconds: 86400, barCount: 10 });
+ok('линейка: число баров берётся по номерам свечей (10 торговых дней, а не 14 календарных)', rbars.bars === 10 && /10 бар./.test(rulerText(rbars)));
+ok('линейка: без barCount — по секундам, как раньше', rulerStats({ p1: { time: 0, price: 1 }, p2: { time: 86400 * 3, price: 2 }, barSeconds: 86400 }).bars === 3);
 ok('линейка от нуля не делит на ноль', rulerStats({ p1: { time: 0, price: 0 }, p2: { time: 1, price: 5 } }).pct === null);
 
 // ---- магнит ----
@@ -88,6 +92,17 @@ ok('магнит: 104,8 → high 105', snapPrice(104.8, candle, 0.5) === 105);
 ok('магнит: далеко — без изменений', snapPrice(101.2, candle, 0.3) === 101.2);
 ok('магнит: между close и high берёт ближайший', snapPrice(104.1, candle, 2) === 105 || snapPrice(104.1, candle, 2) === 103);
 ok('магнит: нет свечи или порога — без изменений', snapPrice(10, null, 1) === 10 && snapPrice(10, candle, 0) === 10);
+// «сильный магнит» (reach): клик внутри свечи всегда прилипает к ближайшей из O/H/L/C, даже далеко от неё
+ok('сильный магнит: середина тела (101,5) → ближайшая из O/H/L/C, а не «где попало»', snapPrice(101.5, candle, 0.1, 0.5) === 100 || snapPrice(101.5, candle, 0.1, 0.5) === 103);
+ok('сильный магнит: чуть выше high (в пределах запаса) прилипает к high', snapPrice(105.4, candle, 0.1, 0.5) === 105);
+ok('сильный магнит: далеко от свечи (пустое место, прогноз) — цена остаётся свободной', snapPrice(112, candle, 0.1, 0.5) === 112 && snapPrice(90, candle, 0.1, 0.5) === 90);
+ok('без запаса магнит работает как раньше (только вблизи)', snapPrice(101.5, candle, 0.1) === 101.5);
+
+// ---- стрелка («прогноз») ----
+const arrow = newDrawing({ type: 'arrow', p1: { time: 1000, price: 100 }, p2: { time: 5000, price: 110 }, idSeed: 'ar' });
+ok('стрелка: двухточечный инструмент — обе точки сохраняются', arrow && arrow.type === 'arrow' && arrow.p2.price === 110);
+ok('стрелка без второй точки отбрасывается при чтении', normalizeDrawings([{ type: 'arrow', p1: { time: 1, price: 1 } }]).length === 0);
+ok('стрелка не считается уровнем для условия «цена у моей линии»', userLevelsFrom([arrow], 3000).length === 0);
 
 // ---- прямая через две точки ----
 ok('цена прямой в середине', lineValueAt({ time: 0, price: 100 }, { time: 10, price: 110 }, 5) === 105);
