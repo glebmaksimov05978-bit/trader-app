@@ -83,7 +83,7 @@ const { positionRisk } = await import(esmify(path.join(repoRoot, 'src/services/a
 const metaUrl = esmify(path.join(repoRoot, 'src/services/analytics/strategyMeta.js'));
 // Свои линии трейдера с графика — для условия «цена у моей линии» (модуль без зависимостей).
 const { userLevelsForChart } = await import(esmify(path.join(repoRoot, 'src/services/chartDrawings.js')));
-const { paperStrategyIdsFor, timeframeFor, captionOf } = await import(metaUrl);
+const { paperStrategyIdsFor, timeframeFor, captionOf, strategiesForItem, strategyForItem } = await import(metaUrl);
 // ГО из Т-Банка (отдельно на покупку и на продажу) — чистый разбор ответа брокера, без зависимостей.
 const { parseBrokerFutureMargin, futuresLeverage } = await import(esmify(path.join(repoRoot, 'src/services/marketData/brokerMargin.js')));
 const ordersUrl = pathToFileURL(path.join(repoRoot, 'workers/telegram-webhook/src/orders.js')).href;
@@ -132,14 +132,6 @@ async function notifyPaper(text, keyboard = null) {
 
 // Стратегия конкретного тикера: своя, если задана при добавлении в радар, иначе активная
 // стратегия профиля. Ровно та же логика, что в приложении (RadarLiveContext).
-function strategyFor(item, profile) {
-  const all = profile.strategies || [];
-  if (item.strategyId) {
-    const own = all.find((s) => s.id === item.strategyId);
-    if (own) return own;
-  }
-  return all.find((s) => s.id === profile.activeStrategyId) || all[0] || profile.strategy || null;
-}
 
 // Параметры контракта нужны, чтобы посчитать объём по риску. Без них у фьючерса убыток на
 // контракт считается неверно — а фьючерсы здесь основной инструмент, так что молча
@@ -201,21 +193,10 @@ async function loadSpecs(ticker, instrumentType) {
   return { lot: lot || 1, minStep: 1, minStepAmount: 0, initialMargin: 0, approx: lot == null };
 }
 
-// Какими стратегиями проверять запись радара. По умолчанию — одной (своя у тикера или активная).
-// Если в Настройках выбраны несколько (alertPrefs.paperStrategyIds), КАЖДАЯ проверяется на каждом
-// тикере по своим правилам входа и ведёт свои бумажные сделки — так их можно сравнивать «в деле».
-// Тогда «не больше одной открытой» действует на пару тикер+стратегия, а не на тикер целиком.
-function strategiesFor(item, profile) {
-  // Явный список из Настроек + стратегии, поставленные «на сопровождение» в Капитале.
-  const ids = paperStrategyIdsFor(profile);
-  if (ids.length) {
-    const all = profile.strategies || [];
-    const picked = ids.map((id) => all.find((s) => s.id === id)).filter(Boolean);
-    if (picked.length) return { list: picked, multi: true };
-  }
-  const one = strategyFor(item, profile);
-  return { list: one ? [one] : [], multi: false };
-}
+// Какими стратегиями проверять запись радара — решает чистая функция strategiesForItem (strategyMeta.js, с тестом):
+// у записи, привязанной к стратегии на сопровождении, — только своя; без привязки — все на сопровождении или одна обычная.
+const strategiesFor = (item, profile) => strategiesForItem(item, profile);
+const strategyFor = (item, profile) => strategyForItem(item, profile);
 
 // Одни и те же свечи нужны нескольким стратегиям (тикер + таймфрейм совпадают): грузим один раз за проход.
 // Без этого две стратегии на сопровождении удваивали время робота, и задание упиралось в лимит времени.

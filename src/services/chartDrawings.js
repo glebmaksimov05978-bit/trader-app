@@ -14,6 +14,9 @@
 
 export const DRAWING_TYPES = ['hline', 'vline', 'trend', 'ray', 'arrow', 'rect', 'fib', 'text'];
 export const TWO_POINT = new Set(['trend', 'ray', 'arrow', 'rect', 'fib']);
+// Какие рисунки могут быть «сигнальными»: давать уровни, по которым работает условие стратегии «цена у моей линии» и робот.
+// Остальные рисунки (фигуры, стрелки-прогнозы, метки) — для глаз: чтобы нарисованный треугольник не включал сигнал.
+export const SIGNAL_TYPES = new Set(['hline', 'ray', 'trend', 'rect', 'fib']);
 export const FIB_RATIOS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
 
 export const MAX_PER_CHART = 60;
@@ -59,6 +62,7 @@ export function normalizeDrawings(raw) {
       color: HEX.test(d.color) ? d.color : PALETTE[0],
       width: finite(d.width) ? Math.min(4, Math.max(1, Math.round(d.width))) : 1,
       ...(d.type === 'text' ? { label: String(d.label || '').slice(0, 40) } : {}),
+      ...(d.signal === true && SIGNAL_TYPES.has(d.type) ? { signal: true } : {}),
     });
     if (out.length >= MAX_PER_CHART) break;
   }
@@ -67,13 +71,13 @@ export function normalizeDrawings(raw) {
 
 let seq = 0;
 /** Новый рисунок. `idSeed` нужен только тестам. */
-export function newDrawing({ type, p1, p2 = null, color = PALETTE[0], width = 1, label = '', idSeed = null }) {
+export function newDrawing({ type, p1, p2 = null, color = PALETTE[0], width = 1, label = '', idSeed = null, signal = false }) {
   if (!DRAWING_TYPES.includes(type)) throw new Error(`Неизвестный инструмент: ${type}`);
   if (!isPoint(p1)) throw new Error('Не задана первая точка');
   if (TWO_POINT.has(type) && !isPoint(p2)) throw new Error('Не задана вторая точка');
   seq += 1;
   return normalizeDrawings([{
-    id: idSeed || `d${Date.now().toString(36)}${seq}`, type, p1, p2, color, width, label,
+    id: idSeed || `d${Date.now().toString(36)}${seq}`, type, p1, p2, color, width, label, signal,
   }])[0];
 }
 
@@ -84,6 +88,11 @@ export function newDrawing({ type, p1, p2 = null, color = PALETTE[0], width = 1,
 export function addDrawing(list, d) {
   const next = [...(Array.isArray(list) ? list : []), d];
   return next.length > MAX_PER_CHART ? next.slice(next.length - MAX_PER_CHART) : next;
+}
+
+/** Включить/выключить у рисунка отметку «сигнальная». Типы, которые не дают уровней, отметку не получают. */
+export function toggleSignal(list, id) {
+  return (Array.isArray(list) ? list : []).map((d) => (d.id === id && SIGNAL_TYPES.has(d.type) ? { ...d, signal: d.signal ? undefined : true } : d)).map((d) => (d.signal ? d : { ...d, signal: undefined }));
 }
 
 export const removeDrawing = (list, id) => (Array.isArray(list) ? list.filter((d) => d.id !== id) : []);
@@ -182,6 +191,8 @@ export function lineValueAt(p1, p2, time) {
 
 /**
  * Свои линии как «уровни» на момент atTime — то, что проверяет условие стратегии «цена у моей линии».
+ * Учитываются ТОЛЬКО сигнальные линии (отметка ★ на рисунке): иначе условие срабатывало бы от любого рисунка на графике,
+ * в том числе от нарисованного «для глаз» треугольника (реальная жалоба).
  *  • горизонтальная → её цена;
  *  • луч → значение на момент atTime;
  *  • трендовая линия → значение, пока atTime не ушёл за её правый край больше чем на barSeconds×2;
@@ -193,6 +204,7 @@ export function lineValueAt(p1, p2, time) {
 export function userLevelsFrom(drawings, atTime, { barSeconds = 0 } = {}) {
   const out = [];
   for (const d of normalizeDrawings(drawings)) {
+    if (!d.signal) continue;
     if (d.type === 'hline') out.push({ price: d.p1.price, kind: 'hline', label: 'горизонталь', drawingId: d.id });
     else if (d.type === 'ray') {
       const v = lineValueAt(d.p1, d.p2, atTime);

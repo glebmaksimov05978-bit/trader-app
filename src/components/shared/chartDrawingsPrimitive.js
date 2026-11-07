@@ -191,6 +191,11 @@ export class DrawingsPrimitive {
       }
       out.handles.push(a, b);
     }
+    // Сигнальная линия: чуть толще и с пометкой — видно, какие линии «слушает» стратегия и робот.
+    if (d.signal && a) {
+      out.segs.forEach((s) => { s.w = (s.w || 1) + 1; });
+      out.labels.push({ x: d.type === 'hline' ? 6 : a.x + 6, y: a.y - 9, text: '★ сигнал', align: 'left', color });
+    }
     return out;
   }
 

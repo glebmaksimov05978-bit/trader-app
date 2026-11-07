@@ -6,15 +6,18 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import Icon from '../shared/Icon';
 import PatternGame from './PatternGame';
+import RealPatternGame from './RealPatternGame';
 import ReplayDesk from './ReplayDesk';
 import LiveDesk from './LiveDesk';
 import TrainerReview from './TrainerReview';
 import { getTrainerTrades } from '../../services/trainer/trainerTrades';
 import { emptyProgress } from '../../services/trainer/patternQuiz';
+import { emptyRealProgress } from '../../services/trainer/realPatterns';
 import './Trainer.css';
 
 const TABS = [
-  { id: 'patterns', label: 'Увидеть фигуру' },
+  { id: 'patterns', label: 'Учебные фигуры' },
+  { id: 'real', label: 'Фигуры на реальных графиках' },
   { id: 'replay', label: 'Переигровка истории' },
   { id: 'live', label: 'Живые цены' },
   { id: 'review', label: 'Разбор' },
@@ -33,6 +36,7 @@ export default function Trainer() {
   }, [uid]);
   useEffect(() => { reload(); }, [reload]);
 
+  const saveReal = useCallback((p) => { Promise.resolve(updateUserProfile({ trainerReal: p })).catch(() => {}); }, [updateUserProfile]);
   const saveProgress = useCallback((p) => { Promise.resolve(updateUserProfile({ trainerPatterns: p })).catch(() => {}); }, [updateUserProfile]);
 
   return (
@@ -52,6 +56,7 @@ export default function Trainer() {
 
       <div style={{ marginTop: 16 }}>
         {tab === 'patterns' && <PatternGame progress={userProfile?.trainerPatterns || emptyProgress()} onProgress={saveProgress} />}
+        {tab === 'real' && <RealPatternGame progress={userProfile?.trainerReal || emptyRealProgress()} onProgress={saveReal} />}
         {tab === 'replay' && <ReplayDesk onSaved={reload} />}
         {tab === 'live' && <LiveDesk trades={trades} onChanged={reload} />}
         {tab === 'review' && <TrainerReview trades={trades} onChanged={reload} />}

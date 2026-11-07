@@ -181,9 +181,9 @@ run('страницы для просмотра глазами', () => {
           const opt = host.querySelector('.tr-options button');
           if (opt) { await clickEl(opt); snap('answered'); }
           const tabs = [...host.querySelectorAll('.tr-tabs .tab')];
-          await clickEl(tabs[1]); snap('replay');
-          await clickEl(tabs[2]); await act(async () => { await new Promise((r) => setTimeout(r, 100)); }); snap('live');
-          await clickEl(tabs[3]); await act(async () => { await new Promise((r) => setTimeout(r, 100)); }); snap('review');
+          await clickEl(tabs[2]); snap('replay');
+          await clickEl(tabs[3]); await act(async () => { await new Promise((r) => setTimeout(r, 100)); }); snap('live');
+          await clickEl(tabs[4]); await act(async () => { await new Promise((r) => setTimeout(r, 100)); }); snap('review');
         }
         console.error = origErr;
         act(() => root.unmount());

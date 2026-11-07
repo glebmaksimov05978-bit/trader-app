@@ -2,7 +2,7 @@
 import {
   HORIZONS, suggestedTimeframes, followWarnings, validateFollow, captionOf, followStrategy, unfollowStrategy,
   setObserve, followedStrategies, hasFollowFlags, paperStrategyIdsFor, timeframeFor, sameClass, classKey,
-  workTimeframeOf, tfLabel,
+  workTimeframeOf, tfLabel, strategiesForItem, strategyForItem,
 } from '../src/services/analytics/strategyMeta.js';
 import { paperTelegramAllowed } from '../src/services/alerts.js';
 
@@ -83,6 +83,22 @@ ok('наблюдение глушит уведомления', paperTelegramAllo
 ok('наблюдение другой стратегии не мешает', paperTelegramAllowed({}, 'a', [S('a'), S('b', { observe: true })]) === true);
 ok('старый вызов без списка стратегий работает как раньше', paperTelegramAllowed({}, 'a') === true && paperTelegramAllowed({ paperTelegramMuted: ['a'] }, 'a') === false);
 ok('общий выключатель сильнее', paperTelegramAllowed({ paperTelegram: false }, 'a', [S('a')]) === false);
+
+
+// --- радар у каждой стратегии свой: чем проверять запись ---
+{
+  const S2 = (id, extra = {}) => ({ id, name: id, ...extra });
+  const prof = { strategies: [S2('a', { followed: true }), S2('b', { followed: true }), S2('c')], activeStrategyId: 'c' };
+  const ids = (r) => r.list.map((s) => s.id).join();
+  ok('запись привязана к стратегии на сопровождении — проверяется только ею', ids(strategiesForItem({ strategyId: 'b' }, prof)) === 'b' && strategiesForItem({ strategyId: 'b' }, prof).multi === true);
+  ok('запись без привязки — всеми стратегиями на сопровождении (как раньше)', ids(strategiesForItem({}, prof)) === 'a,b');
+  ok('привязка к стратегии НЕ на сопровождении — как раньше, всеми на сопровождении', ids(strategiesForItem({ strategyId: 'c' }, prof)) === 'a,b');
+  ok('привязка к удалённой стратегии — как без привязки', ids(strategiesForItem({ strategyId: 'zzz' }, prof)) === 'a,b');
+  const solo = { strategies: [S2('a'), S2('b')], activeStrategyId: 'b' };
+  ok('сопровождение не настроено: своя стратегия записи', ids(strategiesForItem({ strategyId: 'a' }, solo)) === 'a' && strategiesForItem({ strategyId: 'a' }, solo).multi === false);
+  ok('сопровождение не настроено, привязки нет: активная', ids(strategiesForItem({}, solo)) === 'b');
+  ok('нет стратегий вообще — пустой список, без падения', strategiesForItem({}, { strategies: [] }).list.length === 0 && strategyForItem({}, null) === null);
+}
 
 if (fails) { console.log(`\nПровалено: ${fails}`); process.exit(1); }
 console.log('\nВсе проверки паспорта стратегии прошли ✓');

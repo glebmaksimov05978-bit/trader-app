@@ -12,6 +12,15 @@ import {
 } from '../../services/trainer/patternQuiz';
 
 const newSeed = () => Math.floor(Math.random() * 1e9) + 1;
+// Следующий график — не с той же фигурой, что только что была (раньше подряд попадались одинаковые).
+function seedAvoiding(levelId, avoidTruth) {
+  let s = newSeed();
+  for (let i = 0; i < 40 && avoidTruth; i++) {
+    if (buildRound({ levelId, seed: s }).truth !== avoidTruth) break;
+    s = newSeed();
+  }
+  return s;
+}
 
 export default function PatternGame({ progress, onProgress }) {
   const prog = progress || emptyProgress();
@@ -44,7 +53,7 @@ export default function PatternGame({ progress, onProgress }) {
     onProgress?.(res.progress);
   }, [answered, prog, round, onProgress]);
 
-  const next = () => { setAnswer(null); setLast(null); setSeed(newSeed()); };
+  const next = () => { setAnswer(null); setLast(null); setSeed(seedAvoiding(levelId, round.truth)); };
   const sum = progressSummary(prog);
   const level = LEVELS.find((l) => l.id === levelId) || LEVELS[0];
   const cur = sum.level;
@@ -86,7 +95,8 @@ export default function PatternGame({ progress, onProgress }) {
             candles={answered ? round.candles : visible}
             ticker="Учебный график"
             timeframe="D1"
-            height={340}
+            height={400}
+            fitAll
             systemMarkers={answered ? [{ date: visible[visible.length - 1].date, text: 'Вопрос' }] : undefined}
           />
           {!answered ? (

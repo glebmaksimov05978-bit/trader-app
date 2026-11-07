@@ -84,7 +84,7 @@ test('страница тренажёра открывается на игре �
   expect(host.querySelector('.page-title').textContent).toBe('Тренажёр');
   expect(host.textContent).toMatch(/не попадает/);
   expect(host.textContent).toContain('Какая фигура на графике?');
-  expect([...host.querySelectorAll('.tr-tabs [role="tab"]')].map((t) => t.textContent)).toEqual(['Увидеть фигуру', 'Переигровка истории', 'Живые цены', 'Разбор']);
+  expect([...host.querySelectorAll('.tr-tabs [role="tab"]')].map((t) => t.textContent)).toEqual(['Учебные фигуры', 'Фигуры на реальных графиках', 'Переигровка истории', 'Живые цены', 'Разбор']);
 });
 
 test('игра: ответ раскрывает разбор, показывает алгоритм и сохраняет прогресс в профиль', async () => {

@@ -6,20 +6,22 @@
 // live (recomputed on demand for "now"), unlike a trade's frozen "as of entry" snapshot.
 import { collection, addDoc, deleteDoc, updateDoc, doc, query, where, getDocs, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
+import { isRadarDuplicate } from './radarRules';
+
+export { isRadarDuplicate };
 
 const COLL = 'radarItems';
 
-export async function addRadarItem(uid, { ticker, instrumentType, note, timeframe, strategyId }) {
+export async function addRadarItem(uid, { ticker, instrumentType, note, timeframe, strategyId, activeStrategyId }) {
   const upper = ticker.toUpperCase();
-  // Один и тот же тикер дважды в радаре — это две одинаковые строки, которые опрашиваются
+  // Один и тот же тикер дважды в радаре ОДНОЙ стратегии — это две одинаковые строки, которые опрашиваются
   // по очереди и показывают одно и то же (реальная жалоба со скриншотом: два IMOEXF
   // подряд). Проверка живёт ЗДЕСЬ, а не в форме, потому что добавлять умеют два разных
   // экрана — каталог в «Сопровождении» и старая форма в Журнале, — и оба должны быть
   // защищены одинаково.
   const existing = await getRadarItems(uid);
-  const dup = existing.find((i) => (i.ticker || '').toUpperCase() === upper);
-  if (dup) {
-    const err = new Error(`${upper} уже в радаре`);
+  if (isRadarDuplicate(existing, upper, strategyId, activeStrategyId)) {
+    const err = new Error(`${upper} уже в радаре этой стратегии`);
     err.code = 'radar/duplicate';
     throw err;
   }

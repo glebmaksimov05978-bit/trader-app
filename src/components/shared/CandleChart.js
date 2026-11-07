@@ -15,7 +15,7 @@ import { useAuth } from '../../context/AuthContext';
 import toast from 'react-hot-toast';
 import {
   drawingsFor, withDrawings, newDrawing, addDrawing, removeDrawing, rulerStats, rulerText, snapPrice, atrOf,
-  TWO_POINT, PALETTE, TOOL_LABELS, moveDrawing, movePoint,
+  TWO_POINT, PALETTE, TOOL_LABELS, moveDrawing, movePoint, toggleSignal, SIGNAL_TYPES,
 } from '../../services/chartDrawings';
 import { DrawingsPrimitive } from './chartDrawingsPrimitive';
 import ChartDrawingToolbar from './ChartDrawingToolbar';
@@ -291,6 +291,7 @@ export default function CandleChart({
   layerPreset, // ['sr','rsi',…] | null — «призма» стратегии: ровно эти индикаторные слои включены; null — как выбрал трейдер
   drawRequest = null, // { key, list } — нарисовать готовые рисунки (например, найденную фигуру) и открыть панель
   drawingTools = false, // true — панель «Рисование» и сохранение рисунков по паре «тикер + таймфрейм» в профиле
+  fitAll = false, // true — показывать ВСЕ свечи сразу (тренажёр: фигуру надо видеть целиком, а не последнюю четверть)
   height,      // px, необязательный — переопределяет высоту графика вне полноэкранного режима (по умолчанию 300 + панели RSI/MACD)
 }) {
   const containerRef = useRef(null);
@@ -313,10 +314,12 @@ export default function CandleChart({
   const [tool, setTool] = useState('cursor');
   const [drawColor, setDrawColor] = useState(PALETTE[0]);
   const [magnet, setMagnet] = useState(true);
+  const [signalNew, setSignalNew] = useState(false); // новые линии сразу «сигнальные» (★)
   const [textLabel, setTextLabel] = useState('');
   const [selectedId, setSelectedId] = useState(null);
   const [draftPoint, setDraftPoint] = useState(null); // первая точка двухточечного инструмента
   const [rulerDone, setRulerDone] = useState(null);   // готовая линейка (до следующего клика)
+  const [priceManual, setPriceManual] = useState(false); // график сдвинут по цене вручную — авто-масштаб выключен
   // Подписка на клик создаётся один раз — актуальное состояние читает через ref (см. ниже).
   const drawRef = useRef({});
 
@@ -341,7 +344,7 @@ export default function CandleChart({
   };
   const commitDrawings = (list) => { setDrawings(list); persistDrawings(list); };
   drawRef.current = {
-    tool, color: drawColor, magnet, label: textLabel, draft: draftPoint, drawings, selectedId, ticker, timeframe,
+    tool, color: drawColor, magnet, label: textLabel, draft: draftPoint, drawings, selectedId, ticker, timeframe, signal: signalNew,
     commit: commitDrawings, setDraw: setDrawings,
   };
 
@@ -438,8 +441,16 @@ export default function CandleChart({
     };
     chart.subscribeCrosshairMove(onMove);
 
+    // Общее для рисования и прокрутки: идёт ли перетаскивание рисунка (тогда график по цене не двигаем).
+    const shared = { drawDrag: false };
+    const plotEl = containerRef.current;
+    const relPos = (e) => { const r = plotEl.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+    // Область самих свечей: без шкалы цен справа, шкалы времени снизу и нижних панелей RSI/MACD.
+    const plotSize = () => ({ w: plotEl.clientWidth - chart.priceScale('right').width(), h: chart.panes()[0]?.getHeight() ?? plotEl.clientHeight });
+
     // ---- рисование: примитив на ряду свечей, клик и предпросмотр ----
-    let onDrawClick = null, onDrawMove = null, onPtrDown = null, onPtrMove = null, onPtrUp = null;
+    let onDrawClick = null, onDrawMove = null, onPtrDown = null, onPtrMove = null, onPtrUp = null, onClickDown = null, onClickUp = null;
+    let onGestureDown = null, onGestureMove = null, onGestureUp = null;
     if (drawingTools) {
       const prim = new DrawingsPrimitive();
       seriesRef.current.candles.attachPrimitive(prim);
@@ -493,7 +504,7 @@ export default function CandleChart({
         }
         if (st.tool === 'hline' || st.tool === 'vline' || st.tool === 'text') {
           if (st.tool === 'text' && !st.label.trim()) { toast('Сначала введите текст метки'); return; }
-          const d = newDrawing({ type: st.tool, p1: pt, color: st.color, label: st.label.trim() });
+          const d = newDrawing({ type: st.tool, p1: pt, color: st.color, label: st.label.trim(), signal: st.signal });
           st.commit(addDrawing(st.drawings, d));
           setSelectedId(d.id);
           setTool('cursor'); // как на привычных графиках: после рисования — режим выбора, у линии видны кружки
@@ -502,7 +513,7 @@ export default function CandleChart({
         if (TWO_POINT.has(st.tool)) {
           if (!st.draft) { setDraftPoint(pt); return; }
           if (st.draft.time === pt.time && st.draft.price === pt.price) return; // та же точка — игнорируем
-          const d = newDrawing({ type: st.tool, p1: st.draft, p2: pt, color: st.color });
+          const d = newDrawing({ type: st.tool, p1: st.draft, p2: pt, color: st.color, signal: st.signal });
           st.commit(addDrawing(st.drawings, d));
           setDraftPoint(null);
           setSelectedId(d.id);
@@ -523,14 +534,83 @@ export default function CandleChart({
           prim.setState({ ruler: null, preview: { id: '__preview', type: st.tool, p1: st.draft, p2: pt, color: st.color, width: 1 } });
         }
       };
-      chart.subscribeClick(onDrawClick);
       chart.subscribeCrosshairMove(onDrawMove);
+
+      // Клик определяем сами, а не через chart.subscribeClick: график второй клик по одному месту в пределах полусекунды
+      // принимает за двойной и клик не отдаёт, а иногда не отдаёт и первый после смены панели — линия «не ставится».
+      // Нажатие и отпускание без заметного сдвига — это клик; сдвиг дальше 4 пикселей — прокрутка, она не рисует.
+      let clickDown = null;
+      onClickDown = (e) => {
+        if (e.button != null && e.button > 0) return;
+        const { x, y } = relPos(e);
+        const { w, h } = plotSize();
+        clickDown = x >= 0 && y >= 0 && x <= w && y <= h ? { x, y } : null;
+      };
+      onClickUp = (e) => {
+        const d = clickDown; clickDown = null;
+        if (!d) return;
+        const { x, y } = relPos(e);
+        if (Math.hypot(x - d.x, y - d.y) > 4) return;
+        onDrawClick({ point: { x, y } });
+      };
+      plotEl.addEventListener('pointerdown', onClickDown, true);
+      window.addEventListener('pointerup', onClickUp);
+
+      // Второй способ рисовать линию из двух точек, как на привычных графиках: нажать в первой точке, протянуть и отпустить во
+      // второй (клик-клик тоже работает). Раньше такое движение просто прокручивало график — «двигаю, а не рисуется».
+      // Действует только при выбранном двухточечном инструменте, пока первая точка ещё не поставлена кликом; мышью и пером.
+      let gesture = null;
+      onGestureDown = (e) => {
+        gesture = null;
+        if (e.pointerType === 'touch' || (e.button != null && e.button > 0)) return;
+        const st = drawRef.current;
+        if (!(TWO_POINT.has(st.tool) || st.tool === 'ruler') || st.draft) return;
+        const { x, y } = relPos(e);
+        const { w, h } = plotSize();
+        if (x < 0 || y < 0 || x > w || y > h) return;
+        const pt0 = pointFrom({ point: { x, y } });
+        if (pt0) gesture = { pt0, x0: x, y0: y, active: false };
+      };
+      onGestureMove = (e) => {
+        if (!gesture) return;
+        const { x, y } = relPos(e);
+        if (!gesture.active) {
+          if (Math.hypot(x - gesture.x0, y - gesture.y0) < 6) return;
+          gesture.active = true;
+          shared.drawDrag = true; // график по цене не двигаем, пока тянем линию
+          chart.applyOptions({ handleScroll: false, handleScale: false });
+          setDraftPoint(gesture.pt0);
+        }
+      };
+      onGestureUp = (e) => {
+        const g = gesture; gesture = null;
+        if (!g || !g.active) return;
+        shared.drawDrag = false;
+        chart.applyOptions({ handleScroll: true, handleScale: true });
+        prim._ignoreClick = Date.now() + 250;
+        setDraftPoint(null);
+        if (e.type === 'pointercancel') return;
+        const { x, y } = relPos(e);
+        const pt1 = pointFrom({ point: { x, y } });
+        const st = drawRef.current;
+        if (!pt1 || (pt1.time === g.pt0.time && pt1.price === g.pt0.price)) return;
+        setRulerDone(null);
+        if (st.tool === 'ruler') { setRulerDone({ p1: g.pt0, p2: pt1 }); return; }
+        const d = newDrawing({ type: st.tool, p1: g.pt0, p2: pt1, color: st.color, signal: st.signal });
+        st.commit(addDrawing(st.drawings, d));
+        setSelectedId(d.id);
+        setTool('cursor');
+      };
+      plotEl.addEventListener('pointerdown', onGestureDown, true);
+      window.addEventListener('pointermove', onGestureMove);
+      window.addEventListener('pointerup', onGestureUp);
+      window.addEventListener('pointercancel', onGestureUp);
 
       // Перетаскивание: за ручку — переставляет точку, за линию — двигает рисунок целиком.
       // Пока тянем, прокрутка графика выключена (иначе он ехал бы вместе с рисунком).
       const el = containerRef.current;
       let drag = null;
-      const rel = (e) => { const r = el.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+      const rel = relPos;
       onPtrDown = (e) => {
         const st = drawRef.current;
         if (st.tool !== 'cursor' || (e.button != null && e.button > 0)) return;
@@ -542,6 +622,7 @@ export default function CandleChart({
         const start = prim.pointAt(x, y);
         if (!d || !start) return;
         drag = { id, which: handle?.which || null, start, orig: d, moved: false, list: null };
+        shared.drawDrag = true;
         setSelectedId(id);
         chart.applyOptions({ handleScroll: false, handleScale: false });
       };
@@ -559,6 +640,7 @@ export default function CandleChart({
       };
       onPtrUp = () => {
         if (!drag) return;
+        shared.drawDrag = false;
         chart.applyOptions({ handleScroll: true, handleScale: true });
         if (drag.moved && drag.list) { drawRef.current.commit(drag.list); prim._ignoreClick = Date.now() + 250; }
         drag = null;
@@ -569,14 +651,72 @@ export default function CandleChart({
       window.addEventListener('pointercancel', onPtrUp);
     }
 
+    // ---- прокрутка графика вверх-вниз мышью ----
+    // Сам график двигается мышью только вправо-влево, а по цене подстраивается под свечи, поэтому «опустить» или «поднять»
+    // график (посмотреть, что выше максимума или ниже минимума — например, чтобы нарисовать цель) было нельзя.
+    // Тянем за свободное место графика: цена сдвигается вслед за мышью, авто-масштаб по цене выключается, а кнопка «Авто»
+    // над графиком (или двойной клик по шкале цен) возвращает его. Пальцем — не трогаем: там вертикальный жест нужен странице.
+    let pan = null;
+    const onPanDown = (e) => {
+      pan = null;
+      if (e.pointerType === 'touch' || (e.button != null && e.button > 0)) return;
+      // С выбранной линией из двух точек протяжка рисует (см. onGestureDown), а не двигает график.
+      if (drawingTools) { const st = drawRef.current; if ((TWO_POINT.has(st.tool) || st.tool === 'ruler') && !st.draft) return; }
+      const { x, y } = relPos(e);
+      const { w, h } = plotSize();
+      if (x < 0 || y < 0 || x > w || y > h) return; // шкалы и нижние панели — у них своё управление
+      pan = { y0: y, range: null, h };
+    };
+    const onPanMove = (e) => {
+      if (!pan || shared.drawDrag) return;
+      const { y } = relPos(e);
+      const ps = chart.priceScale('right');
+      if (!pan.range) {
+        if (Math.abs(y - pan.y0) < 4) return;
+        const r = ps.getVisibleRange();
+        if (!r || !(pan.h > 0)) { pan = null; return; }
+        pan.range = r;
+        ps.setAutoScale(false);
+      }
+      const shift = ((y - pan.y0) * (pan.range.to - pan.range.from)) / pan.h;
+      ps.setVisibleRange({ from: pan.range.from + shift, to: pan.range.to + shift });
+    };
+    const syncAuto = () => { const manual = !chart.priceScale('right').options().autoScale; setPriceManual((cur) => (cur === manual ? cur : manual)); };
+    const onPanUp = () => {
+      const was = pan; pan = null;
+      if (was?.range) syncAuto();
+    };
+    // Двойной клик по шкале цен график сам возвращает авто-масштаб — надо только обновить кнопку.
+    const onAxisDbl = (e) => { const { x } = relPos(e); if (x > plotSize().w) setTimeout(syncAuto, 0); };
+    plotEl.addEventListener('pointerdown', onPanDown, true);
+    window.addEventListener('pointermove', onPanMove);
+    window.addEventListener('pointerup', onPanUp);
+    window.addEventListener('pointercancel', onPanUp);
+    plotEl.addEventListener('dblclick', onAxisDbl);
+    seriesRef.current.syncAuto = syncAuto;
+
     return () => {
+      plotEl.removeEventListener('pointerdown', onPanDown, true);
+      window.removeEventListener('pointermove', onPanMove);
+      window.removeEventListener('pointerup', onPanUp);
+      window.removeEventListener('pointercancel', onPanUp);
+      plotEl.removeEventListener('dblclick', onAxisDbl);
+      if (onClickDown) {
+        plotEl.removeEventListener('pointerdown', onClickDown, true);
+        window.removeEventListener('pointerup', onClickUp);
+      }
+      if (onGestureDown) {
+        plotEl.removeEventListener('pointerdown', onGestureDown, true);
+        window.removeEventListener('pointermove', onGestureMove);
+        window.removeEventListener('pointerup', onGestureUp);
+        window.removeEventListener('pointercancel', onGestureUp);
+      }
       if (onPtrDown) {
         containerRef.current?.removeEventListener('pointerdown', onPtrDown, true);
         window.removeEventListener('pointermove', onPtrMove);
         window.removeEventListener('pointerup', onPtrUp);
         window.removeEventListener('pointercancel', onPtrUp);
       }
-      if (onDrawClick) chart.unsubscribeClick(onDrawClick);
       if (onDrawMove) chart.unsubscribeCrosshairMove(onDrawMove);
       primRef.current = null;
       chart.unsubscribeCrosshairMove(onMove);
@@ -686,9 +826,12 @@ export default function CandleChart({
     // начало истории или сделка. Раньше это срабатывало при ЛЮБОМ обновлении массива свечей (минутное автообновление, пересчёт
     // страницы после сохранения рисунка) — и выстроенный трейдером масштаб «слетал» в случайный момент.
     const viewKey = [ticker || '', timeframe || '', String(toChartTime(candles[0].date)), trades?.length || 0,
-      String(entryMarker?.date || ''), String(exitMarker?.date || ''), String(legs?.length ? legs[0].timestampUtc : '')].join('|');
+      String(entryMarker?.date || ''), String(exitMarker?.date || ''), String(legs?.length ? legs[0].timestampUtc : ''), fitAll ? candles.length : ''].join('|');
     if (viewKey === viewKeyRef.current) return;
     viewKeyRef.current = viewKey;
+    // Другой график — цена снова по свечам: сдвиг по цене от прошлого инструмента здесь был бы бессмысленным.
+    try { chartRef.current.priceScale('right').setAutoScale(true); } catch { /* не критично */ }
+    setPriceManual(false);
     const singleTradeDate = entryMarker?.date ?? (legs?.length ? toDate(legs[0].timestampUtc) : null);
     if (trades?.length) {
       chartRef.current.timeScale().fitContent();
@@ -702,6 +845,8 @@ export default function CandleChart({
       const from = Math.max(0, Math.min(entryIdx, exitIdx) - 20);
       const to = Math.min(n - 1, Math.max(entryIdx, exitIdx) + 20);
       chartRef.current.timeScale().setVisibleLogicalRange({ from, to });
+    } else if (fitAll) {
+      chartRef.current.timeScale().fitContent();
     } else if (n > 4) {
       // с рисованием оставляем справа свободное место — там рисуют прогноз (траекторию, луч, фибо вперёд)
       const span = Math.ceil(n / 4);
@@ -930,6 +1075,7 @@ export default function CandleChart({
     }
   }, [candles, patterns, layers, entryMarker, exitMarker, legs, direction, entryPrice, exitPrice, planLines, colors, isTrade, trades, systemMarkers]);
 
+  const selectedDrawing = selectedId ? drawings.find((d) => d.id === selectedId) || null : null;
   const rsiMacdPanes = (layers.rsi ? 110 : 0) + (layers.macd ? 110 : 0);
   // Real user report 2026-08-17: fullscreen used to hard-code `calc(100vh - 150px)` for
   // the chart, assuming a fixed 150px was always enough for the header + layer-toggle
@@ -955,6 +1101,14 @@ export default function CandleChart({
               onClick={() => onTimeframeChange?.(tf.key)}
             >{TIMEFRAMES[tf.key]?.label || tf.label}</button>
           ))}
+          {priceManual && (
+            <button
+              className="btn btn-ghost btn-sm"
+              style={{fontSize:11, padding:'3px 8px'}}
+              title="График сдвинут по цене вручную. Вернуть масштаб по свечам (то же — двойной клик по шкале цен)"
+              onClick={() => { try { chartRef.current?.priceScale('right').setAutoScale(true); } catch { /* не критично */ } setPriceManual(false); }}
+            >↕ Авто</button>
+          )}
           <button
             className="btn btn-ghost btn-sm"
             style={{fontSize:13, padding:'3px 8px'}}
@@ -1008,13 +1162,18 @@ export default function CandleChart({
             if (selectedId) commitDrawings(drawings.map((d) => (d.id === selectedId ? { ...d, color: c } : d)));
           }}
           magnet={magnet} onMagnet={() => setMagnet((v) => !v)}
+          signalOn={selectedDrawing && SIGNAL_TYPES.has(selectedDrawing.type) ? !!selectedDrawing.signal : signalNew}
+          onSignal={() => {
+            if (selectedDrawing && SIGNAL_TYPES.has(selectedDrawing.type)) commitDrawings(toggleSignal(drawings, selectedDrawing.id));
+            else setSignalNew((v) => !v);
+          }}
           label={textLabel} onLabel={setTextLabel}
           hasSelected={!!selectedId}
           onDeleteSelected={() => { if (selectedId) { commitDrawings(removeDrawing(drawings, selectedId)); setSelectedId(null); } }}
           count={drawings.length}
           onClearAll={() => { if (drawings.length) { commitDrawings([]); setSelectedId(null); } }}
           hint={
-            tool === 'cursor' ? 'Кликните по рисунку, чтобы выбрать его; тяните за линию — двигаете целиком, за кружок — меняете точку. Цвет меняется сразу, Delete — удалить.'
+            tool === 'cursor' ? 'Кликните по рисунку, чтобы выбрать его; тяните за линию — двигаете целиком, за кружок — меняете точку. Цвет меняется сразу, Delete — удалить. ★ делает выбранную линию сигнальной: только такие линии учитывает условие «цена у моей линии» и робот.'
               : draftPoint ? `${TOOL_LABELS[tool]}: кликните по второй точке (Esc — отмена).`
                 : tool === 'ruler' ? 'Линейка: кликните по двум точкам — покажет ход в рублях, процентах, барах и ATR.'
                   : tool === 'hline' || tool === 'vline' ? `${TOOL_LABELS[tool]}: один клик по графику.`

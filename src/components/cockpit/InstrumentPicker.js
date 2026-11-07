@@ -13,6 +13,7 @@ import { SECTORS, searchCatalog, searchInstruments, catalogEntry } from '../../s
 import { availableTimeframes } from '../../services/marketData/candles';
 import { getCachedLogos, logoUrlFromName, logoCacheKey } from '../../services/marketData/instrumentLogos';
 import InstrumentIcon from '../shared/InstrumentIcon';
+import { guessInstrumentType } from '../../services/import/instrumentResolver';
 
 const TYPE_LABEL = { stock: 'акция', future: 'фьючерс', currency: 'валюта' };
 const TYPES = [
@@ -26,6 +27,7 @@ export default function InstrumentPicker({
   onClose,
   onAdd,          // async (items: [{ticker, type}], { timeframe, strategyId }) => void
   existing = [],  // тикеры, которые уже в радаре
+  existingFor = null, // (strategyId) => тикеры, уже стоящие в радаре ЭТОЙ стратегии: у каждой стратегии радар свой
   tinkoffToken,
   ownTickers = [], // чем трейдер уже торговал — показываем первым делом
   strategies = [], // сохранённые стратегии — выбор, по какой смотреть именно этот тикер
@@ -46,7 +48,9 @@ export default function InstrumentPicker({
   const reqId = useRef(0);
   const [logos, setLogos] = useState(new Map());
 
-  const existingSet = useMemo(() => new Set(existing.map((t) => (t || '').toUpperCase())), [existing]);
+  const existingList = existingFor ? existingFor(strategyId) : existing;
+  const existingKey = existingList.join(',');
+  const existingSet = useMemo(() => new Set(existingKey.split(',').filter(Boolean).map((x) => x.toUpperCase())), [existingKey]);
   const pickedSet = useMemo(() => new Set(picked.map((p) => p.ticker)), [picked]);
 
   // Локальный список — мгновенно, биржевой поиск — с задержкой: иначе на каждую букву
@@ -177,7 +181,7 @@ export default function InstrumentPicker({
           ))}
 
           {showRaw && (
-            <button className="ip-row ip-row-raw" onClick={() => toggle({ ticker: raw, type: 'stock' })}>
+            <button className="ip-row ip-row-raw" onClick={() => toggle({ ticker: raw, type: guessInstrumentType(raw) })}>
               <span className="ip-check">{pickedSet.has(raw) ? '✓' : '+'}</span>
               <div className="ip-info">
                 <div className="ip-ticker">{raw}</div>
@@ -241,7 +245,7 @@ function Row({ item, picked, already, onClick, logoUrl }) {
         <div className="ip-name">{item.name}</div>
       </div>
       <span className="ip-type">
-        {already ? 'уже в радаре' : `${TYPE_LABEL[item.type] || item.type}${item.sector ? ` · ${item.sector}` : ''}`}
+        {already ? (existingFor ? 'уже в радаре этой стратегии' : 'уже в радаре') : `${TYPE_LABEL[item.type] || item.type}${item.sector ? ` · ${item.sector}` : ''}`}
       </span>
     </button>
   );

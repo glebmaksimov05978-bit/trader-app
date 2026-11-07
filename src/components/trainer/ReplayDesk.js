@@ -190,6 +190,7 @@ export default function ReplayDesk({ onSaved }) {
   // ---------- настройка ----------
   if (phase === 'setup' || phase === 'loading') {
     return (
+      <div className="tr-setup-grid">
       <div className="card tr-setup">
         <h3 className="tr-side-title">Новая попытка</h3>
         <p className="tr-muted">Настоящая история MOEX. Будущее скрыто: свечи открываются по одной, а вы решаете, входить ли, где стоять стопу и когда выходить. Сделка записывается в «Разбор» как <b>учебная</b> — в реальный журнал и статистику она не попадает.</p>
@@ -221,6 +222,17 @@ export default function ReplayDesk({ onSaved }) {
         </div>
         <p className="tr-note">Вход — по открытию следующей свечи после заявки. Если в одной свече достижимы и стоп, и тейк, считается стоп. Комиссия {DEFAULT_FEE_PCT_PER_SIDE} % с каждой стороны. Фьючерсы пока не поддерживаются.</p>
       </div>
+      <div className="card tr-howto">
+        <h3 className="tr-side-title">Как играть</h3>
+        <ol>
+          <li><b>Начните попытку.</b> Выберите акцию (или «Случайный инструмент»). Вы увидите историю до случайного дня — как будто это «сегодня». Что было дальше, скрыто.</li>
+          <li><b>Открывайте свечи.</b> Кнопка «Следующая свеча» (или «+5 свечей») открывает график по одной свече — как время, идущее вперёд.</li>
+          <li><b>Решили войти?</b> Справа в «Заявке» укажите стоп (обязательно) и, если хотите, тейк, затем «Купить» или «Продать». Сделка откроется по цене открытия следующей свечи.</li>
+          <li><b>Ведите сделку.</b> Можно двигать стоп или закрыть вручную. Когда сделка закроется, вы увидите результат в R и свечи, которые были дальше, — и сможете записать заметку.</li>
+        </ol>
+        <p className="tr-note">Хотите потренироваться именно в выходе — войдите сразу, а решения принимайте по ходу свечей. В «Слепом режиме» тикер и даты скрыты, чтобы нельзя было вспомнить, чем всё кончилось.</p>
+      </div>
+      </div>
     );
   }
 
@@ -240,10 +252,13 @@ export default function ReplayDesk({ onSaved }) {
             candles={displayCandles}
             ticker={title}
             timeframe="D1"
-            height={360}
+            height={460}
             planLines={phase === 'run' ? planLines : undefined}
             systemMarkers={phase === 'done' && closedTrade ? [{ date: all[closedTrade.exitBar]?.date, text: 'Выход' }] : undefined}
           />
+          {phase === 'run' && !position && !pending && (
+            <p className="tr-hint">Открывайте свечи кнопкой «Следующая свеча». Решите войти — поставьте заявку справа (стоп обязателен). Вход произойдёт по открытию следующей свечи.</p>
+          )}
           {phase === 'run' && (
             <div className="tr-steps" data-tour="trainer-steps">
               <button type="button" className="btn btn-primary" onClick={() => step(1)}>Следующая свеча</button>

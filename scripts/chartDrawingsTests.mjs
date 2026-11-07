@@ -1,7 +1,7 @@
 // Проверка модели и математики рисунков на графике (npm run test:drawings).
 import {
   chartKey, normalizeDrawings, newDrawing, addDrawing, removeDrawing, drawingsFor, withDrawings,
-  fibLevels, rulerStats, rulerText, snapPrice, lineValueAt, userLevelsFrom, nearestLevel, distToSegment, atrOf, moveDrawing, movePoint, patternToDrawings,
+  toggleSignal, fibLevels, rulerStats, rulerText, snapPrice, lineValueAt, userLevelsFrom, nearestLevel, distToSegment, atrOf, moveDrawing, movePoint, patternToDrawings,
   MAX_PER_CHART, MAX_CHARTS, PALETTE,
 } from '../src/services/chartDrawings.js';
 import fs from 'fs';
@@ -111,12 +111,12 @@ ok('вертикальная прямая — null', lineValueAt({ time: 5, pric
 
 // ---- уровни для стратегии ----
 const set = normalizeDrawings([
-  { id: 'h', type: 'hline', p1: { time: 0, price: 300 } },
+  { id: 'h', type: 'hline', p1: { time: 0, price: 300 }, signal: true },
   { id: 'v', type: 'vline', p1: { time: 50, price: 0.0001 } },
-  { id: 'r', type: 'ray', p1: { time: 0, price: 100 }, p2: { time: 100, price: 110 } },
-  { id: 't', type: 'trend', p1: { time: 0, price: 100 }, p2: { time: 100, price: 110 } },
-  { id: 'z', type: 'rect', p1: { time: 0, price: 280 }, p2: { time: 100, price: 290 } },
-  { id: 'f', type: 'fib', p1: { time: 0, price: 100 }, p2: { time: 100, price: 200 } },
+  { id: 'r', type: 'ray', p1: { time: 0, price: 100 }, p2: { time: 100, price: 110 }, signal: true },
+  { id: 't', type: 'trend', p1: { time: 0, price: 100 }, p2: { time: 100, price: 110 }, signal: true },
+  { id: 'z', type: 'rect', p1: { time: 0, price: 280 }, p2: { time: 100, price: 290 }, signal: true },
+  { id: 'f', type: 'fib', p1: { time: 0, price: 100 }, p2: { time: 100, price: 200 }, signal: true },
   { id: 'x', type: 'text', p1: { time: 0, price: 123 }, label: 'заметка' },
 ]);
 const lv = userLevelsFrom(set, 150, { barSeconds: 10 });
@@ -130,6 +130,27 @@ ok('метка и вертикаль уровнями не являются', !l
 ok('трендовая линия ещё действует в пределах 2 баров правее конца', userLevelsFrom(set, 115, { barSeconds: 10 }).some((l) => l.kind === 'trend'));
 ok('внутри отрезка тренд — значение на прямой', near(userLevelsFrom(set, 50, { barSeconds: 10 }).find((l) => l.kind === 'trend').price, 105));
 ok('луч слева от начала не действует', !userLevelsFrom(set, -10).some((l) => l.kind === 'ray'));
+
+// ---- сигнальные линии: условие «цена у моей линии» смотрит только на отмеченные ★ ----
+const plain = normalizeDrawings([
+  { id: 'a', type: 'hline', p1: { time: 0, price: 300 } },
+  { id: 'b', type: 'trend', p1: { time: 0, price: 100 }, p2: { time: 100, price: 110 } },
+  { id: 'c', type: 'rect', p1: { time: 0, price: 280 }, p2: { time: 100, price: 290 } },
+]);
+ok('обычные (не сигнальные) линии уровнями не являются — нарисованный «для глаз» треугольник не включает сигнал', userLevelsFrom(plain, 50, { barSeconds: 10 }).length === 0);
+const mixed = normalizeDrawings([
+  { id: 'a', type: 'hline', p1: { time: 0, price: 300 } },
+  { id: 's', type: 'hline', p1: { time: 0, price: 250 }, signal: true },
+]);
+ok('из двух линий уровнем становится только сигнальная', userLevelsFrom(mixed, 50).map((l) => l.price).join() === '250');
+ok('отметка ★ у вертикали, метки и стрелки не сохраняется (уровней они не дают)',
+  normalizeDrawings([{ id: 'v', type: 'vline', p1: { time: 1, price: 1 }, signal: true }, { id: 'x', type: 'text', p1: { time: 1, price: 1 }, signal: true }, { id: 'ar', type: 'arrow', p1: { time: 1, price: 1 }, p2: { time: 2, price: 2 }, signal: true }]).every((d) => !d.signal));
+ok('newDrawing с signal сохраняет отметку', newDrawing({ type: 'hline', p1: { time: 1, price: 5 }, signal: true }).signal === true && !newDrawing({ type: 'hline', p1: { time: 1, price: 5 } }).signal);
+const tg = toggleSignal(plain, 'a');
+ok('toggleSignal включает отметку у нужной линии, остальные не трогает', tg.find((d) => d.id === 'a').signal === true && !tg.find((d) => d.id === 'b').signal);
+ok('toggleSignal второй раз выключает', !toggleSignal(tg, 'a').find((d) => d.id === 'a').signal);
+ok('toggleSignal на вертикали ничего не делает', !toggleSignal(normalizeDrawings([{ id: 'v', type: 'vline', p1: { time: 1, price: 1 } }]), 'v')[0].signal);
+ok('отметка переживает чтение из профиля (normalizeDrawings)', normalizeDrawings([newDrawing({ type: 'trend', p1: { time: 1, price: 5 }, p2: { time: 9, price: 8 }, signal: true })])[0].signal === true);
 
 // ---- ближайший уровень ----
 const nl = nearestLevel([{ price: 100 }, { price: 110 }], 108);

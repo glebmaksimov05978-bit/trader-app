@@ -186,12 +186,16 @@ export function applyAnswer(progress, round, answerId) {
   return { progress: p, correct: g.correct, gained };
 }
 
-/** Сводка для экрана: точность, слабые фигуры (не меньше 5 раундов), самая частая путаница. */
+// Фигура попадает в «слабые места», только если по ней верных ответов меньше этой доли (и раундов не меньше 5):
+// раньше в слабые попадали и фигуры со 100 % — просто «три самые низкие», даже когда ошибок не было вовсе.
+export const WEAK_BELOW = 0.8;
+
+/** Сводка для экрана: точность, слабые фигуры (не меньше 5 раундов и точность ниже WEAK_BELOW), самая частая путаница. */
 export function progressSummary(progress) {
   const p = progress || emptyProgress();
   const accuracy = p.answered ? p.correct / p.answered : null;
   const weak = Object.entries(p.byPattern)
-    .filter(([, v]) => v.n >= 5)
+    .filter(([, v]) => v.n >= 5 && v.ok / v.n < WEAK_BELOW)
     .map(([id, v]) => ({ id, n: v.n, accuracy: v.ok / v.n }))
     .sort((a, b) => a.accuracy - b.accuracy)
     .slice(0, 3);

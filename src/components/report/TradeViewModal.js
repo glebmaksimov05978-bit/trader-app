@@ -8,6 +8,7 @@ import CandleChart from '../shared/CandleChart';
 import Icon from '../shared/Icon';
 import { fetchDailyCandles, availableTimeframes, recommendTimeframe } from '../../services/marketData/candles';
 import { resolveOpenedAt, resolveClosedAt } from '../../services/tradeDates';
+import { describeLegs } from '../../services/tradeLegs';
 import { guessInstrumentType } from '../../services/import/instrumentResolver';
 import { fmtMoney } from '../../services/report/exportReport';
 import './ReportExport.css';
@@ -28,6 +29,14 @@ export default function TradeViewModal({ item, userProfile, onClose }) {
   const ticker = item?.ticker;
   const instrumentType = trade.instrumentType || guessInstrumentType(ticker || '');
   const [state, setState] = useState({ loading: true, candles: null, error: null });
+  // Окно открывается почти во весь экран, а график занимает то, что осталось под шапкой и таблицей операций.
+  const [vh, setVh] = useState(() => (typeof window !== 'undefined' ? window.innerHeight : 800));
+  useEffect(() => {
+    const onResize = () => setVh(window.innerHeight);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  const ops = useMemo(() => describeLegs(trade.legs), [trade]);
 
   useEffect(() => {
     let alive = true;
@@ -62,7 +71,7 @@ export default function TradeViewModal({ item, userProfile, onClose }) {
 
   return createPortal(
     <div className="rx-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="rx-modal wide" role="dialog" aria-modal="true" aria-label={`Сделка ${ticker}`}>
+      <div className="rx-modal wide tv-big" role="dialog" aria-modal="true" aria-label={`Сделка ${ticker}`}>
         <div className="rx-head">
           <div>
             <h2>{ticker} · {short ? 'шорт' : 'лонг'} <span className="tv-src">{item.src === 'paper' ? 'бумага' : 'реал'}</span></h2>
@@ -72,7 +81,7 @@ export default function TradeViewModal({ item, userProfile, onClose }) {
         </div>
         <div className="rx-body">
           <div className="tv-facts">
-            <div><span>Вход</span><b>{px(num(trade.entryPrice))}</b></div>
+            <div><span>Средний вход</span><b>{px(num(trade.entryPrice))}</b></div>
             <div><span>Выход</span><b>{px(num(trade.exitPrice))}</b></div>
             <div><span>Стоп</span><b>{stop != null ? px(stop) : '—'}</b></div>
             <div><span>Цель</span><b>{take ? px(take) : '—'}</b></div>
@@ -94,10 +103,29 @@ export default function TradeViewModal({ item, userProfile, onClose }) {
               timeframe={timeframe}
               timeframeOptions={availableTimeframes(hasToken)}
               onTimeframeChange={setPicked}
-              height={380}
+              height={Math.max(300, Math.min(760, vh - (ops.length ? 400 : 320)))}
             />
           )}
-          <p className="rx-note">Открыта: {dateTime(openedAt)}{legs ? ` · фиксаций и операций: ${legs.length}` : ''}. Таймфрейм можно сменить над графиком.</p>
+          {/* Те же метки, что на графике, но списком — как это шло по времени: вход, докупки, частичные фиксации, выход.
+              В Сопровождении (пока сделка открыта) график и метки те же — там это смотрят «вживую», здесь — уже итог. */}
+          {ops.length > 0 && (
+            <div className="tv-ops">
+              <div className="tv-ops-title">Операции по сделке</div>
+              <table>
+                <tbody>
+                  {ops.map((o, i) => (
+                    <tr key={i} className={`tv-op-${o.kind}`}>
+                      <td>{o.date ? dateTime(o.date) : '—'}</td>
+                      <td><b>{o.action}</b></td>
+                      <td>{o.quantity.toLocaleString('ru-RU')} шт.</td>
+                      <td>{px(o.price)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="rx-note">Открыта: {dateTime(openedAt)}. На графике: стрелка — вход, кружки — фиксации и выход, белая линия — средняя цена входа{stop != null || take ? ', пунктиры — стоп и цель' : ''}. Таймфрейм можно сменить над графиком, кнопка ⛶ — на весь экран.</p>
         </div>
       </div>
     </div>,

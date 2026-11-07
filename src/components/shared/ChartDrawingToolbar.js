@@ -18,6 +18,7 @@ const ICONS = {
   text: <><path d="M6 6h12" /><path d="M12 6v12" /><path d="M9 18h6" /></>,
   ruler: <><path d="M3 15L15 3l6 6L9 21z" /><path d="M7 11l2 2M10 8l2 2M13 5l2 2" /></>,
   trash: <><path d="M4 7h16" /><path d="M9 7V4h6v3" /><path d="M6 7l1 13h10l1-13" /></>,
+  star: <path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.8L12 16.8l-5.2 2.8 1-5.8-4.3-4.1 5.9-.8z" />,
   magnet: <><path d="M6 4v7a6 6 0 0 0 12 0V4" /><path d="M6 8h3M15 8h3" /></>,
 };
 
@@ -33,7 +34,7 @@ const TOOLS = ['cursor', 'hline', 'vline', 'trend', 'ray', 'arrow', 'rect', 'fib
 
 export default function ChartDrawingToolbar({
   open, onToggle, tool, onTool, color, onColor, magnet, onMagnet, label, onLabel,
-  hasSelected, onDeleteSelected, count, onClearAll, hint,
+  hasSelected, onDeleteSelected, count, onClearAll, hint, signalOn = false, onSignal = null,
 }) {
   return (
     <div className="cc-draw">
@@ -65,6 +66,13 @@ export default function ChartDrawingToolbar({
                 onClick={() => onColor(c)} title="Цвет" aria-label={`Цвет ${c}`} />
             ))}
             <span className="cc-draw-sep" />
+            {onSignal && (
+              <button type="button" className={`cc-draw-btn cc-draw-signal ${signalOn ? 'on' : ''}`} onClick={onSignal}
+                title="Сигнальная линия: по ней работает условие стратегии «цена у моей линии» и робот. Выберите линию и нажмите ★ — она станет сигнальной; или включите ★ перед рисованием"
+                aria-label="Сигнальная линия" aria-pressed={signalOn}>
+                <Svg name="star" />
+              </button>
+            )}
             <button type="button" className="cc-draw-btn" onClick={onDeleteSelected} disabled={!hasSelected}
               title="Удалить выбранный рисунок (Delete)" aria-label="Удалить выбранное">
               <Svg name="trash" />

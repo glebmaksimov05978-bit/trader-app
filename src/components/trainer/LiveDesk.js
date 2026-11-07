@@ -172,6 +172,8 @@ export default function LiveDesk({ trades, onChanged }) {
     catch (e) { toast.error(e.message); }
   }
 
+  function startNew() { setSelectedId(null); setForm(null); setOrderStop(''); setOrderTake(''); }
+
   async function cancelOrder() {
     if (!selected) return;
     try { await persist({ ...selected, status: 'cancelled', cancelReason: 'Снято вами' }); setSelectedId(null); } catch { toast.error('Не удалось снять заявку'); }
@@ -199,16 +201,19 @@ export default function LiveDesk({ trades, onChanged }) {
         </div>
 
         <div className="card" data-tour="trainer-live-list">
-          <h3 className="tr-side-title">Мои живые позиции</h3>
+          <div className="tr-card-head">
+            <h3 className="tr-side-title" style={{ margin: 0 }}>Мои живые позиции</h3>
+            <button type="button" className="btn btn-primary btn-sm" onClick={startNew}><Icon name="plus" size={13} /> Новая заявка</button>
+          </div>
           {active.length === 0 ? (
-            <p className="tr-muted">Пока нет. Загрузите график, поставьте заявку со стопом — дальше сделка идёт по настоящим свечам сама, даже когда страница закрыта. Закрытые сделки попадают в «Разбор».</p>
+            <p className="tr-muted">Пока нет. Справа введите тикер, нажмите «Загрузить график», затем поставьте заявку со стопом — дальше сделка идёт по настоящим свечам сама, даже когда страница закрыта. Закрытые сделки попадают в «Разбор».</p>
           ) : (
             <div className="tr-table">
               {active.map((t) => {
                 const lastC = candlesMap[keyOf(t)]?.slice(-1)[0];
                 const u = t.status === 'open' && lastC ? unrealized(t, lastC.close) : null;
                 return (
-                  <button type="button" key={t.id} className={`tr-liverow ${t.id === selectedId ? 'on' : ''}`} onClick={() => { setSelectedId(t.id); setForm(null); }}>
+                  <button type="button" key={t.id} className={`tr-liverow ${t.id === selectedId ? 'on' : ''}`} onClick={() => { if (t.id === selectedId) { startNew(); } else { setSelectedId(t.id); setForm(null); } }}>
                     <span className="tr-tname">{t.ticker} · {t.timeframe}</span>
                     <span className="badge badge-blue">{t.status === 'pending' ? 'Ждёт следующей свечи' : 'Открыта'}</span>
                     <span className="tr-muted">{t.side === 'long' ? 'покупка' : 'продажа'}{t.status === 'open' ? ` · вход ${fmtPrice(t.entryPrice)}` : ` · стоп ${fmtPrice(t.orderStop)}`}</span>
@@ -224,7 +229,10 @@ export default function LiveDesk({ trades, onChanged }) {
       <aside className="tr-side">
         {selected ? (
           <div className="card" data-tour="trainer-live-position">
-            <h3 className="tr-side-title">{selected.status === 'pending' ? 'Заявка ждёт' : 'Позиция'}: {selected.side === 'long' ? 'покупка' : 'продажа'} {selected.ticker}</h3>
+            <div className="tr-card-head">
+              <h3 className="tr-side-title" style={{ margin: 0 }}>{selected.status === 'pending' ? 'Заявка ждёт' : 'Позиция'}: {selected.side === 'long' ? 'покупка' : 'продажа'} {selected.ticker}</h3>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={startNew}><Icon name="plus" size={13} /> Новая заявка</button>
+            </div>
             {selected.status === 'pending' ? (
               <>
                 <p className="tr-muted">Исполнится по открытию первой свечи, которая начнётся после {fmtDate(selected.orderBarTime)}. Стоп {fmtPrice(selected.orderStop)}{selected.orderTake != null ? `, тейк ${fmtPrice(selected.orderTake)}` : ''}.</p>

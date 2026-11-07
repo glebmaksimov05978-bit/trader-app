@@ -14,6 +14,7 @@ import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
 import { useRadarLive } from '../../context/RadarLiveContext';
 import { getRadarItems, addRadarItem, deleteRadarItem } from '../../services/radar';
+import { checkTradable } from '../../services/marketData/tradability';
 import { getUserTrades } from '../../services/trades';
 import { getOpenPaperTrades } from '../../services/paperTrades';
 import { getCachedLogos, logoUrlFromName, logoCacheKey } from '../../services/marketData/instrumentLogos';
@@ -64,6 +65,8 @@ export default function RadarPanel({ filterId: filterIdProp, onFilterChange, onI
   // Каждый тикер может смотреться по своей стратегии — резолвится так же, как в
   // RadarLiveContext: своя стратегия, если задана и ещё существует, иначе активная.
   const strategyOf = (item) => (item.strategyId && strategies.find((s) => s.id === item.strategyId)) || strategy;
+  // Открыт режим одной стратегии — тикеры добавляются ей и показываются только её.
+  const scopeStrategy = filterId !== 'all' ? strategies.find((s) => s.id === filterId) || null : null;
 
   const load = () => {
     if (!user) return;
@@ -114,15 +117,31 @@ export default function RadarPanel({ filterId: filterIdProp, onFilterChange, onI
       // Последовательно, а не Promise.all: если на середине списка что-то упадёт,
       // добавленное до этого останется добавленным, и трейдер увидит честное «N из M».
       let ok = 0;
+      const problems = [];
       for (const p of picked) {
         try {
-          await addRadarItem(user.uid, { ticker: p.ticker, instrumentType: p.type || 'stock', timeframe, strategyId });
+          // Торгуется ли инструмент сейчас — выясняем до записи, а не ночью, когда чистильщик радара удалит его и напишет в Telegram.
+          // Истёкший контракт заменяется на «корень» (он сам переходит на действующий) — так же, как делает чистильщик.
+          const chk = await checkTradable(p.ticker, p.type);
+          let ticker = p.ticker;
+          let type = chk.type || p.type || 'stock';
+          if (!chk.ok) {
+            if (!chk.replaceWith) { problems.push(chk.reason); continue; }
+            ticker = chk.replaceWith;
+            type = 'future';
+            toast(`${p.ticker} истёк — добавляю «${ticker}»: он сам переходит на действующий контракт`);
+          }
+          await addRadarItem(user.uid, { ticker, instrumentType: type, timeframe, strategyId, activeStrategyId: strategy?.id || null });
           ok += 1;
-        } catch { /* считаем ниже */ }
+        } catch (e) {
+          problems.push(e?.code === 'radar/duplicate' ? e.message : `${p.ticker}: не удалось добавить`);
+        }
       }
-      if (ok === picked.length) toast.success(ok === 1 ? `${picked[0].ticker} в радаре` : `Добавлено: ${ok}`);
-      else toast.error(`Добавлено ${ok} из ${picked.length}`);
-      setPickerOpen(false);
+      if (ok === picked.length) toast.success(ok === 1 ? 'Добавлено в радар' : `Добавлено: ${ok}`);
+      else if (ok > 0) toast.error(`Добавлено ${ok} из ${picked.length}. ${problems.join(' ')}`);
+      else toast.error(problems.join(' ') || 'Ничего не добавлено');
+      // Окно закрываем, только если хоть что-то добавлено: иначе человек не поймёт, что именно не так, и выбирать придётся заново.
+      if (ok > 0) setPickerOpen(false);
       load();
     } finally {
       setSaving(false);
@@ -174,11 +193,11 @@ export default function RadarPanel({ filterId: filterIdProp, onFilterChange, onI
           </select>
         </div>
       )}
-      {/* По умолчанию новый тикер смотрится по активной стратегии профиля — но при
-          добавлении можно выбрать другую именно для него (см. InstrumentPicker). */}
+      {/* Радар у каждой стратегии свой: в режиме стратегии новый тикер добавляется именно ей, в общем обзоре — активной
+          стратегии профиля; при добавлении можно выбрать другую (см. InstrumentPicker). */}
       <div className="ck-radar-strategy">
-        По умолчанию для новых: <b>{strategy?.name || 'не выбрана'}</b>
-        {' · '}<Link to="/settings">сменить</Link>
+        {scopeStrategy ? 'Добавляется в радар стратегии: ' : 'По умолчанию для новых: '}<b>{(scopeStrategy || strategy)?.name || 'не выбрана'}</b>
+        {!scopeStrategy && <>{' · '}<Link to="/settings">сменить</Link></>}
       </div>
       {radarUpdatedAt && (
         <div className="ck-radar-updated">
@@ -251,9 +270,10 @@ export default function RadarPanel({ filterId: filterIdProp, onFilterChange, onI
         onClose={() => setPickerOpen(false)}
         onAdd={handleAdd}
         existing={items.map((i) => i.ticker)}
+        existingFor={(sid) => items.filter((i) => strategyOf(i)?.id === (sid || strategy?.id)).map((i) => i.ticker)}
         ownTickers={ownTickers}
         strategies={strategies}
-        defaultStrategyId={strategy?.id || null}
+        defaultStrategyId={(scopeStrategy || strategy)?.id || null}
         tinkoffToken={userProfile?.tinkoffToken}
         saving={saving}
       />

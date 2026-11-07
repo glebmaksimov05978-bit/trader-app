@@ -16,7 +16,7 @@
 //
 // Модуль сам подключается к candles.js через registerRootResolver — так candles.js остаётся
 // без единой новой зависимости (его без правок загружают десятки исследовательских скриптов).
-import { fetchDailyCandles, registerRootResolver } from './candles.js';
+import { fetchDailyCandles, registerRootResolver, fetchRetry } from './candles.js';
 
 const ISS_BASE = 'https://iss.moex.com/iss';
 const MONTH_LETTERS = 'FGHJKMNQUVXZ'; // янв…дек по коду биржи
@@ -163,7 +163,7 @@ let listCache = { at: 0, rows: null };
 
 async function activeContractRows() {
   if (listCache.rows && Date.now() - listCache.at < LIST_TTL_MS) return listCache.rows;
-  const resp = await fetch(
+  const resp = await fetchRetry(
     `${ISS_BASE}/engines/futures/markets/forts/securities.json?iss.meta=off`
     + '&iss.only=securities&securities.columns=SECID,ASSETCODE,LASTTRADEDATE',
   );
@@ -240,10 +240,16 @@ async function fetchRootCandles(args) {
   // Более ранние из ДЕЙСТВУЮЩИХ контрактов тоже годятся — они уже в списке биржи, но
   // перечисленные генератором коды их покрывают; дубли склейка не создаёт (берёт бары раньше хвоста).
   const own = { ...args, ticker: base.secid };
-  const results = await Promise.allSettled([
-    fetchDailyCandles(own),
-    ...prevs.map((p) => fetchDailyCandles({ ...args, ticker: p.code })),
-  ]);
+  const jobs = [() => fetchDailyCandles(own), ...prevs.map((p) => () => fetchDailyCandles({ ...args, ticker: p.code }))];
+  const results = new Array(jobs.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < jobs.length) {
+      const i = next++;
+      try { results[i] = { status: 'fulfilled', value: await jobs[i]() }; } catch (e) { results[i] = { status: 'rejected', reason: e }; }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(3, jobs.length) }, worker));
   const baseRes = results[0];
   if (baseRes.status !== 'fulfilled' || !baseRes.value.length) {
     throw new Error(`Нет свечей по контракту ${base.secid}`);

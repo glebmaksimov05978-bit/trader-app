@@ -1,5 +1,5 @@
 /* src/components/trainer/Trainer.css — тренажёр «Тренд». Сдержанно: матовые поверхности, без неона. */
-.trainer-page .tr-tabs { max-width: 720px; }
+.trainer-page .tr-tabs { max-width: 1000px; overflow-x: auto; }
 
 .tr-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
 .tr-main { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
@@ -99,3 +99,11 @@
 .tr-liverow:hover { background: var(--bg-surface-2); }
 .tr-liverow.on { background: var(--bg-surface-3); }
 .tr-liverow .tr-muted { margin: 0; flex: 1; min-width: 120px; }
+
+/* Настройка «Переигровки»: форма слева, «как играть» справа */
+.tr-setup-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.tr-setup-grid .tr-setup { max-width: none; }
+.tr-howto ol { margin: 0 0 8px; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; font-size: 13px; line-height: 1.55; color: var(--text-secondary); }
+.tr-howto li b { color: var(--text-primary); }
+.tr-card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+@media (max-width: 900px) { .tr-setup-grid { grid-template-columns: minmax(0, 1fr); } }

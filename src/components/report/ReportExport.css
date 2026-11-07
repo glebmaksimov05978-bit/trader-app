@@ -77,3 +77,15 @@
 .tv-facts b { font-size: 15px; font-variant-numeric: tabular-nums; }
 .tv-up { color: var(--green); } .tv-down { color: var(--red); }
 @media (max-width: 640px) { .tv-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Окно сделки из отчёта — почти во весь экран */
+.rx-modal.tv-big { width: min(1320px, 100%); height: calc(100vh - 32px); max-height: none; }
+.rx-modal.tv-big .rx-body { flex: 1; min-height: 0; }
+.tv-ops { border: 1px solid var(--border-subtle); border-radius: var(--radius-xs); background: var(--bg-surface-2); padding: 8px 12px; }
+.tv-ops-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 4px; }
+.tv-ops table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.tv-ops td { padding: 4px 8px 4px 0; color: var(--text-secondary); white-space: nowrap; }
+.tv-ops td b { color: var(--text-primary); font-weight: 600; }
+.tv-op-open b, .tv-op-add b { color: var(--green); }
+.tv-op-exit b { color: var(--gold); }
+@media (max-width: 640px) { .rx-modal.tv-big { height: 96vh; } .tv-ops td { white-space: normal; } }

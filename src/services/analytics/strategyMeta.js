@@ -124,6 +124,35 @@ export function paperStrategyIdsFor(profile) {
   return out;
 }
 
+/** Какой стратегией смотреть запись радара, если на сопровождении ничего не выбрано: своя у записи, иначе активная. */
+export function strategyForItem(item, profile) {
+  const all = Array.isArray(profile?.strategies) ? profile.strategies : [];
+  if (item?.strategyId) {
+    const own = all.find((s) => s.id === item.strategyId);
+    if (own) return own;
+  }
+  return all.find((s) => s.id === profile?.activeStrategyId) || all[0] || profile?.strategy || null;
+}
+
+/**
+ * Какими стратегиями проверять запись радара. Радар у каждой стратегии свой: запись, привязанная к одной из стратегий
+ * на сопровождении, проверяется ТОЛЬКО ею (тикер, добавленный в радар «Моей стратегии», не должен заодно открывать сделки
+ * по другим). Запись без привязки — как раньше: по всем стратегиям на сопровождении; если их нет — одной обычной.
+ * @returns {{ list: object[], multi: boolean }}
+ */
+export function strategiesForItem(item, profile) {
+  const ids = paperStrategyIdsFor(profile);
+  if (ids.length) {
+    const all = Array.isArray(profile?.strategies) ? profile.strategies : [];
+    const picked = ids.map((id) => all.find((s) => s.id === id)).filter(Boolean);
+    const own = item?.strategyId ? picked.find((s) => s.id === item.strategyId) : null;
+    if (own) return { list: [own], multi: true };
+    if (picked.length) return { list: picked, multi: true };
+  }
+  const one = strategyForItem(item, profile);
+  return { list: one ? [one] : [], multi: false };
+}
+
 /** Таймфрейм, на котором стратегия смотрит запись радара: свой рабочий важнее настроек тикера. */
 export function timeframeFor(strategy, item, profile, fallback = 'D1') {
   return workTimeframeOf(strategy)

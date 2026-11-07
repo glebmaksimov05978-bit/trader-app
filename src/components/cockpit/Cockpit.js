@@ -16,7 +16,7 @@ import { addTrade, getUserTrades, resolveOpenedAt } from '../../services/trades'
 import { getOpenPaperTrades, getPaperTrades, updatePaperTrade } from '../../services/paperTrades';
 import { groupPaperByStrategy, paperStrategyKey } from '../../services/analytics/paperGroups';
 import Icon from '../shared/Icon';
-import { fetchDailyCandles, availableTimeframes } from '../../services/marketData/candles';
+import { fetchDailyCandles, availableTimeframes, describeLoadError } from '../../services/marketData/candles';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
 import { computeMarketContextAtEntry } from '../../services/analytics/marketContext';
@@ -50,6 +50,16 @@ import CollapsibleSection from './CollapsibleSection';
 import OrderModal from '../calculator/OrderModal';
 import './Cockpit.css';
 
+// Что человек смотрел в Сопровождении (инструмент из радара, сделка, режим стратегии, анализ) — запоминаем на время сессии
+// браузера. Раньше вся картина жила в адресе и в состоянии страницы, поэтому «зашёл в Капитал поправить стратегию и вернулся» =
+// всё сброшено и график надо открывать заново. sessionStorage — одна вкладка браузера; нет доступа — просто не помним.
+const CK_VIEW_KEY = 'ck_view_v1';
+export function readCkView() {
+  try { return JSON.parse(sessionStorage.getItem(CK_VIEW_KEY) || 'null') || {}; } catch { return {}; }
+}
+function writeCkView(patch) {
+  try { sessionStorage.setItem(CK_VIEW_KEY, JSON.stringify({ ...readCkView(), ...patch })); } catch { /* не критично */ }
+}
 const fmtPct = (v, d = 2) => (v == null ? '—' : `${Number(v.toFixed(d)) > 0 ? '+' : ''}${(Number(v.toFixed(d)) || 0).toFixed(d)}%`);
 const fmtRub = (v) => (v == null ? '—'
   : `${v >= 0 ? '+' : '−'}${Math.round(Math.abs(v)).toLocaleString('ru-RU')} ₽`);
@@ -118,11 +128,14 @@ export default function Cockpit() {
   // Все бумажные (и закрытые) — только для сводки по стратегиям над списком: сколько каждая
   // уже закрыла и с каким итогом. Ведутся по-прежнему только открытые (paperTrades).
   const [allPaper, setAllPaper] = useState([]);
+  // Что человек смотрел до ухода со вкладки (читается один раз при входе) — см. readCkView.
+  const savedView = useRef(null);
+  if (savedView.current === null) savedView.current = readCkView();
   // Какую стратегию показывать в списке бумажных: 'all' или ключ стратегии.
-  const [paperFilter, setPaperFilter] = useState('all');
+  const [paperFilter, setPaperFilter] = useState(savedView.current.scopeId || 'all');
   // Режим Сопровождения: 'all' — общий обзор, иначе id стратегии. Режим стратегии сужает всё сразу:
   // радар, бумажные и открытые позиции показывают только её, а вкладка ведёт сделки по её правилам.
-  const [scopeId, setScopeId] = useState('all');
+  const [scopeId, setScopeId] = useState(savedView.current.scopeId || 'all');
   // Левую панель (позиции, бумажные, корзины, радар) можно убрать, чтобы график и анализ заняли
   // всю ширину. Выбор запоминается в браузере; если хранилище недоступно — просто не помнит.
   const [sideHidden, setSideHidden] = useState(() => {
@@ -157,6 +170,18 @@ export default function Cockpit() {
   // не вернёшься). Состояние синхронизируется с адресом при каждом его изменении.
   useEffect(() => { if (urlActiveId) setActiveId(urlActiveId); }, [urlActiveId]);
   useEffect(() => { if (previewTicker) setActiveId(null); }, [previewTicker, previewType]);
+  // Зашли во вкладку без ссылки на инструмент или сделку (например, вернулись из Капитала через меню) — открываем то,
+  // что смотрели до ухода. Один раз при входе; ссылка из радара/Telegram всегда важнее запомненного.
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    if (previewTicker || urlActiveId) return;
+    const sv = savedView.current;
+    if (sv.previewTicker) setSearchParams({ previewTicker: sv.previewTicker, previewType: sv.previewType || 'stock' }, { replace: true });
+    else if (sv.activeId) setActiveId(sv.activeId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Выбор сделки в списке слева убирает предпросмотр из адреса: иначе повторный клик по
   // тому же тикеру в радаре не менял бы адрес и не вернул бы предпросмотр обратно.
   const selectTrade = (id) => {
@@ -165,11 +190,11 @@ export default function Cockpit() {
   };
   // Технический анализ: одна кнопка и одна панель на оба режима — и когда сделка открыта,
   // и когда просто смотришь инструмент из радара. Сами данные грузятся по нажатию.
-  const [taOpen, setTaOpen] = useState(false);
+  const [taOpen, setTaOpen] = useState(!!savedView.current.taOpen);
   // «Призма»: смотреть график и анализ через стратегию. '' — без стратегии (стандартные данные,
   // набор блоков — личные настройки). С призмой остаются только индикаторы и уровни, которыми
   // стратегия реально пользуется, и рядом видны её пороги.
-  const [taLensId, setTaLensId] = useState('');
+  const [taLensId, setTaLensId] = useState(savedView.current.taLensId || '');
   // «Показать фигуру на графике»: список рисунков уходит в график и прокручивает страницу к нему.
   const [drawReq, setDrawReq] = useState(null);
   const showPatternOnChart = (list) => {
@@ -224,7 +249,7 @@ export default function Cockpit() {
   // Что показывают обзор и вкладки режима: стратегии «на сопровождении» (Капитал → Мои стратегии).
   // Пока ни одна не отмечена — все, как раньше.
   const scopeStrategies = useMemo(() => followedStrategies(strategies), [strategies]);
-  const [strategyId, setStrategyId] = useState(null);
+  const [strategyId, setStrategyId] = useState(savedView.current.strategyId || null);
   const strategy = useMemo(
     () => strategies.find((s) => s.id === strategyId) || getActiveStrategy(userProfile),
     [strategies, strategyId, userProfile],
@@ -238,6 +263,15 @@ export default function Cockpit() {
     setActiveId(null);
     if (previewTicker || urlActiveId) setSearchParams({}, { replace: true });
   };
+
+  useEffect(() => {
+    writeCkView({ previewTicker: previewTicker || null, previewType: previewTicker ? previewType : null, activeId: previewTicker ? null : activeId, scopeId, taOpen, taLensId, strategyId });
+  }, [previewTicker, previewType, activeId, scopeId, taOpen, taLensId, strategyId]);
+
+  // Запомненный режим мог относиться к стратегии, которую потом удалили, — тогда возвращаемся в общий обзор.
+  useEffect(() => {
+    if (scopeId !== 'all' && strategies.length && !strategies.some((x) => x.id === scopeId)) { setScopeId('all'); setPaperFilter('all'); setTaLensId(''); }
+  }, [scopeId, strategies]);
 
   // Выбрали сделку — вкладка сразу ведёт её по ТОЙ стратегии, которой она открыта. Раньше
   // оставалась последняя выбранная вручную, и сделка краткосрочной стратегии считалась по
@@ -365,7 +399,7 @@ export default function Cockpit() {
       if (!indicators) throw new Error('Нет исторических свечей по этому тикеру');
       setTaState({ loading: false, data: { indicators, patterns: patternsNow, marketContext, candles: cs }, error: null });
     } catch (e) {
-      setTaState({ loading: false, data: null, error: e.message || 'Не удалось загрузить данные' });
+      setTaState({ loading: false, data: null, error: describeLoadError(e) });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taTicker, taType, taTf, userProfile, trade]);
@@ -465,7 +499,7 @@ export default function Cockpit() {
       });
       setState({ ...res, entryIndex, actualFills });
     } catch (e) {
-      setError(e.message || 'Не удалось посчитать состояние позиции');
+      setError(describeLoadError(e) || 'Не удалось посчитать состояние позиции');
       setState(null);
     } finally {
       setComputing(false);
@@ -1431,37 +1465,6 @@ export default function Cockpit() {
             </section>
           )}
 
-          {/* ---------- одинаково и со сделкой, и без неё: кнопки, тех. анализ ---------- */}
-          {(trade || previewTicker) && (
-            <div className="ck-verdict-actions" style={{ justifyContent: 'flex-start' }}>
-              <button className={`ck-btn ${taOpen ? 'ck-btn-primary' : ''}`} onClick={() => setTaOpen((o) => !o)}>
-                Технический анализ {taOpen ? '▴' : '▾'}
-              </button>
-              {!trade && (
-                <Link
-                  className="ck-btn ck-btn-primary"
-                  style={{ textDecoration: 'none' }}
-                  to={`/calculator?ticker=${encodeURIComponent(previewTicker)}&type=${encodeURIComponent(previewType)}`}
-                >
-                  Войти в сделку
-                </Link>
-              )}
-            </div>
-          )}
-
-          {taOpen && taTicker && (
-            <section className="ck-panel">
-              <TechnicalAnalysisBlock
-                state={taState}
-                onRefresh={() => loadTa(null)}
-                title="Технический анализ сейчас"
-                view={taView}
-                lensName={taLensStrategy?.name || null}
-                onDrawPattern={showPatternOnChart}
-              />
-            </section>
-          )}
-
           {/* Вместо профит-/лосс-систем, которым без позиции нечего оценивать (они считают
               пик, просадку и число баров С ВХОДА), — готовность к входу по условиям стратегии:
               те же условия проверяет робот и показывает Калькулятор. */}
@@ -1618,9 +1621,43 @@ export default function Cockpit() {
                 {trade
                   ? (computing ? 'Загружаю график…' : 'Нет данных')
                   : (taState.loading ? 'Загружаю график…' : (taState.error || 'Нет данных'))}
+                {!trade && !taState.loading && taState.error && (
+                  <div style={{ marginTop: 10 }}><button className="ck-btn" onClick={() => loadTa(taTf)}>Повторить</button></div>
+                )}
               </div>
             )}
           </section>
+          )}
+
+          {/* ---------- под графиком: кнопки и технический анализ (сначала готовность к входу, затем график, потом анализ) ---------- */}
+          {(trade || previewTicker) && (
+            <div className="ck-verdict-actions" style={{ justifyContent: 'flex-start' }}>
+              <button className={`ck-btn ${taOpen ? 'ck-btn-primary' : ''}`} onClick={() => setTaOpen((o) => !o)}>
+                Технический анализ {taOpen ? '▴' : '▾'}
+              </button>
+              {!trade && (
+                <Link
+                  className="ck-btn ck-btn-primary"
+                  style={{ textDecoration: 'none' }}
+                  to={`/calculator?ticker=${encodeURIComponent(previewTicker)}&type=${encodeURIComponent(previewType)}`}
+                >
+                  Войти в сделку
+                </Link>
+              )}
+            </div>
+          )}
+
+          {taOpen && taTicker && (
+            <section className="ck-panel">
+              <TechnicalAnalysisBlock
+                state={taState}
+                onRefresh={() => loadTa(null)}
+                title="Технический анализ сейчас"
+                view={taView}
+                lensName={taLensStrategy?.name || null}
+                onDrawPattern={showPatternOnChart}
+              />
+            </section>
           )}
 
           {/* ---------- если закрыть сейчас ---------- */}

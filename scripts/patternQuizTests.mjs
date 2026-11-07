@@ -63,6 +63,24 @@ const sum = progressSummary(q);
 ok('слабая фигура найдена по 5+ раундам', sum.weak.length === 1 && sum.weak[0].id === rA.truth && sum.weak[0].n === 8 && Math.abs(sum.weak[0].accuracy - 0.25) < 1e-9);
 ok('частая путаница найдена (3+ раза)', sum.topConfusion && sum.topConfusion.truth === rA.truth && sum.topConfusion.answer === wrongA && sum.topConfusion.n === 6);
 const sum0 = progressSummary(emptyProgress());
+// Слабые места — только там, где точность действительно низкая (раньше в них попадали и фигуры со 100 %)
+{
+  let pr = emptyProgress();
+  const r1 = buildRound({ levelId: 1, seed: 11 });
+  for (let i = 0; i < 6; i++) pr = applyAnswer(pr, r1, r1.truth).progress;
+  const s1 = progressSummary(pr);
+  ok('безошибочная фигура (6 из 6) не считается слабым местом', s1.weak.length === 0);
+  const r2 = buildRound({ levelId: 1, seed: 12 });
+  const wrong = r2.options.find((o) => o !== r2.truth);
+  for (let i = 0; i < 4; i++) pr = applyAnswer(pr, r2, r2.truth).progress;
+  for (let i = 0; i < 2; i++) pr = applyAnswer(pr, r2, wrong).progress;
+  const s2 = progressSummary(pr);
+  ok('фигура с 4 из 6 (67 %) — слабое место, а безошибочная рядом — нет', s2.weak.length === 1 && s2.weak[0].id === r2.truth);
+  const r3 = buildRound({ levelId: 1, seed: 13 });
+  for (let i = 0; i < 4; i++) pr = applyAnswer(pr, r3, r3.truth).progress;
+  for (let i = 0; i < 1; i++) pr = applyAnswer(pr, r3, r3.options.find((o) => o !== r3.truth)).progress;
+  ok('4 из 5 (80 %) — уже не слабое место (порог — ниже 80 %)', !progressSummary(pr).weak.some((w) => w.id === r3.truth && r3.truth !== r2.truth));
+}
 ok('пустой прогресс: точность неизвестна, слабых мест нет', sum0.accuracy === null && sum0.weak.length === 0 && sum0.topConfusion === null);
 
 // Сравнение с детектором.

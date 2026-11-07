@@ -67,6 +67,39 @@ const ISS_ENGINE_MARKET = {
   currency: { engine: 'currency', market: 'selt' },
 };
 
+// Запрос к бирже с повтором. На телефоне (мобильная сеть, Safari) единичные обрывы — обычное дело: страница пишет «Load failed»,
+// хотя через секунду тот же запрос проходит (реальная жалоба: на ПК свечи грузятся, на телефоне — «Load failed»). Поэтому до трёх
+// попыток с нарастающей паузой и ограничением времени на каждую (зависший запрос не держит весь график). Ответы с ошибкой
+// сервера (5xx) и «слишком часто» (429) тоже повторяются; остальные коды отдаются как есть — решает вызывающий.
+export async function fetchRetry(url, init, { tries = 3, timeoutMs = 20000 } = {}) {
+  let lastErr = null;
+  for (let attempt = 0; attempt < tries; attempt++) {
+    let timer = null;
+    try {
+      const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+      if (ctl) timer = setTimeout(() => ctl.abort(), timeoutMs);
+      const resp = await fetch(url, ctl ? { ...(init || {}), signal: ctl.signal } : init);
+      if (resp.status >= 500 || resp.status === 429) lastErr = new Error(`MOEX ISS error ${resp.status}`);
+      else return resp;
+    } catch (e) {
+      lastErr = e;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    if (attempt < tries - 1) await new Promise((r) => setTimeout(r, 500 * (attempt + 1) ** 2));
+  }
+  throw lastErr;
+}
+
+// Понятный человеку текст вместо «Load failed» / «Failed to fetch» (так браузеры называют обрыв связи).
+export function describeLoadError(e) {
+  const m = String(e?.message || e || '');
+  if (/load failed|failed to fetch|networkerror|network request failed|abort|timed? ?out/i.test(m)) {
+    return 'Не удалось получить свечи: связь с биржей оборвалась (на телефоне в мобильной сети такое бывает). Нажмите «Повторить».';
+  }
+  return m || 'Не удалось загрузить данные';
+}
+
 function pad(n) { return String(n).padStart(2, '0'); }
 function toIsoDate(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
 
@@ -95,7 +128,7 @@ async function fetchCandlesFromMoex(ticker, instrumentType, from, to, moexInterv
 
   const out = [];
   for (let page = 0; page < MOEX_MAX_PAGES; page++) {
-    const resp = await fetch(`${base}&start=${page * MOEX_PAGE_SIZE}`);
+    const resp = await fetchRetry(`${base}&start=${page * MOEX_PAGE_SIZE}`);
     if (!resp.ok) throw new Error(`MOEX ISS error ${resp.status}`);
     const json = await resp.json();
     const cols = json.candles?.columns || [];
