@@ -19,10 +19,12 @@ import { pathToFileURL } from 'url';
 export const TWIN_WINDOW_MS = 4 * 60 * 1000;
 
 /**
- * @param {{runs: Array<{id:number, created_at:string, status:string, conclusion:string|null}>, runId:number, windowMs?:number}} a
+ * Упавший сосед считается проходом, только если у него были задания (ranJobs — id запусков, у которых они есть): бывает, что GitHub
+ * сам роняет запуск «Internal server error» ещё до первого шага (2026-11-09 18:15) — тогда прохода не было, и этот запуск обязан его сделать.
+ * @param {{runs: Array<{id:number, created_at:string, status:string, conclusion:string|null}>, runId:number, windowMs?:number, ranJobs?:Set<number>}} a
  * @returns {{skip:boolean, reason:string, twin?:number}}
  */
-export function decideSkip({ runs, runId, windowMs = TWIN_WINDOW_MS }) {
+export function decideSkip({ runs, runId, windowMs = TWIN_WINDOW_MS, ranJobs = new Set() }) {
   const me = (runs || []).find((r) => Number(r.id) === Number(runId));
   if (!me) return { skip: false, reason: 'свой запуск в списке не найден' };
   const mine = Date.parse(me.created_at);
@@ -30,6 +32,7 @@ export function decideSkip({ runs, runId, windowMs = TWIN_WINDOW_MS }) {
   const twin = (runs || []).find((r) => {
     if (!(Number(r.id) < Number(runId))) return false;
     if (r.status !== 'completed' || !['success', 'failure'].includes(r.conclusion)) return false;
+    if (r.conclusion === 'failure' && !ranJobs.has(Number(r.id))) return false;
     const t = Date.parse(r.created_at);
     return Number.isFinite(t) && mine - t >= 0 && mine - t < windowMs;
   });
@@ -49,7 +52,21 @@ async function main() {
       signal: AbortSignal.timeout(20000),
     });
     if (!res.ok) throw new Error(`GitHub API ${res.status}`);
-    const verdict = decideSkip({ runs: (await res.json()).workflow_runs, runId: Number(runId) });
+    const runs = (await res.json()).workflow_runs;
+    // У упавших «соседей» (создан раньше, в пределах окна) проверяем, были ли вообще задания.
+    const mineRun = runs.find((r) => Number(r.id) === Number(runId));
+    const mine = mineRun ? Date.parse(mineRun.created_at) : NaN;
+    const ranJobs = new Set();
+    for (const r of runs) {
+      const t = Date.parse(r.created_at);
+      if (Number(r.id) < Number(runId) && r.status === 'completed' && r.conclusion === 'failure' && Number.isFinite(mine) && mine - t >= 0 && mine - t < TWIN_WINDOW_MS) {
+        try {
+          const jr = await fetch(`https://api.github.com/repos/${repo}/actions/runs/${r.id}/jobs`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'traderpro-gate' }, signal: AbortSignal.timeout(15000) });
+          if (jr.ok && ((await jr.json()).total_count || 0) > 0) ranJobs.add(Number(r.id));
+        } catch { /* не удалось проверить — сосед не считается проходом */ }
+      }
+    }
+    const verdict = decideSkip({ runs, runId: Number(runId), ranJobs });
     console.log(verdict.reason);
     if (verdict.skip) console.log('::notice title=Дубль прохода::Этот проход уже сделал соседний будильник — пропускаю, чтобы не тратить лимит чтений базы.');
     out(verdict.skip);

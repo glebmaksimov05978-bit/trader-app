@@ -20,7 +20,8 @@ ok('второй запуск пары (6618, создан через 15 с по
 ok('первый запуск пары (6617): раньше него в пределах 4 минут ничего нет — работает', decideSkip({ runs, runId: 6617 }).skip === false);
 ok('запуск следующего «удара» (через 15 минут) не пропускается', decideSkip({ runs: [run(6620, '2026-11-09T17:45:10Z', 'in_progress', null), ...runs], runId: 6620 }).skip === false);
 ok('соседний запуск ещё идёт (не завершён) — не пропускаем, чтобы не остаться вообще без прохода', decideSkip({ runs: [run(7, '2026-11-09T10:00:20Z', 'in_progress', null), run(6, '2026-11-09T10:00:10Z', 'in_progress', null)], runId: 7 }).skip === false);
-ok('соседний запуск упал (failure) — это тоже «проход был», пропускаем', decideSkip({ runs: [run(9, '2026-11-09T10:00:20Z', 'in_progress', null), run(8, '2026-11-09T10:00:10Z', 'completed', 'failure')], runId: 9 }).skip === true);
+ok('соседний запуск упал, но задания были (напр. упала база) — это «проход был», пропускаем', decideSkip({ runs: [run(9, '2026-11-09T10:00:20Z', 'in_progress', null), run(8, '2026-11-09T10:00:10Z', 'completed', 'failure')], runId: 9, ranJobs: new Set([8]) }).skip === true);
+ok('соседний запуск упал, а заданий не было (ошибка самого GitHub, 2026-11-09 18:15) — прохода не было, этот работает', decideSkip({ runs: [run(9, '2026-11-09T10:00:20Z', 'in_progress', null), run(8, '2026-11-09T10:00:10Z', 'completed', 'failure')], runId: 9 }).skip === false);
 ok('отменённый соседний запуск не считается проходом', decideSkip({ runs: [run(9, '2026-11-09T10:00:20Z', 'in_progress', null), run(8, '2026-11-09T10:00:10Z', 'completed', 'cancelled')], runId: 9 }).skip === false);
 ok('сосед создан ровно на границе окна (4 мин) — уже не «тот же удар»', decideSkip({ runs: [run(9, '2026-11-09T10:04:10Z', 'in_progress', null), run(8, '2026-11-09T10:00:10Z')], runId: 9, windowMs: TWIN_WINDOW_MS }).skip === false);
 ok('три будильника: третий пропускается, первый — нет', (() => {
