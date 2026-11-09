@@ -35,6 +35,8 @@ export const STEPS = [
   { id: 'manage', script: 'scripts/paper/managePaperTrades.mjs', dry: true },
   { id: 'cleanup', script: 'scripts/radar/cleanupRadar.mjs', dry: true },
   { id: 'sync', script: 'scripts/paper/syncActions.mjs', dry: true },
+  // ГО и параметры фьючерсов: раз в час (сам пропускает свежее), сообщения об изменении ГО/плеча, смене контракта, экспирации.
+  { id: 'margin', script: 'scripts/futures/syncMargins.mjs', dry: true },
 ];
 
 const LIMIT_MS = 590 * 1000;     // у функции Яндекса максимум 10 минут; оставляем запас

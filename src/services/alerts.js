@@ -50,6 +50,11 @@ export const DEFAULT_ALERT_PREFS = {
   // Кнопки «Вошёл / Пропустил» под бумажными сигналами и сверка с позициями в Т-Банке.
   paperDecisionButtons: false, // включается после обновления бота в Telegram
   brokerActionSync: true,      // робот сам определяет ваши входы/выходы по позициям у брокера
+  // ГО фьючерсов: сообщать об изменении ГО (а значит и плеча) по контрактам из радара и по открытым позициям; порог — % изменения.
+  // Читает scripts/futures/syncMargins.mjs через marketData/marginTrack.js (marginPrefsOf).
+  marginNotifyRadar: true,
+  marginNotifyOpen: true,
+  marginNotifyPct: 3,
 };
 
 // Здесь раньше была функция isTradingHours: будни, 10:00-18:40 МСК, одинаково для всех

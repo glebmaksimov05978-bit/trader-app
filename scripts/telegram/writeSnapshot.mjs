@@ -20,6 +20,7 @@ import os from 'os';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import admin from 'firebase-admin';
+import { canReuseHist, histPart } from '../lib/snapshotCache.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../..');
@@ -123,25 +124,30 @@ async function putKv(key, value) {
   if (!res.ok) throw new Error(`Cloudflare KV: ${res.status} ${await res.text()}`);
 }
 
-async function main() {
-  const db = initFirebase();
-  const uid = (process.env.ALERT_UIDS || '').split(',').map((s) => s.trim()).filter(Boolean)[0];
-  if (!uid) throw new Error('Нет ALERT_UIDS');
+// Прошлый снимок из Cloudflare KV — из него берётся историческая часть, если с тех пор ничего не изменилось (см. lib/snapshotCache.mjs).
+async function getKv(key) {
+  const token = process.env.CF_API_TOKEN, account = process.env.CF_ACCOUNT_ID, ns = process.env.CF_KV_NAMESPACE_ID;
+  if (!token || !account || !ns) return null;
+  try {
+    const url = `https://api.cloudflare.com/client/v4/accounts/${account}/storage/kv/namespaces/${ns}/values/${encodeURIComponent(key)}`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) return null;
+    return JSON.parse(await res.text());
+  } catch { return null; }
+}
 
-  const [realSnap, paperOpenSnap, paperAllSnap, radarSnap, realRecentSnap] = await Promise.all([
-    db.collection('trades').where('uid', '==', uid).where('status', 'in', ['open', 'partial']).get(),
-    db.collection('paperTrades').where('uid', '==', uid).where('status', 'in', ['open', 'partial']).get(),
+// Количество документов одним дешёвым запросом (count(): одно чтение на тысячу документов). Не получилось — null (тогда история пересчитается).
+const countOf = (q) => q.count().get().then((s) => s.data().count).catch(() => null);
+
+// Историческая часть снимка: итоги закрытых бумажных по стратегиям, списки последних закрытых. Читает ВСЕ бумажные сделки и
+// 120 записей журнала — поэтому вызывается только когда прошлый снимок устарел (см. canReuseHist).
+async function buildHist(db, uid) {
+  const [paperAllSnap, realRecentSnap] = await Promise.all([
     db.collection('paperTrades').where('uid', '==', uid).get(),
-    db.collection('radarItems').where('uid', '==', uid).get(),
     // Последние сделки журнала (индекс uid+date уже есть) — для списка закрытых в меню бота.
     db.collection('trades').where('uid', '==', uid).orderBy('date', 'desc').limit(120).get()
       .catch((e) => { console.error(`Последние сделки журнала для меню не прочитаны: ${e.message}`); return { docs: [] }; }),
   ]);
-
-  const real = [];
-  for (const d of realSnap.docs) real.push(await position({ id: d.id, ...d.data() }));
-  const paper = [];
-  for (const d of paperOpenSnap.docs) paper.push(await position({ id: d.id, ...d.data() }));
 
   // Закрытые бумажные: сколько всего и итог по ним — чтобы в меню было видно, как система торгует.
   const closed = paperAllSnap.docs.map((d) => d.data()).filter((p) => p.status === 'closed');
@@ -165,6 +171,41 @@ async function main() {
     label: g.label, open: g.open, closed: g.closed, pnl: Math.round(g.pnl), winrate: g.winrate == null ? null : Math.round(g.winrate),
     avgHoldDays: g.avgHoldDays == null ? null : Math.round(g.avgHoldDays * 10) / 10, timeframes: g.timeframes,
   }));
+  return {
+    paperClosed: { count: closed.length, pnl: Math.round(closedPnl * 100) / 100, last: last5 },
+    // Сводка по каждой стратегии отдельно — для кнопки «🧪 Стратегии» в боте.
+    paperByStrategy: summarize(paperAllSnap.docs.map((d) => d.data())),
+    // Для меню «Реальные»/«Бумажные»: итоги по стратегиям и списки последних закрытых сделок.
+    // Реальные — по последним 120 записям журнала (не за всё время): чтобы читать снимок дёшево.
+    realByStrategy: summarize(realRecent),
+    paperClosedList, realClosedList,
+  };
+}
+
+async function main() {
+  const db = initFirebase();
+  const uid = (process.env.ALERT_UIDS || '').split(',').map((s) => s.trim()).filter(Boolean)[0];
+  if (!uid) throw new Error('Нет ALERT_UIDS');
+
+  // «Живая» часть (открытое, радар) читается каждый проход; историческая — только если что-то изменилось или снимок старый.
+  const [prev, realSnap, paperOpenSnap, radarSnap, paperAll, realTotal] = await Promise.all([
+    getKv('snap:main'),
+    db.collection('trades').where('uid', '==', uid).where('status', 'in', ['open', 'partial']).get(),
+    db.collection('paperTrades').where('uid', '==', uid).where('status', 'in', ['open', 'partial']).get(),
+    db.collection('radarItems').where('uid', '==', uid).get(),
+    countOf(db.collection('paperTrades').where('uid', '==', uid)),
+    countOf(db.collection('trades').where('uid', '==', uid)),
+  ]);
+
+  const real = [];
+  for (const d of realSnap.docs) real.push(await position({ id: d.id, ...d.data() }));
+  const paper = [];
+  for (const d of paperOpenSnap.docs) paper.push(await position({ id: d.id, ...d.data() }));
+
+  const counts = { paperAll, paperOpen: paperOpenSnap.size, real: realTotal, realOpen: realSnap.size };
+  const reuse = canReuseHist(prev, counts, Date.now());
+  const hist = reuse ? histPart(prev) : await buildHist(db, uid);
+  console.log(reuse ? 'История сделок для меню взята из прошлого снимка (ничего не менялось).' : 'История сделок для меню пересчитана.');
 
   const radar = radarSnap.docs.map((d) => d.data()).map((r) => ({
     ticker: String(r.ticker || '').toUpperCase(),
@@ -176,15 +217,11 @@ async function main() {
     at: new Date().toISOString(),
     chatId: String(process.env.TELEGRAM_CHAT_ID || ''),
     real, paper,
-    paperClosed: { count: closed.length, pnl: Math.round(closedPnl * 100) / 100, last: last5 },
-    // Сводка по каждой стратегии отдельно — для кнопки «🧪 Стратегии» в боте.
-    paperByStrategy: summarize(paperAllSnap.docs.map((d) => d.data())),
-    // Для меню «Реальные»/«Бумажные»: итоги по стратегиям и списки последних закрытых сделок.
-    // Реальные — по последним 120 записям журнала (не за всё время): чтобы читать снимок дёшево.
-    realByStrategy: summarize(realRecent),
-    paperClosedList, realClosedList,
+    ...hist,
     radar,
     robot: { lastCheckAt: lastRobot, radarCount: radar.length },
+    // Отметка для следующего прохода: когда и при каких количествах документов историческая часть была посчитана.
+    hist: { at: reuse ? prev.hist.at : new Date().toISOString(), counts },
   };
 
   if (DRY) { console.log(JSON.stringify(snapshot, null, 1)); return; }

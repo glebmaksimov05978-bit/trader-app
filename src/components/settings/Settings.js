@@ -46,6 +46,9 @@ export default function Settings() {
     digestHour: '8',            // с какого часа по Москве
     paperDecisionButtons: false, // кнопки «Вошёл / Пропустил» под бумажными сигналами
     brokerActionSync: true,      // робот сам определяет ваши действия по позициям в Т-Банке
+    marginNotifyRadar: true,     // сообщать об изменении ГО/плеча по фьючерсам из радара
+    marginNotifyOpen: true,      // …и по открытым позициям (плюс предупреждение об экспирации)
+    marginNotifyPct: '3',        // с какого изменения ГО, %
   });
   const [saving, setSaving] = useState(false);
   const [showToken, setShowToken] = useState(false);
@@ -74,6 +77,9 @@ export default function Settings() {
         digestHour: String(userProfile.alertPrefs?.digestHour ?? 8),
         paperDecisionButtons: userProfile.alertPrefs?.paperDecisionButtons === true,
         brokerActionSync: userProfile.alertPrefs?.brokerActionSync !== false,
+        marginNotifyRadar: userProfile.alertPrefs?.marginNotifyRadar !== false,
+        marginNotifyOpen: userProfile.alertPrefs?.marginNotifyOpen !== false,
+        marginNotifyPct: String(userProfile.alertPrefs?.marginNotifyPct ?? 3),
       }));
       // askExtra инициализируем только один раз
       if (askExtra === null) {
@@ -128,6 +134,9 @@ export default function Settings() {
           digestHour: Math.min(11, Math.max(0, parseInt(form.digestHour, 10) || 8)),
           paperDecisionButtons: form.paperDecisionButtons === true,
           brokerActionSync: form.brokerActionSync !== false,
+          marginNotifyRadar: form.marginNotifyRadar !== false,
+          marginNotifyOpen: form.marginNotifyOpen !== false,
+          marginNotifyPct: Math.min(50, Math.max(1, parseFloat(String(form.marginNotifyPct).replace(',', '.')) || 3)),
         },
       });
       toast.success('Настройки сохранены');
@@ -483,6 +492,37 @@ export default function Settings() {
                 {[6,7,8,9,10,11].map((h) => <option key={h} value={String(h)}>{h}:00</option>)}
               </select>
               <span className="text-sm text-secondary">по Москве, один раз в день</span>
+            </div>
+          )}
+        </div>
+
+        <div className="card" style={{marginBottom:20}}>
+          <div className="section-title">
+            <div className="section-title-icon"><Icon name="bell" size={15} /></div>
+            Фьючерсы: ГО и плечо
+          </div>
+          <p className="text-sm text-secondary" style={{marginBottom:12, lineHeight:1.6}}>
+            Робот раз в час сверяет гарантийное обеспечение (ГО) фьючерсов и пишет в Telegram, если оно изменилось — а вместе с ним изменилось и плечо
+            (плечо = стоимость контракта ÷ ГО). В строках радара ГО и плечо видны всегда и обновляются вместе с ценой. ГО берётся с биржи;
+            у брокера оно обычно выше на несколько процентов, поэтому перед сделкой сверяйтесь с терминалом.
+            Изменения сохраняются кнопкой «Сохранить» внизу страницы.
+          </p>
+          <label className="flex items-center gap-2" style={{cursor:'pointer', marginBottom:10}}>
+            <input type="checkbox" checked={form.marginNotifyRadar !== false}
+              onChange={(e) => set('marginNotifyRadar', e.target.checked)} />
+            <span>Сообщать, что изменилось ГО (плечо) у фьючерсов из радара и когда контракт сменился на новый</span>
+          </label>
+          <label className="flex items-center gap-2" style={{cursor:'pointer', marginBottom:10}}>
+            <input type="checkbox" checked={form.marginNotifyOpen !== false}
+              onChange={(e) => set('marginNotifyOpen', e.target.checked)} />
+            <span>Сообщать то же по моим открытым позициям и предупреждать за 5 дней до экспирации контракта</span>
+          </label>
+          {(form.marginNotifyRadar !== false || form.marginNotifyOpen !== false) && (
+            <div className="flex items-center gap-2" style={{marginLeft:24}}>
+              <span className="text-sm text-secondary">сообщать, если ГО изменилось не меньше чем на</span>
+              <select className="input" style={{width:80}} value={String(form.marginNotifyPct)} onChange={(e) => set('marginNotifyPct', e.target.value)}>
+                {['1','2','3','5','10','20'].map((v) => <option key={v} value={v}>{v} %</option>)}
+              </select>
             </div>
           )}
         </div>

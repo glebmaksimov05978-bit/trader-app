@@ -28,7 +28,7 @@ function CopyDir($rel) {
 New-Item -ItemType Directory -Force -Path (Join-Path $stage 'robots') | Out-Null
 Copy-Item (Join-Path $PSScriptRoot 'index.js') (Join-Path $stage 'robots')
 
-foreach ($d in 'scripts\alerts', 'scripts\paper', 'scripts\telegram', 'scripts\radar', 'src\services', 'src\utils', 'src\constants') { CopyDir $d }
+foreach ($d in 'scripts\alerts', 'scripts\paper', 'scripts\telegram', 'scripts\radar', 'scripts\futures', 'scripts\lib', 'src\services', 'src\utils', 'src\constants') { CopyDir $d }
 New-Item -ItemType Directory -Force -Path (Join-Path $stage 'workers\telegram-webhook\src') | Out-Null
 foreach ($f in 'orders.js', 'tgTrade.js', 'verifyFirebaseToken.js', 'index.js', 'menu.js') {
   Copy-Item (Join-Path $root "workers\telegram-webhook\src\$f") (Join-Path $stage 'workers\telegram-webhook\src')

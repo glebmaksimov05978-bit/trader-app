@@ -52,9 +52,22 @@ jobs:
         with:
           node-version: '20'
 
+      # Ворота: два-три будильника бьют в :00/:15/:30/:45 почти одновременно, и запускалось ДВА одинаковых прохода подряд — второй
+      # ничего нового не делал, но заново читал базу. Бесплатный тариф Firebase даёт 50 000 чтений в сутки; дубли вдвое ускоряли
+      # исчерпание лимита, после чего все шаги падали (письма «Run failed», утренняя сводка после 11:00). Если соседний запуск
+      # (создан ≤ 4 минут назад и завершён) уже сделал проход — этот пропускаем целиком. Любая трудность — проход не пропускается.
+      - name: Ворота (пропуск дубля прохода)
+        id: gate
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE: ${{ github.event.inputs.force }}
+        run: node scripts/alerts/gate.mjs
+
       # @resvg/resvg-js — рисует PNG-картинку графика для сообщения о входе (без него сообщение
       # просто уходит текстом). Шрифт с кириллицей для подписей на картинке — DejaVu.
       - name: Установить firebase-admin, рисовалку графиков и сборщик PDF
+        if: steps.gate.outputs.skip != 'true'
         run: |
           # Все пакеты ставятся одной командой (npm --no-save убирает «лишние» пакеты прошлой установки).
           # Не встала рисовалка — ставим без неё (картинок не будет); не встал pdfmake — только firebase-admin (отчёты по расписанию
@@ -66,7 +79,7 @@ jobs:
       # Сторож: если в торговое время давно не было запусков от будильников — предупреждение в Telegram.
       - name: Сторож будильников
         timeout-minutes: 2
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -82,7 +95,7 @@ jobs:
       # будильника сообщение не дублируют.
       - name: Утренняя сводка
         timeout-minutes: 3
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         continue-on-error: true
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
@@ -102,7 +115,7 @@ jobs:
       # (users/<uid>.reportSendLog), поэтому три будильника отчёт не дублируют. При ручном запуске с галочкой «paper_dry» — только проверка.
       - name: Отчёты по расписанию
         timeout-minutes: 4
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         continue-on-error: true
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
@@ -124,22 +137,9 @@ jobs:
             node scripts/reports/runScheduledReports.mjs
           fi
 
-      - name: Снимок для меню Telegram (ранний, чтобы меню не «старело», если дальше что-то зависнет)
-        timeout-minutes: 3
-        if: always()
-        continue-on-error: true
-        env:
-          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          ALERT_UIDS: ${{ secrets.ALERT_UIDS }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
-          CF_KV_NAMESPACE_ID: ${{ secrets.CF_KV_NAMESPACE_ID }}
-        run: node scripts/telegram/writeSnapshot.mjs
-
       - name: Проверить позиции и отправить уведомления
         timeout-minutes: 6
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -163,7 +163,7 @@ jobs:
       # ничего не пишет в базу. По расписанию работает по-настоящему.
       - name: Бумажные сделки по радару
         timeout-minutes: 9
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         continue-on-error: true
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
@@ -192,7 +192,7 @@ jobs:
       # условие — «появился ли новый бар», и вне торгов оно само ничего не делает.
       - name: Ведение бумажных сделок
         timeout-minutes: 6
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         continue-on-error: true
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
@@ -206,12 +206,12 @@ jobs:
             node scripts/paper/managePaperTrades.mjs
           fi
 
-      # Четвёртый шаг: снимок состояния для меню в Telegram (сделки, бумажные, радар, статус
+      # Четвёртый шаг: снимок состояния для меню в Telegram (один за проход: ранний второй снимок убран — он перечитывал всю историю дважды) (сделки, бумажные, радар, статус
       # робота) — складывается в Cloudflare KV, откуда его читает бот. Только чтение базы;
       # идёт ПОСЛЕ остальных, чтобы в снимок попали свежие итоги этого прохода.
       - name: Снимок для меню Telegram
         timeout-minutes: 3
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         continue-on-error: true
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
@@ -227,7 +227,7 @@ jobs:
       # Отключается в профиле (alertPrefs.radarAutoCleanup = false). Любой сбой безвреден.
       - name: Автоочистка радара
         timeout-minutes: 3
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         continue-on-error: true
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
@@ -241,12 +241,35 @@ jobs:
             node scripts/radar/cleanupRadar.mjs
           fi
 
+      # ГО и параметры фьючерсов: раз в час (сам пропускает свежее) подтягивает ГО/цену/шаг/экспирацию по фьючерсам из радара и позиций,
+      # пишет состояние в базу (futuresMargin/<uid>) — приложение показывает по нему ГО и плечо в радаре — и шлёт в Telegram, если ГО
+      # (а значит и плечо) изменилось, контракт у «корня» сменился или у открытой позиции близка экспирация. Настройки — в приложении
+      # (Настройки → «Фьючерсы: ГО и плечо»). Источник — биржа; если заданы RELAY_URL и RELAY_KEY, то ещё и ГО Т-Банка (лонг и шорт отдельно).
+      - name: ГО и параметры фьючерсов
+        timeout-minutes: 3
+        if: always() && steps.gate.outputs.skip != 'true'
+        continue-on-error: true
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          ALERT_UIDS: ${{ secrets.ALERT_UIDS }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RELAY_URL: ${{ secrets.RELAY_URL }}
+          RELAY_URL_BACKUP: ${{ secrets.RELAY_URL_BACKUP }}
+          RELAY_KEY: ${{ secrets.RELAY_KEY }}
+        run: |
+          if [ "${{ github.event.inputs.paper_dry }}" = "true" ]; then
+            node scripts/futures/syncMargins.mjs --dry
+          else
+            node scripts/futures/syncMargins.mjs
+          fi
+
       # Шестой шаг: переносит в Журнал сделки, исполненные кнопками в Telegram (закрытие и открытие
       # по бумажной). Воркер бота оставляет записи fill:… в хранилище — здесь они превращаются в
       # записи Журнала тем же расчётом, что и в приложении. Повторный запуск безопасен.
       - name: Перенос сделок из Telegram в Журнал
         timeout-minutes: 3
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         continue-on-error: true
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
@@ -270,7 +293,7 @@ jobs:
       # (alertPrefs.brokerActionSync = false).
       - name: Отметки действий по позициям в Т-Банке
         timeout-minutes: 3
-        if: always()
+        if: always() && steps.gate.outputs.skip != 'true'
         continue-on-error: true
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}

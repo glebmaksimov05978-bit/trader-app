@@ -27,6 +27,7 @@ import os from 'os';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import admin from 'firebase-admin';
+import { failWith } from '../lib/quota.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../..');
@@ -207,7 +208,7 @@ function cachedCandles(args) {
   return candleCache.get(key);
 }
 
-async function checkItem({ db, uid, profile, item, openTickers, allTrades, strategy: strategyOverride, multi = false }) {
+async function checkItem({ db, uid, profile, item, openTickers, getAllTrades, strategy: strategyOverride, multi = false }) {
   const strategy = strategyOverride || strategyFor(item, profile);
   // Ключ «уже открыта»: в одностратегийном режиме — тикер, в многостратегийном — тикер+стратегия.
   const dedupeKey = (t) => (multi ? `${t}|${strategy?.id || ''}` : t);
@@ -298,7 +299,8 @@ async function checkItem({ db, uid, profile, item, openTickers, allTrades, strat
 
   const specs = await loadSpecs(tradeTicker, instrumentType);
   const strategies = profile.strategies || [];
-  const computed = computeBaskets({ userProfile: profile, strategies, trades: allTrades });
+  // Журнал читается только здесь — когда сигнал уже сошёлся и объём реально считается (см. loadAllTrades в main).
+  const computed = computeBaskets({ userProfile: profile, strategies, trades: await getAllTrades() });
   const capital = capitalForStrategy({
     strategyId: strategy.id,
     computed,
@@ -469,8 +471,15 @@ async function main() {
 
     // Настоящие сделки нужны только для корзин портфеля: капитал стратегии считается по
     // ним, и без них риск считался бы от всего депозита вместо доли корзины.
-    const tradesSnap = await db.collection('trades').where('uid', '==', uid).get();
-    const allTrades = tradesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    // Читаем ЛЕНИВО и один раз за проход: раньше весь журнал читался каждые 15 минут, хотя нужен он только в тот
+    // редкий момент, когда сигнал сошёлся (на бесплатном тарифе Firebase это съедало дневной лимит чтений — см. lib/quota.mjs).
+    let tradesPromise = null;
+    const getAllTrades = () => {
+      if (!tradesPromise) {
+        tradesPromise = db.collection('trades').where('uid', '==', uid).get().then((snap) => snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      }
+      return tradesPromise;
+    };
 
     console.log(`[${uid}] в радаре ${items.length}, открытых бумажных ${openTickers.size}`);
     for (const item of items) {
@@ -480,7 +489,7 @@ async function main() {
       for (const strategy of (strategies.length ? strategies : [null])) {
         const label = multi && strategy ? `«${strategy.name || 'без названия'}»: ` : '';
         try {
-          const res = await checkItem({ db, uid, profile, item, openTickers, allTrades, strategy, multi });
+          const res = await checkItem({ db, uid, profile, item, openTickers, getAllTrades, strategy, multi });
           if (res.opened) {
             const o = res.opened;
             anyOpened = true;
@@ -508,4 +517,4 @@ async function main() {
   }
 }
 
-main().catch((e) => { console.error(e); process.exit(1); });
+main().catch((e) => failWith(e, 1));

@@ -291,6 +291,12 @@
 .ck-radar-info { flex: 1; min-width: 0; }
 .ck-radar-ticker { font-weight: 700; font-size: 12.5px; }
 .ck-radar-sub { font-size: 10.5px; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* ГО и плечо фьючерса под тикером: цифры чуть заметнее обычной подписи, значок изменения — цветом (рост ГО = плечо ниже, не «плохо» и не «хорошо», поэтому нейтральные тона) */
+.ck-radar-margin { color: var(--text-secondary); font-variant-numeric: tabular-nums; white-space: normal; overflow: visible; text-overflow: clip; line-height: 1.35; margin-top: 1px; }
+.ck-radar-src { color: var(--text-muted); }
+.ck-radar-chg { font-weight: 700; }
+.ck-radar-chg.up { color: var(--gold, #d4a24c); }
+.ck-radar-chg.down { color: var(--accent-primary); }
 
 .ck-radar-add-btn {
   width: 100%; margin-top: 8px; padding: 8px; border-radius: var(--radius-xs); border: 1px dashed var(--border-medium);

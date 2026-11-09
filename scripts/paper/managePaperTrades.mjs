@@ -23,6 +23,7 @@ import os from 'os';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import admin from 'firebase-admin';
+import { failWith } from '../lib/quota.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../..');
@@ -388,4 +389,4 @@ async function main() {
 // main() запускается только когда файл вызвали напрямую. Без этой проверки тест, который
 // импортирует planPaperUpdate, немедленно поднимал бы Firebase и падал на отсутствии ключа.
 const isDirectRun = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
-if (isDirectRun) main().catch((e) => { console.error(e); process.exit(1); });
+if (isDirectRun) main().catch((e) => failWith(e, 1));

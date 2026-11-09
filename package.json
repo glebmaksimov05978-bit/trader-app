@@ -60,6 +60,8 @@
     "test:fillsclose": "node scripts/fillsCloseTest.mjs",
     "test:period": "node scripts/periodReportTests.mjs",
     "test:radarclean": "node scripts/radarCleanupTests.mjs",
+    "test:margin": "node scripts/marginTrackTests.mjs && node scripts/futuresMarginRunTests.mjs",
+    "test:gate": "node scripts/robotGateTests.mjs",
     "test:turnover": "node scripts/dayTurnoverTests.mjs",
     "test:roll": "node scripts/futuresRollTests.mjs",
     "test:entrystats": "node scripts/entryStatsTests.mjs",

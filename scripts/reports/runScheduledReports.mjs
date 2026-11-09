@@ -14,6 +14,7 @@ import os from 'os';
 import path from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 import { emailParts, sendEmail, sendMaxDocument, smtpConfigFromEnv, createSmtpTransport, maxConfigFromEnv, channelStatusFromEnv } from './deliver.mjs';
+import { failWith } from '../lib/quota.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../..');
@@ -210,4 +211,4 @@ async function main() {
 }
 
 const isDirectRun = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
-if (isDirectRun) main().catch((e) => { console.error(e); process.exit(1); });
+if (isDirectRun) main().catch((e) => failWith(e, 1));
