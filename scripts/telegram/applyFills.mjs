@@ -139,6 +139,13 @@ async function applyOpen(db, uid, profile, fill) {
     isFuture: type === 'future',
     minStep: parseFloat(paper.minStep) || null,
     minStepAmount: parseFloat(paper.minStepAmount) || null,
+    // ГО и плечо на момент открытия — из бумажной сделки (её считал робот по тому же ГО); см. services/leverageMath.js
+    ...(type === 'future' && paper.marginPerContract > 0 ? {
+      marginPerContract: paper.marginPerContract,
+      marginSide: paper.marginSide || null,
+      marginSource: paper.marginSource || null,
+      leverageAtEntry: paper.leverageAtEntry || null,
+    } : {}),
     commissionRate: commRate,
     commission: Math.round(price * Number(fill.lots) * lot * commRate * 2),
     depositSize: parseFloat(profile.depositSize) || 0,

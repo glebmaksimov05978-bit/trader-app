@@ -93,6 +93,7 @@ export default function TradeViewModal({ item, userProfile, onClose }) {
             <CandleChart
               candles={state.candles}
               ticker={ticker}
+              instrumentType={trade.instrumentType}
               direction={item.direction}
               legs={legs}
               entryPrice={num(trade.entryPrice)}

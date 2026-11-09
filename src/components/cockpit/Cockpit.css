@@ -574,3 +574,16 @@
 .ss-table td { padding: 8px; border-bottom: 1px solid var(--border-subtle); }
 .ss-table tr.ss-row { cursor: pointer; }
 .ss-table tr.ss-row:hover td { background: var(--bg-surface-2); }
+
+/* Плечо и ГО открытой сделки под названием инструмента */
+.ck-head-lev { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 2px 0 10px; font-size: 11.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.ck-head-lev b { color: var(--text-primary); font-weight: 700; }
+.ck-head-lev b.up { color: var(--green); }
+.ck-head-lev b.down { color: var(--red); }
+
+/* Строка про фьючерс до сделки: контракт, плечо, ГО, сколько можно купить на мои деньги */
+.ck-contract-strip { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 6px 0 8px; padding: 8px 10px; border-radius: var(--radius-xs); background: var(--bg-surface-2); font-size: 12px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.ck-contract-strip b { color: var(--text-primary); }
+.ck-cs-src { color: var(--text-muted); }
+.ck-cs-cap { color: var(--text-primary); }
+.ck-cs-warn { color: var(--gold, #d4a24c); }

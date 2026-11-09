@@ -17,6 +17,9 @@ import {
   drawingsFor, withDrawings, newDrawing, addDrawing, removeDrawing, rulerStats, rulerText, snapPrice, atrOf,
   TWO_POINT, PALETTE, TOOL_LABELS, moveDrawing, movePoint, toggleSignal, SIGNAL_TYPES,
 } from '../../services/chartDrawings';
+import { fetchFortsTable } from '../../services/marketData/fortsTable';
+import { resolveContract } from '../../services/marketData/marginTrack';
+import { rulerContractText } from '../../services/leverageMath';
 import { DrawingsPrimitive } from './chartDrawingsPrimitive';
 import ChartDrawingToolbar from './ChartDrawingToolbar';
 import './CandleChart.css';
@@ -276,6 +279,7 @@ export default function CandleChart({
   candles,
   patterns,
   ticker,
+  instrumentType, // 'future' — линейка добавляет рубли на контракт и % от ГО (берётся из живой таблицы биржи)
   timeframe,
   timeframeOptions,
   onTimeframeChange,
@@ -319,6 +323,20 @@ export default function CandleChart({
   const [selectedId, setSelectedId] = useState(null);
   const [draftPoint, setDraftPoint] = useState(null); // первая точка двухточечного инструмента
   const [rulerDone, setRulerDone] = useState(null);   // готовая линейка (до следующего клика)
+  // Контракт фьючерса для линейки: рубли за пункт и ГО (корень вроде «MM» превращается в ближайший действующий контракт).
+  const [contractSpec, setContractSpec] = useState(null);
+  const contractRef = useRef(null);
+  useEffect(() => {
+    if (instrumentType !== 'future' || !ticker) { setContractSpec(null); return undefined; }
+    let alive = true;
+    fetchFortsTable().then((table) => {
+      if (!alive) return;
+      const res = resolveContract(table, ticker);
+      setContractSpec(res && res.row.minStep > 0 && res.row.stepPrice > 0 ? { rubPerPoint: res.row.stepPrice / res.row.minStep, margin: res.row.margin } : null);
+    }).catch(() => { if (alive) setContractSpec(null); });
+    return () => { alive = false; };
+  }, [ticker, instrumentType]);
+  contractRef.current = contractSpec;
   const [priceManual, setPriceManual] = useState(false); // график сдвинут по цене вручную — авто-масштаб выключен
   // Подписка на клик создаётся один раз — актуальное состояние читает через ref (см. ниже).
   const drawRef = useRef({});
@@ -529,7 +547,7 @@ export default function CandleChart({
         if (st.tool === 'ruler') {
           const bars = TIMEFRAMES[st.timeframe]?.minutes ? TIMEFRAMES[st.timeframe].minutes * 60 : null;
           const stats = rulerStats({ p1: st.draft, p2: pt, atr: seriesRef.current.atr ?? null, barSeconds: bars, barCount: barsBetween(prim, st.draft, pt) });
-          prim.setState({ preview: null, ruler: { p1: st.draft, p2: pt, up: stats.delta >= 0, text: rulerText(stats, { priceDigits: 2 }) } });
+          prim.setState({ preview: null, ruler: { p1: st.draft, p2: pt, up: stats.delta >= 0, text: rulerText(stats, { priceDigits: 2 }), text2: rulerContractText(stats, contractRef.current && { ...contractRef.current, startPrice: st.draft.price }) } });
         } else if (TWO_POINT.has(st.tool)) {
           prim.setState({ ruler: null, preview: { id: '__preview', type: st.tool, p1: st.draft, p2: pt, color: st.color, width: 1 } });
         }
@@ -764,7 +782,7 @@ export default function CandleChart({
     let ruler = null;
     if (rulerDone) {
       const stats = rulerStats({ p1: rulerDone.p1, p2: rulerDone.p2, atr: seriesRef.current.atr ?? null, barSeconds: bars, barCount: barsBetween(prim, rulerDone.p1, rulerDone.p2) });
-      ruler = { ...rulerDone, up: stats.delta >= 0, text: rulerText(stats, { priceDigits: 2 }) };
+      ruler = { ...rulerDone, up: stats.delta >= 0, text: rulerText(stats, { priceDigits: 2 }), text2: rulerContractText(stats, contractSpec && { ...contractSpec, startPrice: rulerDone.p1.price }) };
     }
     prim.setState({
       drawings, selectedId, times: candles.map((c) => toChartTime(c.date)), barSec: bars,
@@ -772,7 +790,7 @@ export default function CandleChart({
       ...(rulerDone || !draftPoint ? { ruler } : {}),
       ...(!draftPoint ? { preview: null } : {}),
     });
-  }, [drawings, selectedId, candles, timeframe, rulerDone, draftPoint]);
+  }, [drawings, selectedId, candles, timeframe, rulerDone, draftPoint, contractSpec]);
 
   // Запрос на рисование снаружи: «Показать фигуру на графике».
   const lastReqKey = useRef(null);

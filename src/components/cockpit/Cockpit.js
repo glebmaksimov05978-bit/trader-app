@@ -36,7 +36,9 @@ import { computeProfitBreakdown, computeLossBreakdown } from '../../services/bac
 import { evaluateAlerts, DEFAULT_ALERT_PREFS } from '../../services/alerts';
 import { loadBacktestSample, findSimilar, probabilityOfGoal } from '../../services/backtest/similarTrades';
 import { applyTradeClose } from '../../services/tradeClose';
-import { moveRub, positionValueRub } from '../../services/contractMath';
+import { moveRub, positionValueRub, rubPerPoint } from '../../services/contractMath';
+import { leverageOf, leverageValue, leverageText, tradeLeverage } from '../../services/leverageMath';
+import ContractStrip from '../shared/ContractStrip';
 import { fetchOrderConfig, fetchOrderState } from '../../services/broker';
 import { reconcilePendingTrades } from '../../services/pendingOrders';
 import { updateTrade } from '../../services/trades';
@@ -64,6 +66,10 @@ const fmtPct = (v, d = 2) => (v == null ? '—' : `${Number(v.toFixed(d)) > 0 ? 
 const fmtRub = (v) => (v == null ? '—'
   : `${v >= 0 ? '+' : '−'}${Math.round(Math.abs(v)).toLocaleString('ru-RU')} ₽`);
 const fmtNum = (v, d = 2) => (v == null ? '—' : Number(v).toFixed(d));
+// Сумма без знака (ГО, депозит): fmtRub выше подписывает +/−, как результат сделки, а ГО — не результат.
+const fmtMoney = (v) => `${Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ₽`;
+// Подпись плеча при открытии у фьючерса: « · плечо 9×». У акций и у старых сделок без ГО — пусто.
+const levSuffix = (t) => { const l = tradeLeverage(t); return l && l.leverage > 0 ? ` · плечо ${leverageText(l.leverage)}` : ''; };
 
 // Индекс бара, ближайшего к дате и не позже неё. Тот же приём, что в Журнале при
 // восстановлении картины «на момент входа».
@@ -596,6 +602,14 @@ export default function Cockpit() {
     };
   }, [state, trade, candles, closeShare, userProfile?.brokerTariff]);
 
+  // Плечо и ГО открытой сделки (записаны при открытии; у старой — восстановлены по цене входа и ГО, если они в ней есть).
+  const tradeLev = useMemo(() => (trade ? tradeLeverage(trade) : null), [trade]);
+  // Результат сделки в процентах от замороженного под ГО: (уже зафиксированное + плавающее по оставшемуся) / ГО всей позиции.
+  const marginReturn = useMemo(() => {
+    if (!tradeLev || !(tradeLev.marginTotal > 0) || !money) return 0;
+    return ((money.realized + money.gross) / tradeLev.marginTotal) * 100;
+  }, [tradeLev, money]);
+
   // Похожие исторические ситуации — та же когорта (число фиксаций профит-системы) и
   // направление, что у сделки сейчас. Датасет собран на дневном графике; если сама сделка
   // ведётся на другом таймфрейме, честно показываем это несовпадение, а не молчим о нём.
@@ -767,6 +781,15 @@ export default function Cockpit() {
         isFuture: (trade.instrumentType || 'stock') === 'future',
         minStep: parseFloat(trade.minStep) || null,
         minStepAmount: parseFloat(trade.minStepAmount) || null,
+        // ГО и плечо на момент открытия берём из бумажной сделки (её считал робот по тому же ГО); плечо пересчитываем по цене исполнения.
+        ...(trade.marginPerContract > 0 && (trade.instrumentType || 'stock') === 'future' ? {
+          marginPerContract: trade.marginPerContract,
+          marginSide: trade.marginSide || null,
+          marginSource: trade.marginSource || null,
+          leverageAtEntry: rubPerPoint({ ...trade, lot }) > 0
+            ? leverageValue(leverageOf(executedPrice * rubPerPoint({ ...trade, lot }), trade.marginPerContract))
+            : (trade.leverageAtEntry || null),
+        } : {}),
         commissionRate: commRate,
         commission: Math.round(positionValueRub({ ...trade, lot }, executedPrice, lotsExecuted) * commRate),
         depositSize: parseFloat(userProfile?.depositSize) || 0,
@@ -1012,7 +1035,7 @@ export default function Cockpit() {
                       <div className="ck-pos-sub">
                         {t.status === 'partial' ? `в рынке ${fmtNum(rem, 0)} из ${fmtNum(vol, 0)}` : `${fmtNum(vol, 0)} ${t.instrumentType === 'future' ? 'конт.' : 'лот.'}`}
                       </div>
-                      <div className="ck-pos-sub">вход {fmtNum(t.entryPrice)}</div>
+                      <div className="ck-pos-sub">вход {fmtNum(t.entryPrice)}{levSuffix(t)}</div>
                     </button>
                     <button className="ck-pos-close" onClick={() => goToClose(t)} title="Закрыть или зафиксировать часть">
                       Закрыть
@@ -1083,7 +1106,7 @@ export default function Cockpit() {
                       {/* «объём условный» — по правилам риска денег на такую позицию не
                           хватает, робот открыл её одним контрактом только ради наблюдения. */}
                       <div className="ck-pos-sub">
-                        {fmtNum(parseFloat(t.volume) || 0, 0)} {t.instrumentType === 'future' ? 'конт.' : 'лот.'} · вход {fmtNum(t.entryPrice)}
+                        {fmtNum(parseFloat(t.volume) || 0, 0)} {t.instrumentType === 'future' ? 'конт.' : 'лот.'} · вход {fmtNum(t.entryPrice)}{levSuffix(t)}
                         {t.riskTooBig ? ' · объём условный' : ''}
                         {t.repeatedAt ? ' · повторена' : ''}
                       </div>
@@ -1248,6 +1271,9 @@ export default function Cockpit() {
                   <span className="ck-line-sub">{catalogEntry(previewTicker).name}</span>
                 )}
               </div>
+              {previewType === 'future' && (
+                <ContractStrip ticker={previewTicker} deposit={parseFloat(userProfile?.depositSize) || 0} maxMarginPercent={parseFloat(userProfile?.maxMarginPercent) || 30} />
+              )}
               <div className="ck-line-sub">
                 По инструменту сейчас нет ни твоей, ни бумажной сделки. График — ниже; технический анализ и готовность к входу — кнопкой и панелью под ним.
               </div>
@@ -1349,6 +1375,21 @@ export default function Cockpit() {
                   {trade.direction === 'long' ? 'ЛОНГ' : 'ШОРТ'}
                 </span>
               </div>
+
+              {tradeLev && (
+                <div className="ck-head-lev" data-testid="ck-head-lev">
+                  <span>Плечо при входе <b>{leverageText(tradeLev.leverage)}</b></span>
+                  {tradeLev.margin > 0 && (
+                    <span>
+                      ГО {fmtMoney(tradeLev.margin)} × {fmtNum(parseFloat(trade.volume) || 0, 0)} = <b>{fmtMoney(tradeLev.marginTotal)}</b>
+                      {parseFloat(trade.depositSize) > 0 ? ` (${fmtNum((tradeLev.marginTotal / parseFloat(trade.depositSize)) * 100, 0)} % депозита)` : ''}
+                    </span>
+                  )}
+                  {tradeLev.margin > 0 && money && (
+                    <span>Результат сейчас <b className={marginReturn >= 0 ? 'up' : 'down'}>{marginReturn >= 0 ? '+' : '−'}{fmtNum(Math.abs(marginReturn), Math.abs(marginReturn) < 10 ? 1 : 0)} %</b> от ГО</span>
+                  )}
+                </div>
+              )}
 
               {/* Две линии: что получилось у тебя и что было бы, если бы слушался движка */}
               <div className="ck-lines">
@@ -1602,6 +1643,7 @@ export default function Cockpit() {
                 patterns={trade ? patterns : taState.data.patterns}
                 height={390}
                 ticker={trade ? trade.ticker : previewTicker}
+                instrumentType={trade ? (trade.instrumentType || 'stock') : previewType}
                 timeframe={trade ? timeframe : (taTf || userProfile?.preferredTimeframe || 'D1')}
                 timeframeOptions={tfOptions}
                 onTimeframeChange={trade ? setTfOverride : (tf) => { setTaTf(tf); loadTa(tf); }}

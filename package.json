@@ -62,6 +62,7 @@
     "test:radarclean": "node scripts/radarCleanupTests.mjs",
     "test:margin": "node scripts/marginTrackTests.mjs && node scripts/futuresMarginRunTests.mjs",
     "test:gate": "node scripts/robotGateTests.mjs",
+    "test:leverage": "node scripts/leverageMathTests.mjs",
     "test:turnover": "node scripts/dayTurnoverTests.mjs",
     "test:roll": "node scripts/futuresRollTests.mjs",
     "test:entrystats": "node scripts/entryStatsTests.mjs",

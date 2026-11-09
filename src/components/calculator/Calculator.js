@@ -28,6 +28,7 @@ import StrategyChecklist from '../shared/StrategyChecklist';
 import toast from 'react-hot-toast';
 import EntryDecisionModal from './EntryDecisionModal';
 import { userLevelsForChart } from '../../services/chartDrawings';
+import { capacityByDirection, leverageText, leverageValue, leverageOf } from '../../services/leverageMath';
 import { getOpenPaperTrades } from '../../services/paperTrades';
 import './Calculator.css';
 
@@ -352,6 +353,24 @@ export default function Calculator() {
     });
     setResult(r);
   }, [form, instrumentType]);
+
+  // Что можно купить на мои деньги по этому контракту — отдельно лонг и шорт (у брокера ГО на покупку и продажу разные).
+  // Считается сразу после выбора контракта, ДО ввода стопа: нужно только ГО, цена и депозит.
+  const futureCapacity = useMemo(() => {
+    if (instrumentType !== 'future') return null;
+    const price = parseFloat(form.entryPrice) || 0;
+    const step = parseFloat(form.minStep) || 0;
+    const stepAmt = parseFloat(form.minStepAmount) || 0;
+    const value = price > 0 && step > 0 && stepAmt > 0 ? (price / step) * stepAmt : 0;
+    const manual = parseFloat(form.initialMargin) || 0;
+    const buy = manual || parseFloat(form.initialMarginBuy) || 0;
+    const sell = manual || parseFloat(form.initialMarginSell) || buy;
+    return capacityByDirection({
+      deposit: parseFloat(form.depositSize) || 0,
+      maxMarginPercent: parseFloat(userProfile?.maxMarginPercent) || 30,
+      marginBuy: buy, marginSell: sell, valueRub: value,
+    });
+  }, [instrumentType, form.entryPrice, form.minStep, form.minStepAmount, form.initialMargin, form.initialMarginBuy, form.initialMarginSell, form.depositSize, userProfile?.maxMarginPercent]);
 
   const effectiveContracts = manualContracts
     ? Math.max(1, parseInt(manualContracts) || 1)
@@ -832,6 +851,14 @@ export default function Calculator() {
         isFuture: instrumentType === 'future',
         minStep: parseFloat(form.minStep) || null,
         minStepAmount: parseFloat(form.minStepAmount) || null,
+        // Плечо и ГО на момент открытия — подписываются в Журнале, Сопровождении и отчёте: ГО у контракта потом меняется, а то, с каким
+        // плечом сделка открывалась, должно остаться как было. Плечо считается по ФАКТИЧЕСКОЙ цене входа (при проскальзывании она другая).
+        ...(instrumentType === 'future' && displayResult.marginPerContract > 0 ? {
+          marginPerContract: displayResult.marginPerContract,
+          marginSide: displayResult.marginSide || null,
+          marginSource: form.initialMargin ? 'manual' : (priceSource === 'tinkoff' ? 'tbank' : 'moex'),
+          leverageAtEntry: leverageValue(leverageOf(entryPriceFinal * (displayResult.rubPerPoint || 0), displayResult.marginPerContract)),
+        } : {}),
         // Комиссия из плана верна только для ПЛАНОВОЙ цены/объёма — если заявка
         // исполнилась по другой цене (проскальзывание) или по другому объёму (частичное
         // исполнение), пересчитываем на реальных числах той же формулой.
@@ -1343,6 +1370,31 @@ export default function Calculator() {
                 В расчёт берётся ГО стороны вашей сделки; число, введённое выше руками, главнее.
               </div>
             )}
+            {instrumentType === 'future' && futureCapacity && (
+              <div className="calc-capacity" data-testid="calc-capacity">
+                <div className="calc-capacity-title">
+                  На ваши деньги — {formatCurrency(futureCapacity.depositUsed)}, под ГО не больше {futureCapacity.maxMarginPercent} %
+                </div>
+                {[['long', 'ЛОНГ'], ['short', 'ШОРТ']].map(([k, name]) => {
+                  const side = futureCapacity[k];
+                  return (
+                    <div key={k} className={`calc-capacity-row ${k}`}>
+                      <span className="calc-capacity-dir">{name}</span>
+                      <span className="calc-capacity-n">
+                        {side.maxByLimit > 0 ? <>до <b>{side.maxByLimit}</b> контр.</> : <b>не хватает денег</b>}
+                      </span>
+                      <span className="calc-capacity-sub">
+                        плечо ≈ <b>{leverageText(side.leverage) || '—'}</b> · ГО {formatCurrency(side.margin)} за контракт
+                        {side.maxByLimit === 0 && side.maxPhysical > 0 ? ` · по лимиту не проходит, но весь депозит под ГО вместил бы ${side.maxPhysical}` : ''}
+                      </span>
+                    </div>
+                  );
+                })}
+                <div className="calc-capacity-note">
+                  Это предел по ГО, а не рекомендация: сколько брать, решает стоп и риск на сделку (считается ниже). Плечо = стоимость контракта ÷ ГО — на столько % от ГО сдвигает счёт ход цены на 1 %.
+                </div>
+              </div>
+            )}
             {instrumentType === 'future' && (
               <div className="calc-grid-2" style={{marginBottom:12}}>
                 <div className="input-group">
@@ -1423,7 +1475,7 @@ export default function Calculator() {
                   <div style={{fontSize:11,color:(displayResult.marginUsagePercent||0)>(displayResult.maxMarginPercent||30)?'var(--red)':''}}>{displayResult.marginUsagePercent||0}% / лимит {displayResult.maxMarginPercent||30}%</div>
                   {instrumentType==='future' && displayResult.leverage > 0 && (
                     <div style={{fontSize:11,color:'var(--text-muted)'}}>
-                      Плечо ≈ {formatNumber(displayResult.leverage, 1)}× · ГО на {displayResult.marginSide==='short' ? 'шорт' : displayResult.marginSide==='long' ? 'лонг' : 'контракт'}
+                      Плечо ≈ {leverageText(displayResult.leverage)} · ГО {formatCurrency(displayResult.marginPerContract)} на {displayResult.marginSide==='short' ? 'шорт' : displayResult.marginSide==='long' ? 'лонг' : 'контракт'}
                     </div>
                   )}
                   <div className="divider" style={{margin:'6px 0'}}/>
@@ -1596,6 +1648,7 @@ export default function Calculator() {
               candles={taState.data.candles}
               patterns={taState.data.patterns}
               ticker={form.ticker.toUpperCase()}
+              instrumentType={instrumentType}
               timeframe={taTimeframe}
               timeframeOptions={taTimeframeOptions}
               onTimeframeChange={setTaTimeframe}

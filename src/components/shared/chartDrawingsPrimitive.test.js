@@ -80,3 +80,23 @@ test('луч: клик по линии рядом с курсором наход
   expect(prim.hitTest(along.x, along.y + 3)).toBe('r1');
   expect(prim.hitTest(along.x, along.y + 30)).toBeNull();
 });
+
+test('линейка: у фьючерса подпись в две строки — ход цены и «рубли на контракт · % от ГО»; у акции — одна', () => {
+  const t = tradingDays(30);
+  const prim = make(t);
+  const calls = [];
+  const ctx = new Proxy({}, {
+    get: (_, k) => {
+      if (k === 'measureText') return (s) => ({ width: String(s).length * 6 });
+      if (k === 'fillText') return (s) => { calls.push(String(s)); };
+      return () => {};
+    },
+    set: () => true,
+  });
+  const base = { p1: { time: t[5], price: 100 }, p2: { time: t[10], price: 150 }, up: true, text: '+50 · +50 %' };
+  prim._ruler(ctx, { ...base, text2: '≈ +500 ₽ на контракт · +18 % от ГО (плечо 9×)' }, 800);
+  expect(calls).toEqual(['+50 · +50 %', '≈ +500 ₽ на контракт · +18 % от ГО (плечо 9×)']);
+  calls.length = 0;
+  prim._ruler(ctx, base, 800);
+  expect(calls).toEqual(['+50 · +50 %']);
+});

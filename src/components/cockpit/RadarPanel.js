@@ -15,8 +15,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useRadarLive } from '../../context/RadarLiveContext';
 import { getRadarItems, addRadarItem, deleteRadarItem } from '../../services/radar';
 import { checkTradable } from '../../services/marketData/tradability';
-import { fetchFortsTable, getMarginState } from '../../services/futuresMargin';
-import { marginView, marginLine } from '../../services/marketData/marginTrack';
+import useFuturesMargin from '../shared/useFuturesMargin';
+import { marginView, marginLine, levShort } from '../../services/marketData/marginTrack';
 import { getUserTrades } from '../../services/trades';
 import { getOpenPaperTrades } from '../../services/paperTrades';
 import { getCachedLogos, logoUrlFromName, logoCacheKey } from '../../services/marketData/instrumentLogos';
@@ -38,31 +38,6 @@ export function isRobotNoteUseful(text) {
   return parts.some((x) => !/^(вне торговых часов|условия не сошлись|бумажная сделка уже открыта|торги закрыты|клиринг)/i.test(x));
 }
 
-// ГО и плечо для фьючерсов в строках радара. Таблица биржи (одним запросом на все фьючерсы) обновляется раз в минуту, пока вкладка открыта,
-// поэтому плечо «живое»: меняется и с ценой, и с ГО. Состояние робота (ГО Т-Банка, «ГО изменилось») читается один раз.
-const MARGIN_REFRESH_MS = 60 * 1000;
-function useFuturesMargin(items, uid) {
-  const [table, setTable] = useState(null);
-  const [state, setState] = useState(null);
-  const hasFutures = items.some((i) => i.instrumentType === 'future');
-  useEffect(() => {
-    if (!hasFutures) return undefined;
-    let alive = true;
-    const load = () => {
-      if (typeof document !== 'undefined' && document.hidden) return; // вкладка не на виду — не дёргаем биржу
-      fetchFortsTable().then((t) => { if (alive) setTable(t); }).catch(() => {});
-    };
-    load();
-    const id = setInterval(load, MARGIN_REFRESH_MS);
-    return () => { alive = false; clearInterval(id); };
-  }, [hasFutures]);
-  useEffect(() => {
-    if (!uid || !hasFutures) return;
-    getMarginState(uid).then((st) => setState(st || null)).catch(() => {});
-  }, [uid, hasFutures]);
-  return { table, state };
-}
-
 const rubText = (n) => Number(n).toLocaleString('ru-RU', { maximumFractionDigits: 0 });
 
 export default function RadarPanel({ filterId: filterIdProp, onFilterChange, onItems }) {
@@ -70,7 +45,7 @@ export default function RadarPanel({ filterId: filterIdProp, onFilterChange, onI
   const navigate = useNavigate();
   const { radarLive, setRadarLive, radarUpdatedAt, radarResults } = useRadarLive() || {};
   const [items, setItems] = useState([]);
-  const futuresMargin = useFuturesMargin(items, user?.uid);
+  const futuresMargin = useFuturesMargin(items.some((i) => i.instrumentType === 'future'), user?.uid);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [ownTickers, setOwnTickers] = useState([]);
@@ -287,9 +262,9 @@ export default function RadarPanel({ filterId: filterIdProp, onFilterChange, onI
                     <div className="ck-radar-sub ck-radar-margin" title={marginTitle(mv)}>
                       {marginLine(mv)}
                       {mv.src !== 'tbank' && <span className="ck-radar-src"> · биржа</span>}
-                      {mv.change && (
-                        <span className={`ck-radar-chg ${mv.change.pct > 0 ? 'up' : 'down'}`}>
-                          {' '}{mv.change.pct > 0 ? '↑' : '↓'} ГО {mv.change.pct > 0 ? '+' : '−'}{Math.abs(mv.change.pct).toLocaleString('ru-RU', { minimumFractionDigits: Math.abs(mv.change.pct) < 10 ? 1 : 0, maximumFractionDigits: Math.abs(mv.change.pct) < 10 ? 1 : 0 })}%
+                      {mv.change?.visible && (
+                        <span className="ck-radar-chg" title={`Раньше ГО было ${rubText(mv.change.from)} ₽, стало ${rubText(mv.change.to)} ₽`}>
+                          {' '}· было {levShort(mv.change.levFrom)}
                         </span>
                       )}
                     </div>

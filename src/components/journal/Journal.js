@@ -30,6 +30,7 @@ import ImportModal from './ImportModal';
 import './Journal.css';
 
 import Icon from '../shared/Icon';
+import { tradeLeverage, leverageText, returnOnMarginPct } from '../../services/leverageMath';
 const COLS = ['Тикер', 'Дата', 'Направление', 'Вход', 'Выход', 'Объём', 'P&L', '% депоз.', 'Статус', ''];
 
 export default function Journal() {
@@ -694,6 +695,9 @@ export default function Journal() {
                       {isPartial
                         ? <span title="Осталось открыто / всего было">{formatNumber(trade.remainingVolume, 0)} / {formatNumber(trade.volume, 0)}</span>
                         : (trade.volume ?? '—')}
+                      {(() => { const lv = tradeLeverage(trade); return lv && lv.leverage > 0
+                        ? <span className="text-muted" style={{fontSize:11, marginLeft:6}} title="Плечо при открытии: стоимость контракта ÷ ГО на момент входа">· {leverageText(lv.leverage)}</span>
+                        : null; })()}
                     </td>
                     <td>
                       {trade.pnl !== undefined && trade.pnl !== null ? (
@@ -797,6 +801,22 @@ export default function Journal() {
                           </>
                         )}
 
+                        {(() => {
+                          const lv = tradeLeverage(trade);
+                          if (!lv || !(lv.leverage > 0)) return null;
+                          const dep = parseFloat(trade.depositSize) || 0;
+                          const ret = trade.status === 'closed' ? returnOnMarginPct(trade.pnl, lv.marginTotal) : null;
+                          return (
+                            <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:12}} data-testid="journal-trade-leverage">
+                              Плечо при открытии: <strong style={{color:'var(--text-primary)'}}>{leverageText(lv.leverage)}</strong>
+                              {lv.margin > 0 && <> · ГО {formatCurrency(lv.margin)} × {formatNumber(parseFloat(trade.volume) || 0, 0)} = <strong style={{color:'var(--text-primary)'}}>{formatCurrency(lv.marginTotal)}</strong>
+                                {dep > 0 ? ` (${formatNumber((lv.marginTotal / dep) * 100, 0)} % депозита)` : ''}</>}
+                              {lv.source === 'moex' && ' · ГО по данным биржи'}
+                              {ret != null && <> · результат <strong style={{color: ret >= 0 ? 'var(--green)' : 'var(--red)'}}>{ret >= 0 ? '+' : '−'}{formatNumber(Math.abs(ret), Math.abs(ret) < 10 ? 1 : 0)} % от ГО</strong></>}
+                            </div>
+                          );
+                        })()}
+
                         {trade.strategyMatchAtEntry && (
                           <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:12}}>
                             Совпадение со стратегией на входе: <strong style={{color:'var(--text-primary)'}}>
@@ -847,6 +867,7 @@ export default function Journal() {
                               candles={indicatorsState[trade.id].data.candles}
                               patterns={indicatorsState[trade.id].data.patterns}
                               ticker={trade.ticker}
+                              instrumentType={trade.instrumentType}
                               direction={trade.direction}
                               legs={trade.legs}
                               entryPrice={trade.entryPrice}
@@ -939,6 +960,7 @@ export default function Journal() {
                             candles={radarState[item.id].data.candles}
                             patterns={radarState[item.id].data.patterns}
                             ticker={item.ticker}
+                            instrumentType={item.instrumentType}
                             timeframe={radarTimeframeFor(item)}
                             timeframeOptions={availableTimeframes(!!userProfile?.tinkoffToken)}
                             onTimeframeChange={(tf) => changeRadarTimeframe(item, tf)}

@@ -39,7 +39,7 @@ jest.mock('../../services/futuresMargin', () => {
   });
   const state = {
     at: new Date().toISOString(),
-    items: { MMZ9: { buy: 2750.56, sell: 2750.56, src: 'moex', prevBuy: 2619.58, prevSell: 2619.58, since: new Date(Date.now() - 86400000).toISOString() } },
+    items: { MMZ9: { buy: 2750.56, sell: 2750.56, src: 'moex', prevBuy: 2292.13, prevSell: 2292.13, since: new Date(Date.now() - 86400000).toISOString() } },
   };
   return { fetchFortsTable: async () => table, getMarginState: async () => state };
 });
@@ -67,10 +67,9 @@ test('у фьючерса в радаре видны ГО, плечо, знач�
   const stock = rows.find((r) => /SBER/.test(r.textContent));
   const line = fut.querySelector('.ck-radar-margin');
   expect(line).toBeTruthy();
-  expect(line.textContent).toMatch(/ГО\s2\s751\s₽/);              // ГО 2 751 ₽
-  expect(line.textContent).toMatch(/плечо\s≈\s9,0×/);             // 2469,15 / 0,05 × 0,5 = 24 691,5 ₽; / 2 750,56 ≈ 9,0×
+  expect(line.textContent).toMatch(/^плечо\s≈\s9×\s·\sГО\s2\s751\s₽/); // плечо первым, ГО вторым: 2469,15 / 0,05 × 0,5 = 24 691,5 ₽; / 2 750,56 ≈ 9×
   expect(line.textContent).toMatch(/биржа/);                      // источник подписан
-  expect(line.textContent).toMatch(/↑\sГО\s\+5,0%/);             // с 2 619,58 до 2 750,56 = +5 %
+  expect(line.textContent).toMatch(/было\s11×/);                  // ГО выросло с 2 292 до 2 751: плечо стало 9×, а было 11×
   expect(line.getAttribute('title')).toMatch(/MMZ9/);              // подсказка называет конкретный контракт за корнем «MM»
   expect(stock.querySelector('.ck-radar-margin')).toBeNull();
   unmount();

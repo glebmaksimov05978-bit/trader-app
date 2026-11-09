@@ -339,20 +339,22 @@ export class DrawingsPrimitive {
       ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
       ctx.fill();
     }
-    // подпись у второй точки, внутри области графика
+    // подпись у второй точки, внутри области графика; у фьючерса — вторая строка: рубли на контракт и % от ГО (r.text2)
     ctx.font = '12px system-ui, -apple-system, "Segoe UI", sans-serif';
-    const w = ctx.measureText(r.text).width + 16;
+    const lines = [r.text, r.text2].filter(Boolean);
+    const w = Math.max(...lines.map((t) => ctx.measureText(t).width)) + 16;
+    const h = lines.length > 1 ? 40 : 22;
     let x = b.x + 10;
     if (x + w > width - 4) x = b.x - w - 10;
-    const y = Math.max(14, b.y - 14);
+    const y = Math.max(h / 2 + 3, b.y - 14);
     ctx.fillStyle = withAlpha('#11161f', 0.9);
     ctx.strokeStyle = color;
     ctx.lineWidth = 1;
-    this._round(ctx, x, y - 11, w, 22, 6);
+    this._round(ctx, x, y - h / 2, w, h, 6);
     ctx.fill();
     ctx.stroke();
     ctx.fillStyle = '#e8ecf4';
     ctx.textBaseline = 'middle';
-    ctx.fillText(r.text, x + 8, y);
+    lines.forEach((t, i) => ctx.fillText(t, x + 8, lines.length > 1 ? y - 8 + i * 17 : y));
   }
 }

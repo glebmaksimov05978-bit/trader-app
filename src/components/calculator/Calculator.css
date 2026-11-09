@@ -160,3 +160,14 @@
   .calc-key-metrics { grid-template-columns: 1fr; }
   .calc-grid-2 { grid-template-columns: 1fr; }
 }
+
+/* «На ваши деньги»: сколько контрактов в каждую сторону разрешает лимит ГО (показывается сразу после выбора контракта, до ввода стопа) */
+.calc-capacity { margin: 4px 0 14px; padding: 10px 12px; border-radius: var(--radius-sm, 10px); border: 1px solid var(--border-subtle); background: var(--bg-surface-2); }
+.calc-capacity-title { font-size: 11.5px; font-weight: 700; color: var(--text-secondary); margin-bottom: 6px; }
+.calc-capacity-row { display: grid; grid-template-columns: 52px 1fr; column-gap: 8px; align-items: baseline; padding: 4px 0; font-size: 13px; }
+.calc-capacity-dir { font-size: 10.5px; font-weight: 800; letter-spacing: .04em; }
+.calc-capacity-row.long .calc-capacity-dir { color: var(--green); }
+.calc-capacity-row.short .calc-capacity-dir { color: var(--red); }
+.calc-capacity-n { font-variant-numeric: tabular-nums; }
+.calc-capacity-sub { grid-column: 2; font-size: 11.5px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.calc-capacity-note { margin-top: 6px; font-size: 10.5px; line-height: 1.5; color: var(--text-muted); }
