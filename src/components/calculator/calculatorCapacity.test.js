@@ -70,11 +70,11 @@ test('фьючерс без стопа: видно «на ваши деньги�
   expect(rows.length).toBe(2);
   expect(rows[0].textContent).toMatch(/ЛОНГ/);
   expect(rows[0].textContent).toMatch(/до\s32\sконтр/);
-  expect(rows[0].textContent).toMatch(/плечо\s≈\s9×/);
-  expect(rows[0].textContent).toMatch(/2\s751/);
+  expect(rows[0].textContent).toMatch(/плечо\s8,98×/);
+  expect(rows[0].textContent).toMatch(/ГО\s2\s750,56\s₽/);   // копейки не теряются
   expect(rows[1].textContent).toMatch(/ШОРТ/);
   expect(rows[1].textContent).toMatch(/до\s27\sконтр/);   // шорт считается по СВОЕМУ ГО (3 300), а не по ГО лонга
-  expect(rows[1].textContent).toMatch(/плечо\s≈\s7×/);
+  expect(rows[1].textContent).toMatch(/плечо\s7,48×/);
   expect(box.textContent).toMatch(/300\s000/);
   expect(box.textContent).toMatch(/не больше 30 %/);
   unmount();

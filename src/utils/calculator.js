@@ -148,7 +148,7 @@ export function calcTrade({
 
   const marginUsedRub     = instrumentType === 'future' ? totalMargin : positionValue;
   const marginUsagePercent = deposit > 0
-    ? Math.round((marginUsedRub / deposit) * 100)
+    ? Math.round((marginUsedRub / deposit) * 1000) / 10   // доля депозита — с десятой: 30,4 % при лимите 30 % не должно превращаться в «30 %»
     : 0;
 
   // Плечо по ГО: во сколько раз стоимость контракта больше замороженного под него ГО.
@@ -160,14 +160,14 @@ export function calcTrade({
     // ГО одного контракта, которое реально использовано, и какой стороны оно было.
     marginPerContract:   Math.round(iMargin * 100) / 100,
     marginSide:          sideMargin > 0 ? direction : (iMargin > 0 ? 'any' : 'none'),
-    leverage:            Math.round(leverage * 10) / 10,
+    leverage:            Math.round(leverage * 10000) / 10000,   // плечо не округляется до десятых: на десятках контрактов разница заметна
     // Рубли за 1 пункт цены на единицу объёма (нужно, чтобы пересчитать итог на другое число контрактов).
     rubPerPoint:         rubPerPt,
     riskAmount:          Math.round(riskAmount),
     contracts,
     contractsByRisk,
     maxContractsByMargin,
-    totalMargin:         Math.round(totalMargin),
+    totalMargin:         Math.round(totalMargin * 100) / 100,    // ГО на все контракты — до копеек, а не до рубля
     positionValue,
     commission:          Math.round(commission),
     rr:                  Math.round(rr * 100) / 100,
@@ -198,7 +198,7 @@ export function scaleToContracts(result, n, { entryPrice, commissionRate = 0.000
   const deposit = parseFloat(depositSize) || 1;
   const positionValue = Math.round(entry * n * result.rubPerPoint);
   const commission = Math.round(positionValue * rate * 2);
-  const totalMargin = instrumentType === 'future' ? Math.round(result.marginPerContract * n) : 0;
+  const totalMargin = instrumentType === 'future' ? Math.round(result.marginPerContract * n * 100) / 100 : 0;
   const marginUsed = instrumentType === 'future' ? totalMargin : positionValue;
   return {
     ...result,
@@ -208,7 +208,7 @@ export function scaleToContracts(result, n, { entryPrice, commissionRate = 0.000
     totalProfit: Math.round(result.profitPerContract * n - commission),
     totalMargin,
     positionValue,
-    marginUsagePercent: Math.round((marginUsed / deposit) * 100),
+    marginUsagePercent: Math.round((marginUsed / deposit) * 1000) / 10,
     maxMarginPercent: result.maxMarginPercent || 30,
   };
 }

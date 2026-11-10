@@ -2,30 +2,39 @@
 //
 // Плечо фьючерса и «что можно купить на мои деньги» — одни и те же формулы для радара, Калькулятора, Журнала, Сопровождения и линейки на графике.
 //
-// Зачем отдельный модуль. ГО у контракта меняется постоянно (биржа пересматривает его чаще, чем кажется), и смотреть на ГО в рублях неудобно: цифра
-// «прыгает» и ничего не говорит о риске. Плечо — стоимость контракта ÷ ГО — это то, что реально нужно знать: на сколько процентов от замороженных
-// под ГО денег сдвигает счёт движение цены на 1 %. Движение цены на 1 % при плече 9× — это ≈9 % от ГО. Поэтому:
-//   • плечо показывается ОКРУГЛЁННЫМ (9×, а не 8,98×) — оно не должно «рябить» от каждого тика цены;
-//   • ГО в рублях остаётся рядом, но вторым числом;
+// Зачем отдельный модуль. ГО у контракта меняется постоянно, и смотреть на ГО в рублях неудобно: цифра «прыгает» и ничего не говорит о риске.
+// Плечо — стоимость контракта ÷ ГО — это то, что реально нужно знать: на сколько процентов от замороженных под ГО денег сдвигает счёт
+// движение цены на 1 %. Движение цены на 1 % при плече 9× — это ≈9 % от ГО. Поэтому:
+//   • плечо — главное число, ГО в рублях рядом, вторым;
+//   • НИЧЕГО НЕ ОКРУГЛЯЕТСЯ до целых: плечо показывается с двумя знаками (8,97×), ГО — с копейками, если они есть. Решение владельца
+//     2026-11-10: при десятках контрактов округление до целого плеча или рубля даёт заметную ошибку в общей сумме;
+//   • числа берутся ГО БРОКЕРА (Т-Банка), через которого идут сделки; биржевое ГО — только запасной вариант и подписывается «биржа»;
 //   • «сколько можно купить» считается по ГО СТОРОНЫ сделки (лонг и шорт у брокера разные) и по лимиту доли депозита под ГО (по умолчанию 30 %).
 //
 // Чистые функции, без зависимостей.
 
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 
-/** Плечо для показа: до 5× — с одним знаком после запятой (3,4×), от 5× — целым (9×). Нет плеча — пустая строка. */
+/** Плечо для показа — всегда с двумя знаками, без округления до целого: «8,97×». Нет плеча — пустая строка. */
 export function leverageText(l) {
   const v = num(l);
   if (!(v > 0)) return '';
-  const r = v >= 5 ? Math.round(v) : Math.round(v * 10) / 10;
-  return `${r.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}×`;
+  return `${v.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}×`;
 }
 
-/** Плечо числом для сохранения в сделке: тот же шаг округления, что и в тексте (чтобы запись и подпись совпадали). */
+/** Плечо числом для сохранения в сделке: точное (до 4 знаков — только чтобы убрать хвост двоичной дроби), без округления до целого. */
 export function leverageValue(l) {
   const v = num(l);
   if (!(v > 0)) return null;
-  return v >= 5 ? Math.round(v) : Math.round(v * 10) / 10;
+  return Math.round(v * 10000) / 10000;
+}
+
+/** Рубли для ГО и итоговых сумм: копейки показываются, если они есть (2 750,56 ₽), иначе целые (3 300 ₽). Ничего не теряется на округлении. */
+export function rubText(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return '';
+  const r = Math.round(n * 100) / 100;
+  return `${r.toLocaleString('ru-RU', { minimumFractionDigits: Number.isInteger(r) ? 0 : 2, maximumFractionDigits: 2 })} ₽`;
 }
 
 /** Плечо = стоимость контракта в рублях / ГО (на одну сторону). 0 — считать не из чего. */
@@ -102,22 +111,25 @@ export function tradeLeverage(t) {
 
 /**
  * Подпись линейки для фьючерса: во сколько рублей обходится ход на один контракт и сколько это от ГО.
+ * Ход вверх меряется ГО на покупку (лонг), ход вниз — ГО на продажу (шорт): «сколько % от СВОЕГО ГО дала бы позиция по ходу линейки».
  * @param {{delta:number, pct:number|null}} stats  из rulerStats
- * @param {{rubPerPoint:number, margin:number, startPrice?:number}} contract
- * @returns {string} — например «≈ +520 ₽ на контракт · +19 % от ГО (плечо 9×)»; пустая строка, если данных нет
+ * @param {{rubPerPoint:number, margin:number, marginSell?:number, startPrice?:number, src?:string}} contract
+ *   margin — ГО на покупку, marginSell — на продажу (нет — как у покупки), src — 'tbank' | 'moex'
+ * @returns {string} — например «≈ +520 ₽ на контракт · +19,25 % от ГО (плечо 9,03×)»; пустая строка, если данных нет
  */
 export function rulerContractText(stats, contract) {
   if (!stats || !contract) return '';
-  const rpp = num(contract.rubPerPoint), margin = num(contract.margin);
+  const rpp = num(contract.rubPerPoint);
   if (!(rpp > 0)) return '';
+  const margin = stats.delta >= 0 ? num(contract.margin) : (num(contract.marginSell) || num(contract.margin));
   const rub = stats.delta * rpp;
   const sign = rub >= 0 ? '+' : '−';
-  const fmt = (v, d = 0) => Math.abs(v).toLocaleString('ru-RU', { maximumFractionDigits: d });
+  const fmt = (v) => Math.abs(v).toLocaleString('ru-RU', { maximumFractionDigits: 2 });
   const parts = [`≈ ${sign}${fmt(rub)} ₽ на контракт`];
   if (margin > 0) {
     const onMargin = (rub / margin) * 100;
     const lev = contract.startPrice > 0 ? leverageText(leverageOf(contract.startPrice * rpp, margin)) : '';
-    parts.push(`${sign}${fmt(onMargin, Math.abs(onMargin) < 10 ? 1 : 0)} % от ГО${lev ? ` (плечо ${lev})` : ''}`);
+    parts.push(`${sign}${fmt(onMargin)} % от ГО${lev ? ` (плечо ${lev})` : ''}${contract.src && contract.src !== 'tbank' ? ' · ГО биржи' : ''}`);
   }
   return parts.join(' · ');
 }

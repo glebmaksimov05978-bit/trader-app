@@ -37,7 +37,7 @@ import { evaluateAlerts, DEFAULT_ALERT_PREFS } from '../../services/alerts';
 import { loadBacktestSample, findSimilar, probabilityOfGoal } from '../../services/backtest/similarTrades';
 import { applyTradeClose } from '../../services/tradeClose';
 import { moveRub, positionValueRub, rubPerPoint } from '../../services/contractMath';
-import { leverageOf, leverageValue, leverageText, tradeLeverage } from '../../services/leverageMath';
+import { leverageOf, leverageValue, leverageText, tradeLeverage, rubText } from '../../services/leverageMath';
 import ContractStrip from '../shared/ContractStrip';
 import { fetchOrderConfig, fetchOrderState } from '../../services/broker';
 import { reconcilePendingTrades } from '../../services/pendingOrders';
@@ -66,8 +66,8 @@ const fmtPct = (v, d = 2) => (v == null ? '—' : `${Number(v.toFixed(d)) > 0 ? 
 const fmtRub = (v) => (v == null ? '—'
   : `${v >= 0 ? '+' : '−'}${Math.round(Math.abs(v)).toLocaleString('ru-RU')} ₽`);
 const fmtNum = (v, d = 2) => (v == null ? '—' : Number(v).toFixed(d));
-// Сумма без знака (ГО, депозит): fmtRub выше подписывает +/−, как результат сделки, а ГО — не результат.
-const fmtMoney = (v) => `${Number(v).toLocaleString('ru-RU', { maximumFractionDigits: 0 })} ₽`;
+// Число в русской записи с запятой (2,75): для процентов от ГО и от депозита, где нельзя терять десятые.
+const ruNum = (v, d = 2) => Number(v).toLocaleString('ru-RU', { minimumFractionDigits: d, maximumFractionDigits: d });
 // Подпись плеча при открытии у фьючерса: « · плечо 9×». У акций и у старых сделок без ГО — пусто.
 const levSuffix = (t) => { const l = tradeLeverage(t); return l && l.leverage > 0 ? ` · плечо ${leverageText(l.leverage)}` : ''; };
 
@@ -1381,12 +1381,13 @@ export default function Cockpit() {
                   <span>Плечо при входе <b>{leverageText(tradeLev.leverage)}</b></span>
                   {tradeLev.margin > 0 && (
                     <span>
-                      ГО {fmtMoney(tradeLev.margin)} × {fmtNum(parseFloat(trade.volume) || 0, 0)} = <b>{fmtMoney(tradeLev.marginTotal)}</b>
-                      {parseFloat(trade.depositSize) > 0 ? ` (${fmtNum((tradeLev.marginTotal / parseFloat(trade.depositSize)) * 100, 0)} % депозита)` : ''}
+                      ГО {rubText(tradeLev.margin)} × {fmtNum(parseFloat(trade.volume) || 0, 0)} = <b>{rubText(tradeLev.marginTotal)}</b>
+                      {parseFloat(trade.depositSize) > 0 ? ` (${ruNum((tradeLev.marginTotal / parseFloat(trade.depositSize)) * 100, 1)} % депозита)` : ''}
+                      {tradeLev.source === 'tbank' ? ' · Т-Банк' : tradeLev.source === 'moex' ? ' · по данным биржи' : tradeLev.source === 'manual' ? ' · введено вручную' : ''}
                     </span>
                   )}
                   {tradeLev.margin > 0 && money && (
-                    <span>Результат сейчас <b className={marginReturn >= 0 ? 'up' : 'down'}>{marginReturn >= 0 ? '+' : '−'}{fmtNum(Math.abs(marginReturn), Math.abs(marginReturn) < 10 ? 1 : 0)} %</b> от ГО</span>
+                    <span>Результат сейчас <b className={marginReturn >= 0 ? 'up' : 'down'}>{marginReturn >= 0 ? '+' : '−'}{ruNum(Math.abs(marginReturn), 2)} %</b> от ГО</span>
                   )}
                 </div>
               )}

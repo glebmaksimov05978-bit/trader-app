@@ -8,12 +8,18 @@ let fails = 0;
 const ok = (n, c) => { console.log(`${c ? '✓' : '✗'} ${n}`); if (!c) fails++; };
 const near = (a, b, e = 1e-6) => Math.abs(a - b) < e;
 
-// --- подпись плеча: не «рябит» от тиков
-ok('плечо 8,98 → «9×» (не 8,98)', L.leverageText(8.98) === '9×');
-ok('плечо 9,04 → тоже «9×» — от тика к тику подпись не дёргается', L.leverageText(9.04) === '9×' && L.leverageText(8.6) === '9×');
-ok('малое плечо — с десятой: 4,26 → «4,3×»; 12,4 → «12×»', L.leverageText(4.26) === '4,3×' && L.leverageText(12.4) === '12×');
+// --- подпись плеча: НИЧЕГО не округляется до целого (решение владельца 2026-11-10: на десятках контрактов округление даёт заметную ошибку)
+ok('плечо 8,98 → «8,98×» (не «9×»)', L.leverageText(8.98) === '8,98×');
+ok('9,04 и 8,6 подписываются по-разному: «9,04×» и «8,60×»', L.leverageText(9.04) === '9,04×' && L.leverageText(8.6) === '8,60×');
+ok('малое и большое плечо — тоже два знака: 4,26 → «4,26×»; 12,4 → «12,40×»', L.leverageText(4.26) === '4,26×' && L.leverageText(12.4) === '12,40×');
 ok('нет плеча → пустая строка, не «NaN×»', L.leverageText(0) === '' && L.leverageText(NaN) === '' && L.leverageText(null) === '');
-ok('значение для записи в сделку совпадает с подписью', L.leverageValue(8.98) === 9 && L.leverageValue(4.26) === 4.3 && L.leverageValue(0) === null);
+ok('значение для записи в сделку — точное, не целое: 8,98 → 8,98; 8,9769 → 8,9769', L.leverageValue(8.98) === 8.98 && L.leverageValue(8.9769) === 8.9769 && L.leverageValue(4.26) === 4.26 && L.leverageValue(0) === null);
+// 100 контрактов: плечо «9×» против точного 8,977× — на всей позиции это заметная разница в оценке
+ok('на 100 контрактах округление плеча до «9×» дало бы ГО на 706 ₽ меньше настоящего (2 743,50 вместо 2 750,56 за контракт)', Math.abs(100 * 24691.5 / 9 - 100 * 2750.56) > 700);
+// --- рубли: копейки не теряются
+ok('ГО с копейками: 2 750,56 ₽; целое — без «,00»: 3 300 ₽', /^2\s750,56 ₽$/.test(L.rubText(2750.56)) && /^3\s300 ₽$/.test(L.rubText(3300)));
+ok('120 контрактов × 2 750,56 = 330 067,20 ₽ (до рубля было бы 330 067)', /^330\s067,2 ₽$|^330\s067,20 ₽$/.test(L.rubText(2750.56 * 120)));
+ok('мусор вместо числа → пустая строка', L.rubText(NaN) === '' && L.rubText(undefined) === '');
 ok('плечо = стоимость / ГО; 0, если нечего считать', near(L.leverageOf(24691.5, 2750.56), 8.9769, 1e-3) && L.leverageOf(0, 100) === 0 && L.leverageOf(100, 0) === 0);
 
 // --- что можно купить на мои деньги (MXI: стоимость контракта 24 691,5 ₽, ГО лонг 2 750,56, шорт 3 300)
@@ -21,7 +27,7 @@ const cap = L.capacityByDirection({ deposit: 300000, maxMarginPercent: 30, margi
 ok('лонг: по лимиту 30 % депозита (90 000 ₽) — до 32 контрактов', cap.long.maxByLimit === 32);
 ok('шорт считается по СВОЕМУ ГО (3 300 ₽) — до 27, а не 32', cap.short.maxByLimit === 27);
 ok('предел «весь депозит под ГО»: лонг 109', cap.long.maxPhysical === 109);
-ok('плечо по сторонам: лонг ≈ 9×, шорт ≈ 7×', L.leverageText(cap.long.leverage) === '9×' && L.leverageText(cap.short.leverage) === '7×');
+ok('плечо по сторонам: лонг 8,98×, шорт 7,48×', L.leverageText(cap.long.leverage) === '8,98×' && L.leverageText(cap.short.leverage) === '7,48×');
 ok('один контракт занимает ≈ 0,9 % депозита', near(cap.long.oneUsesPct, 0.9169, 1e-3));
 ok('строка «на ваши деньги»', L.capacityLine(cap) === 'лонг до 32 контр. · шорт до 27 контр.');
 const small = L.capacityByDirection({ deposit: 50000, maxMarginPercent: 30, marginBuy: 17209.89, marginSell: 17209.89, valueRub: 77000 });
@@ -44,10 +50,13 @@ ok('нет ни плеча, ни ГО → null; акция → null', L.tradeLev
 
 // --- линейка на графике: рубли на контракт и % от ГО
 const stats = { delta: 100, pct: 4.05 };
-const ctr = { rubPerPoint: 10, margin: 2750.56, startPrice: 2469 };
+const ctr = { rubPerPoint: 10, margin: 2750.56, startPrice: 2469, src: 'tbank' };
 const rt = L.rulerContractText(stats, ctr);
-ok('линейка: +100 пунктов MXI = +1 000 ₽ на контракт = +36 % от ГО, плечо 9×', /^≈ \+1\s?000 ₽ на контракт · \+36 % от ГО \(плечо 9×\)$/.test(rt));
-ok('линейка вниз: знак «−»', /^≈ −1\s?000 ₽ на контракт · −36 % от ГО/.test(L.rulerContractText({ delta: -100 }, ctr)));
+ok('линейка: +100 пунктов MXI = +1 000 ₽ на контракт = +36,36 % от ГО, плечо 8,98× (без округления)', /^≈ \+1\s?000 ₽ на контракт · \+36,36 % от ГО \(плечо 8,98×\)$/.test(rt));
+ok('линейка вниз: знак «−»', /^≈ −1\s?000 ₽ на контракт · −36,36 % от ГО/.test(L.rulerContractText({ delta: -100 }, ctr)));
+const ctr2 = { ...ctr, marginSell: 3300 };
+ok('ход вниз меряется ГО на продажу (шорт): 1 000 / 3 300 = 30,3 %; вверх — ГО на покупку', /−30,3 % от ГО/.test(L.rulerContractText({ delta: -100 }, ctr2)) && /\+36,36 % от ГО/.test(L.rulerContractText(stats, ctr2)));
+ok('биржевое ГО подписано, ГО Т-Банка — без пометки', /· ГО биржи$/.test(L.rulerContractText(stats, { ...ctr, src: 'moex' })) && !/ГО биржи/.test(rt));
 ok('линейка без ГО: только рубли; без данных контракта — пусто', L.rulerContractText(stats, { rubPerPoint: 10, margin: 0 }) === '≈ +1 000 ₽ на контракт' || /^≈ \+1\s?000 ₽ на контракт$/.test(L.rulerContractText(stats, { rubPerPoint: 10, margin: 0 })));
 ok('…и пусто, если нет стоимости пункта', L.rulerContractText(stats, { rubPerPoint: 0, margin: 5 }) === '' && L.rulerContractText(null, ctr) === '' && L.rulerContractText(stats, null) === '');
 

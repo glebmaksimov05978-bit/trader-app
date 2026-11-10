@@ -18,6 +18,7 @@ import {
   TWO_POINT, PALETTE, TOOL_LABELS, moveDrawing, movePoint, toggleSignal, SIGNAL_TYPES,
 } from '../../services/chartDrawings';
 import { fetchFortsTable } from '../../services/marketData/fortsTable';
+import { fetchBrokerMargins } from '../../services/marketData/brokerMarginClient';
 import { resolveContract } from '../../services/marketData/marginTrack';
 import { rulerContractText } from '../../services/leverageMath';
 import { DrawingsPrimitive } from './chartDrawingsPrimitive';
@@ -324,18 +325,27 @@ export default function CandleChart({
   const [draftPoint, setDraftPoint] = useState(null); // первая точка двухточечного инструмента
   const [rulerDone, setRulerDone] = useState(null);   // готовая линейка (до следующего клика)
   // Контракт фьючерса для линейки: рубли за пункт и ГО (корень вроде «MM» превращается в ближайший действующий контракт).
+  // ГО — Т-Банка, если в Настройках сохранён токен и брокер ответил (сделки идут через него), иначе биржевое с пометкой.
   const [contractSpec, setContractSpec] = useState(null);
   const contractRef = useRef(null);
+  const brokerToken = userProfile?.tinkoffToken || '';
   useEffect(() => {
     if (instrumentType !== 'future' || !ticker) { setContractSpec(null); return undefined; }
     let alive = true;
-    fetchFortsTable().then((table) => {
+    fetchFortsTable().then(async (table) => {
       if (!alive) return;
       const res = resolveContract(table, ticker);
-      setContractSpec(res && res.row.minStep > 0 && res.row.stepPrice > 0 ? { rubPerPoint: res.row.stepPrice / res.row.minStep, margin: res.row.margin } : null);
+      if (!(res && res.row.minStep > 0 && res.row.stepPrice > 0)) { setContractSpec(null); return; }
+      const base = { rubPerPoint: res.row.stepPrice / res.row.minStep, margin: res.row.margin, marginSell: res.row.margin, src: 'moex' };
+      setContractSpec(base);
+      if (!brokerToken) return;
+      try {
+        const bm = (await fetchBrokerMargins(brokerToken, [res.row.secid])).get(res.row.secid);
+        if (alive && bm && bm.buy > 0) setContractSpec({ ...base, margin: bm.buy, marginSell: bm.sell > 0 ? bm.sell : bm.buy, src: 'tbank' });
+      } catch { /* брокер не ответил — остаётся биржевое ГО с пометкой */ }
     }).catch(() => { if (alive) setContractSpec(null); });
     return () => { alive = false; };
-  }, [ticker, instrumentType]);
+  }, [ticker, instrumentType, brokerToken]);
   contractRef.current = contractSpec;
   const [priceManual, setPriceManual] = useState(false); // график сдвинут по цене вручную — авто-масштаб выключен
   // Подписка на клик создаётся один раз — актуальное состояние читает через ref (см. ниже).

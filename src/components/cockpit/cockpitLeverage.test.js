@@ -35,7 +35,7 @@ jest.mock('../../services/trades', () => {
   const openFut = {
     id: 'tf1', ticker: 'MMZ9', direction: 'long', status: 'open', instrumentType: 'future', isFuture: true, entryPrice: 2469.15, volume: 3, remainingVolume: 3, lot: 1,
     minStep: 0.05, minStepAmount: 0.5, stopLoss: 2400, takeProfit: 2600, pnl: null, commissionRate: 0.0004, depositSize: 300000,
-    marginPerContract: 2750.56, marginSide: 'long', marginSource: 'moex', leverageAtEntry: 9,
+    marginPerContract: 2750.56, marginSide: 'long', marginSource: 'tbank', leverageAtEntry: 8.9769,
     openedAt: new Date(Date.now() - 3600e3).toISOString(), date: new Date().toISOString().slice(0, 10), entryTimeframe: 'D1',
   };
   return { ...real, getUserTrades: async () => [openFut, ...S.trades], getImportArtifacts: async () => [] };
@@ -91,10 +91,11 @@ test('открытая фьючерсная сделка: в шапке плеч
   const { host, unmount } = await mount('/cockpit?activeId=tf1');
   const lev = host.querySelector('[data-testid="ck-head-lev"]');
   expect(lev).toBeTruthy();
-  expect(lev.textContent).toMatch(/Плечо при входе\s9×/);
-  expect(lev.textContent).toMatch(/ГО\s2\s751\s₽\s×\s3\s=\s8\s252\s₽/);   // 2 750,56 × 3 = 8 251,68
-  expect(lev.textContent).toMatch(/\(3\s%\sдепозита\)/);                   // 8 252 / 300 000 = 2,75 % → 3 %
-  expect(host.querySelector('.ck-pos-list').textContent).toMatch(/плечо\s9×/);
+  expect(lev.textContent).toMatch(/Плечо при входе\s8,98×/);   // не «9×»: на нескольких контрактах округление до целого — уже ошибка
+  expect(lev.textContent).toMatch(/ГО\s2\s750,56\s₽\s×\s3\s=\s8\s251,68\s₽/);   // копейки сохранены: 2 750,56 × 3 = 8 251,68
+  expect(lev.textContent).toMatch(/\(2,8\s%\sдепозита\)/);                 // 8 251,68 / 300 000 = 2,75 % → 2,8 % (с десятой, не «3 %»)
+  expect(lev.textContent).toMatch(/Т-Банк/);                               // источник ГО записан при открытии и подписан
+  expect(host.querySelector('.ck-pos-list').textContent).toMatch(/плечо\s8,98×/);
   unmount();
 });
 
@@ -103,8 +104,9 @@ test('контракт из радара до сделки: строка «пл�
   const strip = host.querySelector('[data-testid="ck-contract-strip"]');
   expect(strip).toBeTruthy();
   expect(strip.textContent).toMatch(/MMZ9/);
-  expect(strip.textContent).toMatch(/плечо\s≈\s9×/);
-  expect(strip.textContent).toMatch(/ГО\s2\s751\s₽/);
+  expect(strip.textContent).toMatch(/плечо\s8,98×/);
+  expect(strip.textContent).toMatch(/ГО\s2\s750,56\s₽/);
+  expect(strip.textContent).toMatch(/\(биржа\)/);                           // токена в профиле нет — ГО биржевое, и это подписано
   expect(strip.textContent).toMatch(/лонг до 32 контр\./);                 // 300 000 × 30 % / 2 750,56
   expect(strip.textContent).toMatch(/шорт до 32 контр\./);                 // биржевое ГО одно на обе стороны
   unmount();

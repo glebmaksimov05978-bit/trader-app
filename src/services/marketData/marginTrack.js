@@ -189,9 +189,11 @@ const ru = (n, d = 0) => Number(n).toLocaleString('ru-RU', { maximumFractionDigi
 const sign = (p) => (p > 0 ? '+' : p < 0 ? '−' : '');
 const pctText = (p) => `${sign(p)}${ru(Math.abs(p), Math.abs(p) < 10 ? 1 : 0)} %`;
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const levText = (l) => (l > 0 ? `${ru(l, l < 10 ? 1 : 0)}×` : '—');
-/** Плечо для показа в радаре: от 5× — целым (9×), меньше — с десятой (3,4×). Так подпись не «рябит» от тика цены и мелких правок ГО. */
-export const levShort = (l) => (l > 0 ? `${ru(l >= 5 ? Math.round(l) : Math.round(l * 10) / 10, l >= 5 ? 0 : 1)}×` : '');
+/** ГО в рублях без потери копеек: 2 750,56 (если копеек нет — 3 300). Округлять ГО до рубля нельзя: на десятках контрактов набегает заметная сумма. */
+export const ruGo = (n) => { const r = Math.round(Number(n) * 100) / 100; return r.toLocaleString('ru-RU', { minimumFractionDigits: Number.isInteger(r) ? 0 : 2, maximumFractionDigits: 2 }); };
+/** Плечо для показа — всегда с двумя знаками, без округления до целого (8,97×). Решение владельца 2026-11-10. */
+export const levShort = (l) => (l > 0 ? `${ru(l, 2)}×` : '');
+const levText = (l) => (l > 0 ? levShort(l) : '—');
 
 /** Текст сообщения в Telegram (HTML) или null, если сообщать нечего. */
 export function formatMarginMessage({ changes = [], rolls = [], expiring = [] }) {
@@ -203,7 +205,7 @@ export function formatMarginMessage({ changes = [], rolls = [], expiring = [] })
       const price = c.row.price;
       const value = contractValueRub(c.row, price);
       const sameSides = Math.abs(c.from.buy - c.from.sell) < 0.005 && Math.abs(c.to.buy - c.to.sell) < 0.005;
-      const mk = (label, f, t, p) => `${label ? `${label} ` : ''}${ru(f)} → ${ru(t)} ₽ (${pctText(p)})`;
+      const mk = (label, f, t, p) => `${label ? `${label} ` : ''}${ruGo(f)} → ${ruGo(t)} ₽ (${pctText(p)})`;
       // Плечо — главное: его и показываем первым, при цене на момент сообщения (само по себе от цены оно тоже меняется, но здесь речь об изменении из-за ГО).
       const lev = (f, t) => (leverageOf(value, f) > 0 && leverageOf(value, t) > 0 ? `${levText(leverageOf(value, f))} → ${levText(leverageOf(value, t))}` : '');
       let levPart, goPart;
@@ -218,14 +220,14 @@ export function formatMarginMessage({ changes = [], rolls = [], expiring = [] })
       lines.push(`• <b>${esc(c.secid)}</b> (${where}): ${head ? `${head}; ` : ''}${goPart}`);
     }
     const anyMoex = changes.some((c) => c.src !== 'tbank');
-    if (anyMoex) lines.push('<i>ГО — по данным биржи. У брокера оно обычно выше на несколько процентов, шорт — иногда заметно выше: перед сделкой сверьтесь с терминалом.</i>');
+    if (anyMoex) lines.push('<i>Здесь ГО — по данным биржи: ГО Т-Банка робот пока не получает. У брокера оно обычно выше на несколько процентов, шорт — иногда заметно выше. В приложении (радар, Калькулятор, линейка) при сохранённом токене Т-Инвестиций цифры берутся уже у Т-Банка.</i>');
   }
   if (rolls.length) {
     if (lines.length) lines.push('');
     lines.push('🔄 <b>Контракт сменился</b>');
     for (const r of rolls) {
       const rec = r.row;
-      lines.push(`• «${esc(r.root)}»: теперь ${esc(r.to)} (был ${esc(r.from)})${rec?.margin ? `, ГО ${ru(rec.margin)} ₽` : ''}`);
+      lines.push(`• «${esc(r.root)}»: теперь ${esc(r.to)} (был ${esc(r.from)})${rec?.margin ? `, ГО ${ruGo(rec.margin)} ₽` : ''}`);
     }
   }
   if (expiring.length) {
@@ -237,25 +239,29 @@ export function formatMarginMessage({ changes = [], rolls = [], expiring = [] })
 }
 
 /**
- * Что показать в строке радара. table — свежая таблица биржи (живая), state — состояние робота (может отсутствовать).
+ * Что показать в строке радара. table — свежая таблица биржи (живая), state — состояние робота (может отсутствовать),
+ * broker — ГО Т-Банка, которое приложение только что спросило у брокера само (Map<SECID,{buy,sell}>); оно главнее всего остального:
+ * сделки идут через Т-Банк, и биржевое ГО у него обычно ниже (у шорта иногда заметно).
  * @returns {null|{secid, viaRoot, src, buy, sell, price, priceKind, value, levBuy, levSell, daysLeft, lot, fee, name, change}}
  */
-export function marginView({ ticker, table, state, now = new Date() }) {
+export function marginView({ ticker, table, state, broker = null, now = new Date() }) {
   const res = resolveContract(table, ticker, now);
   if (!res) return null;
   const { row, viaRoot } = res;
   const st = state?.items?.[row.secid];
   const fresh = st && state.at && now.getTime() - Date.parse(state.at) < 36 * 3600 * 1000;
-  const tb = fresh && st.src === 'tbank';
-  const buy = tb ? st.buy : row.margin;
-  const sell = tb ? st.sell : row.margin;
+  const bm = broker && typeof broker.get === 'function' ? broker.get(row.secid) : null;
+  const hasBm = !!(bm && bm.buy > 0);
+  const tb = hasBm || (fresh && st.src === 'tbank');
+  const buy = hasBm ? bm.buy : (tb ? st.buy : row.margin);
+  const sell = hasBm ? (bm.sell > 0 ? bm.sell : bm.buy) : (tb ? st.sell : row.margin);
   const value = contractValueRub(row);
   let change = null;
   if (st && st.prevBuy != null && st.since && now.getTime() - Date.parse(st.since) < CHANGE_VISIBLE_DAYS * DAY && st.src === (tb ? 'tbank' : 'moex')) {
     const p = pctChange(st.buy, st.prevBuy);
     if (Math.abs(p) >= 0.05) {
-      // Плечо до и после при ТЕКУЩЕЙ цене: меняется только из-за ГО. Значок показываем лишь когда подпись плеча (округлённая) реально другая —
-      // иначе мелкие правки ГО «рябили» бы, ничего не меняя в картине риска.
+      // Плечо до и после при ТЕКУЩЕЙ цене: меняется только из-за ГО. Плечо теперь не округляется, поэтому значок виден, когда подпись
+      // (два знака) реально другая; совсем мелкие правки ГО, не меняющие подпись, значка не дают.
       const levFrom = leverageOf(value, st.prevBuy), levTo = leverageOf(value, st.buy);
       change = { from: st.prevBuy, to: st.buy, pct: p, at: st.since, levFrom, levTo, visible: levShort(levFrom) !== levShort(levTo) };
     }
@@ -267,12 +273,12 @@ export function marginView({ ticker, table, state, now = new Date() }) {
   };
 }
 
-/** Короткая строка для радара: плечо первым (оно и есть главное), ГО — вторым: «плечо ≈ 9× · ГО 2 751 ₽». */
+/** Короткая строка для радара: плечо первым (оно и есть главное), ГО — вторым: «плечо 8,97× · ГО 2 750,56 ₽». */
 export function marginLine(v) {
   if (!v || !(v.buy > 0)) return '';
   const two = Math.abs(v.buy - v.sell) >= 0.005;
-  const go = two ? `ГО лонг ${ru(v.buy)} / шорт ${ru(v.sell)} ₽` : `ГО ${ru(v.buy)} ₽`;
+  const go = two ? `ГО лонг ${ruGo(v.buy)} / шорт ${ruGo(v.sell)} ₽` : `ГО ${ruGo(v.buy)} ₽`;
   const lb = levShort(v.levBuy), ls = levShort(v.levSell);
-  const lev = lb ? `плечо ≈ ${two && ls && ls !== lb ? `${lb} / ${ls}` : lb}` : '';
+  const lev = lb ? `плечо ${two && ls && ls !== lb ? `${lb} / ${ls}` : lb}` : '';
   return lev ? `${lev} · ${go}` : go;
 }

@@ -28,7 +28,8 @@ import StrategyChecklist from '../shared/StrategyChecklist';
 import toast from 'react-hot-toast';
 import EntryDecisionModal from './EntryDecisionModal';
 import { userLevelsForChart } from '../../services/chartDrawings';
-import { capacityByDirection, leverageText, leverageValue, leverageOf } from '../../services/leverageMath';
+import { capacityByDirection, leverageText, leverageValue, leverageOf, rubText } from '../../services/leverageMath';
+import { parseBrokerFutureMargin } from '../../services/marketData/brokerMargin';
 import { getOpenPaperTrades } from '../../services/paperTrades';
 import './Calculator.css';
 
@@ -176,11 +177,13 @@ export default function Calculator() {
   // "a ticker just resolved" — refs don't trigger effects.
   const loadedTickerRef = useRef(draft?.pricedForTicker || null);
   const [resolvedTicker, setResolvedTicker] = useState(draft?.pricedForTicker || null);
+  // Откуда взято загруженное ГО: true — у брокера (Т-Банк, лонг и шорт отдельно), false — биржа (одно число на обе стороны).
+  const [marginFromBroker, setMarginFromBroker] = useState(!!draft?.marginFromBroker);
 
   useEffect(() => {
     try {
       sessionStorage.setItem(CALC_DRAFT_KEY, JSON.stringify({
-        form, instrumentType, priceSource, orderType, manualContracts, forcedDir, stopIsSizingOnly,
+        form, instrumentType, priceSource, orderType, manualContracts, forcedDir, stopIsSizingOnly, marginFromBroker,
         // Which ticker `form.entryPrice`/`stopLoss`/`takeProfit` actually belong to —
         // restored into loadedTickerRef below so a page reload doesn't forget it (see
         // that ref's own comment). Without this, reloading the page then loading a
@@ -192,7 +195,7 @@ export default function Calculator() {
       }));
     } catch { /* private mode/quota — черновик просто не сохранится */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [form, instrumentType, priceSource, orderType, manualContracts, forcedDir, resolvedTicker, stopIsSizingOnly]);
+  }, [form, instrumentType, priceSource, orderType, manualContracts, forcedDir, resolvedTicker, stopIsSizingOnly, marginFromBroker]);
   const [result, setResult] = useState(null);
   const [liveTrades, setLiveTrades] = useState([]); // for the "Депозит" default — see computeLiveBalance effect below
   const [instrumentInfo, setInstrumentInfo] = useState(null);
@@ -508,25 +511,37 @@ export default function Calculator() {
         if (isNewTicker) setForm(f => ({ ...f, entryPrice: orderType === 'limit' ? '' : f.entryPrice, stopLoss: '', takeProfit: '' }));
         if (instrumentType === 'future') {
           const card = await fetchActiveFutureCard(ticker);
+          // Сделки идут через Т-Банк, а его ГО отличается от биржевого (и для лонга, и для шорта своё). Поэтому, если в Настройках сохранён
+          // токен, ГО берём у брокера, даже когда цену смотрим по MOEX; биржевое — только запасной вариант.
+          let broker = null;
+          if (tapi) {
+            try { broker = parseBrokerFutureMargin(await tapi.withFuturesMargin(await tapi.getFutureByTicker(ticker))); }
+            catch { broker = null; }
+          }
+          setMarginFromBroker(!!broker);
+          const fmtNum = (n) => n ? String(n).replace(',', '.') : '';
+          const goBuy = broker ? fmtNum(broker.initialMarginBuy) : fmtNum(card?.initialMargin);
+          const goSell = broker ? fmtNum(broker.initialMarginSell) : fmtNum(card?.initialMargin);
           if (card) {
-            const fmtNum = (n) => n ? String(n).replace(',', '.') : '';
             setForm(f => ({
               ...f,
               lot: String(card.lot || 1),
               minStep: fmtNum(card.minPriceIncrement) || '1',
               minStepAmount: fmtNum(card.minPriceIncrementAmount) || '',
-              // Биржа (MOEX) отдаёт одно ГО без деления на лонг/шорт — ставим его на обе стороны.
+              // Биржа (MOEX) отдаёт одно ГО без деления на лонг/шорт — ставим его на обе стороны; Т-Банк — отдельно на каждую.
               initialMargin: '',
-              initialMarginBuy: fmtNum(card.initialMargin) || '',
-              initialMarginSell: fmtNum(card.initialMargin) || '',
+              initialMarginBuy: goBuy || '',
+              initialMarginSell: goSell || '',
             }));
+            const goFrom = broker ? 'ГО — Т-Банка, шаг цены — с MOEX' : 'ГО и шаг цены подтянуты с MOEX (у Т-Банка ГО обычно выше — сохраните токен в Настройках)';
             toast.success(stale
-              ? `${ticker}: ${price} ₽ — рынок сейчас закрыт, это цена последнего закрытия. ГО и шаг цены подтянуты с MOEX`
-              : `${ticker}: ${price} ₽, ГО и шаг цены подтянуты с MOEX (задержка 15 мин)`);
+              ? `${ticker}: ${price} ₽ — рынок сейчас закрыт, это цена последнего закрытия. ${goFrom}`
+              : `${ticker}: ${price} ₽, ${goFrom} (задержка цены 15 мин)`);
           } else {
+            if (broker) setForm(f => ({ ...f, initialMargin: '', initialMarginBuy: goBuy || '', initialMarginSell: goSell || '' }));
             toast.success(stale
-              ? `${ticker}: ${price} ₽ — рынок сейчас закрыт, это цена последнего закрытия. ГО/шаг цены не найдены — введите вручную`
-              : `${ticker}: ${price} ₽ (MOEX, задержка 15 мин). ГО/шаг цены не найдены — введите вручную`);
+              ? `${ticker}: ${price} ₽ — рынок сейчас закрыт, это цена последнего закрытия. Шаг цены не найден — введите вручную`
+              : `${ticker}: ${price} ₽ (MOEX, задержка 15 мин). Шаг цены не найден — введите вручную`);
           }
         } else {
           toast.success(stale
@@ -546,6 +561,7 @@ export default function Calculator() {
         if (instrumentType !== 'stock') raw = await tapi.withFuturesMargin(raw);
         const info = instrumentType === 'stock' ? parseShareInfo(raw) : parseFutureInfo(raw);
         setInstrumentInfo(info);
+        setMarginFromBroker(instrumentType !== 'stock' && (info.initialMarginOnBuy > 0 || info.initialMarginOnSell > 0));
         // Логотип пришёл в этом же ответе Т-Банка — кладём в общий кэш, чтобы Радар,
         // каталог и Журнал показывали его без обращения к Т-Банку сами.
         cacheLogo({ ticker, instrumentType, basicAsset: info.basicAsset, logoName: info.logoName });
@@ -856,7 +872,7 @@ export default function Calculator() {
         ...(instrumentType === 'future' && displayResult.marginPerContract > 0 ? {
           marginPerContract: displayResult.marginPerContract,
           marginSide: displayResult.marginSide || null,
-          marginSource: form.initialMargin ? 'manual' : (priceSource === 'tinkoff' ? 'tbank' : 'moex'),
+          marginSource: form.initialMargin ? 'manual' : (marginFromBroker ? 'tbank' : 'moex'),
           leverageAtEntry: leverageValue(leverageOf(entryPriceFinal * (displayResult.rubPerPoint || 0), displayResult.marginPerContract)),
         } : {}),
         // Комиссия из плана верна только для ПЛАНОВОЙ цены/объёма — если заявка
@@ -928,6 +944,7 @@ export default function Calculator() {
         initialMargin: '', initialMarginBuy: '', initialMarginSell: '', minStep: '1', minStepAmount: '', lot: '1',
       }));
       setInstrumentInfo(null);
+      setMarginFromBroker(false);
       setForcedDir(null);
       setManualContracts('');
       loadedTickerRef.current = null;
@@ -1039,6 +1056,7 @@ export default function Calculator() {
               setInstrumentType(val);
               setManualContracts('');
               setInstrumentInfo(null);
+              setMarginFromBroker(false);
               setForcedDir(null);
               setForm(f => ({ ...f, ticker:'', entryPrice:'', stopLoss:'', takeProfit:'', initialMargin:'', initialMarginBuy:'', initialMarginSell:'', minStep:'1', minStepAmount:'', lot:'1' }));
             }}
@@ -1065,7 +1083,7 @@ export default function Calculator() {
 
       {priceSource === 'moex' && (
         <div style={{background:'rgba(245,158,11,0.1)',border:'1px solid rgba(245,158,11,0.3)',borderRadius:10,padding:'8px 14px',marginBottom:16,fontSize:12,color:'var(--gold)'}}>
-          MOEX: данные с задержкой ~15 минут. Работает без токена Т-Инвестиций. Для фьючерсов ГО и шаг цены подтягиваются автоматически (если контракт сейчас торгуется), иначе — вводятся вручную.
+          MOEX: цена с задержкой ~15 минут. Работает без токена Т-Инвестиций. Для фьючерсов шаг цены подтягивается автоматически (если контракт сейчас торгуется), иначе вводится вручную. ГО берётся у Т-Банка, если в Настройках сохранён токен; без токена — биржевое (у брокера оно обычно выше), и это подписано.
         </div>
       )}
 
@@ -1366,7 +1384,7 @@ export default function Calculator() {
             </div>
             {instrumentType === 'future' && !form.initialMargin && (form.initialMarginBuy || form.initialMarginSell) && (
               <div className="text-xs text-muted" style={{marginBottom:12}}>
-                ГО на контракт: лонг {formatCurrency(parseFloat(form.initialMarginBuy) || 0)} · шорт {formatCurrency(parseFloat(form.initialMarginSell) || 0)}.
+                ГО на контракт ({marginFromBroker ? 'Т-Банк' : 'биржа'}): лонг {rubText(parseFloat(form.initialMarginBuy) || 0)} · шорт {rubText(parseFloat(form.initialMarginSell) || 0)}.
                 В расчёт берётся ГО стороны вашей сделки; число, введённое выше руками, главнее.
               </div>
             )}
@@ -1374,6 +1392,7 @@ export default function Calculator() {
               <div className="calc-capacity" data-testid="calc-capacity">
                 <div className="calc-capacity-title">
                   На ваши деньги — {formatCurrency(futureCapacity.depositUsed)}, под ГО не больше {futureCapacity.maxMarginPercent} %
+                  {' '}· ГО: {form.initialMargin ? 'введено вручную' : marginFromBroker ? 'Т-Банк' : 'биржа'}
                 </div>
                 {[['long', 'ЛОНГ'], ['short', 'ШОРТ']].map(([k, name]) => {
                   const side = futureCapacity[k];
@@ -1384,7 +1403,7 @@ export default function Calculator() {
                         {side.maxByLimit > 0 ? <>до <b>{side.maxByLimit}</b> контр.</> : <b>не хватает денег</b>}
                       </span>
                       <span className="calc-capacity-sub">
-                        плечо ≈ <b>{leverageText(side.leverage) || '—'}</b> · ГО {formatCurrency(side.margin)} за контракт
+                        плечо <b>{leverageText(side.leverage) || '—'}</b> · ГО {rubText(side.margin)} за контракт
                         {side.maxByLimit === 0 && side.maxPhysical > 0 ? ` · по лимиту не проходит, но весь депозит под ГО вместил бы ${side.maxPhysical}` : ''}
                       </span>
                     </div>
@@ -1471,11 +1490,11 @@ export default function Calculator() {
                 {/* ГО */}
                 <div className={`calc-metric-card ${(displayResult.marginUsagePercent||0) > (displayResult.maxMarginPercent||30) ? 'red' : 'blue'}`}>
                   <div className="calc-metric-label">{instrumentType==='stock' ? 'СТОИМОСТЬ ПОЗИЦИИ' : 'ГО (ЗАМОРОЗКА)'}</div>
-                  <div style={{fontSize:20,fontWeight:800}}>{formatCurrency(instrumentType==='stock' ? displayResult.positionValue : displayResult.totalMargin)}</div>
+                  <div style={{fontSize:20,fontWeight:800}}>{instrumentType==='stock' ? formatCurrency(displayResult.positionValue) : rubText(displayResult.totalMargin)}</div>
                   <div style={{fontSize:11,color:(displayResult.marginUsagePercent||0)>(displayResult.maxMarginPercent||30)?'var(--red)':''}}>{displayResult.marginUsagePercent||0}% / лимит {displayResult.maxMarginPercent||30}%</div>
                   {instrumentType==='future' && displayResult.leverage > 0 && (
                     <div style={{fontSize:11,color:'var(--text-muted)'}}>
-                      Плечо ≈ {leverageText(displayResult.leverage)} · ГО {formatCurrency(displayResult.marginPerContract)} на {displayResult.marginSide==='short' ? 'шорт' : displayResult.marginSide==='long' ? 'лонг' : 'контракт'}
+                      Плечо {leverageText(displayResult.leverage)} · ГО {rubText(displayResult.marginPerContract)} на {displayResult.marginSide==='short' ? 'шорт' : displayResult.marginSide==='long' ? 'лонг' : 'контракт'}
                     </div>
                   )}
                   <div className="divider" style={{margin:'6px 0'}}/>
@@ -1603,7 +1622,7 @@ export default function Calculator() {
                   <div className="risk-gauge-fill" style={{width:`${Math.min(displayResult.marginUsagePercent||0,100)}%`,background:(displayResult.marginUsagePercent||0)>50?'linear-gradient(90deg,#f59e0b,#ef4444)':(displayResult.marginUsagePercent||0)>25?'linear-gradient(90deg,var(--accent-primary),#f59e0b)':'linear-gradient(90deg,var(--accent-primary),#10b981)'}}/>
                 </div>
                 <div className="risk-gauge-labels">
-                  <span className="text-sm text-secondary">{instrumentType==='stock'?'Позиция':'ГО'}: {formatCurrency(instrumentType==='stock'?displayResult.positionValue:displayResult.totalMargin)}</span>
+                  <span className="text-sm text-secondary">{instrumentType==='stock'?'Позиция':'ГО'}: {instrumentType==='stock' ? formatCurrency(displayResult.positionValue) : rubText(displayResult.totalMargin)}</span>
                   <span style={{fontWeight:700,fontSize:14,color:(displayResult.marginUsagePercent||0)>50?'var(--red)':'var(--text-primary)'}}>{displayResult.marginUsagePercent||0}%</span>
                 </div>
                 <div className="text-xs text-muted" style={{marginTop:6,color:(displayResult.marginUsagePercent||0)>70?'var(--gold)':(displayResult.marginUsagePercent||0)>40?'var(--gold)':'var(--green)'}}>

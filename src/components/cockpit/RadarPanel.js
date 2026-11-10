@@ -16,7 +16,7 @@ import { useRadarLive } from '../../context/RadarLiveContext';
 import { getRadarItems, addRadarItem, deleteRadarItem } from '../../services/radar';
 import { checkTradable } from '../../services/marketData/tradability';
 import useFuturesMargin from '../shared/useFuturesMargin';
-import { marginView, marginLine, levShort } from '../../services/marketData/marginTrack';
+import { marginView, marginLine, levShort, ruGo } from '../../services/marketData/marginTrack';
 import { getUserTrades } from '../../services/trades';
 import { getOpenPaperTrades } from '../../services/paperTrades';
 import { getCachedLogos, logoUrlFromName, logoCacheKey } from '../../services/marketData/instrumentLogos';
@@ -45,7 +45,10 @@ export default function RadarPanel({ filterId: filterIdProp, onFilterChange, onI
   const navigate = useNavigate();
   const { radarLive, setRadarLive, radarUpdatedAt, radarResults } = useRadarLive() || {};
   const [items, setItems] = useState([]);
-  const futuresMargin = useFuturesMargin(items.some((i) => i.instrumentType === 'future'), user?.uid);
+  const futuresMargin = useFuturesMargin(
+    items.some((i) => i.instrumentType === 'future'), user?.uid,
+    { token: userProfile?.tinkoffToken, tickers: items.filter((i) => i.instrumentType === 'future').map((i) => i.ticker) },
+  );
   const [pickerOpen, setPickerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [ownTickers, setOwnTickers] = useState([]);
@@ -229,7 +232,7 @@ export default function RadarPanel({ filterId: filterIdProp, onFilterChange, onI
           const paperTradeId = paperByTicker[it.ticker.toUpperCase()];
           const logoKey = logoCacheKey({ ticker: it.ticker, instrumentType: it.instrumentType, basicAsset: known?.basicAsset });
           const mv = it.instrumentType === 'future' && futuresMargin.table
-            ? marginView({ ticker: it.ticker, table: futuresMargin.table, state: futuresMargin.state })
+            ? marginView({ ticker: it.ticker, table: futuresMargin.table, state: futuresMargin.state, broker: futuresMargin.broker })
             : null;
           return (
             <div key={it.id} className="ck-radar-item">
@@ -261,9 +264,9 @@ export default function RadarPanel({ filterId: filterIdProp, onFilterChange, onI
                   {mv && (
                     <div className="ck-radar-sub ck-radar-margin" title={marginTitle(mv)}>
                       {marginLine(mv)}
-                      {mv.src !== 'tbank' && <span className="ck-radar-src"> · биржа</span>}
+                      <span className="ck-radar-src"> · {mv.src === 'tbank' ? 'Т-Банк' : 'биржа'}</span>
                       {mv.change?.visible && (
-                        <span className="ck-radar-chg" title={`Раньше ГО было ${rubText(mv.change.from)} ₽, стало ${rubText(mv.change.to)} ₽`}>
+                        <span className="ck-radar-chg" title={`Раньше ГО было ${ruGo(mv.change.from)} ₽, стало ${ruGo(mv.change.to)} ₽`}>
                           {' '}· было {levShort(mv.change.levFrom)}
                         </span>
                       )}
@@ -306,12 +309,12 @@ function marginTitle(mv) {
     `Контракт ${mv.secid}${mv.viaRoot ? ` (радар следит за «${mv.viaRoot}» — это ближайший действующий контракт)` : ''}`,
     mv.price ? `цена ${rubText(mv.price)}${mv.priceKind === 'settle' ? ' (расчётная)' : mv.priceKind === 'prev' ? ' (вчерашняя расчётная)' : ''}, стоимость контракта ≈ ${rubText(mv.value)} ₽` : null,
     mv.src === 'tbank'
-      ? 'ГО — Т-Банка (лонг и шорт отдельно), обновляется роботом раз в час'
-      : 'ГО — по данным биржи, одно число на обе стороны. У брокера оно обычно выше на несколько процентов, у шорта иногда заметно выше: перед сделкой сверьтесь с терминалом',
-    'Плечо = стоимость контракта / ГО; меняется и с ценой, и с ГО',
+      ? 'ГО — Т-Банка (лонг и шорт отдельно), спрашивается у брокера по вашему токену'
+      : 'ГО — по данным биржи, одно число на обе стороны. У брокера оно обычно выше на несколько процентов, у шорта иногда заметно выше. Чтобы видеть ГО Т-Банка, сохраните токен Т-Инвестиций в Настройках',
+    'Плечо = стоимость контракта / ГО (без округления); меняется и с ценой, и с ГО',
     mv.daysLeft != null ? `до конца торгов контрактом ${mv.daysLeft} дн.` : null,
     mv.fee ? `биржевой сбор ≈ ${mv.fee.toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽ за контракт` : null,
-    mv.change ? `ГО менялось: ${rubText(mv.change.from)} → ${rubText(mv.change.to)} ₽ (${new Date(mv.change.at).toLocaleDateString('ru-RU')})` : null,
+    mv.change ? `ГО менялось: ${ruGo(mv.change.from)} → ${ruGo(mv.change.to)} ₽ (${new Date(mv.change.at).toLocaleDateString('ru-RU')})` : null,
   ];
   return parts.filter(Boolean).join(' · ');
 }

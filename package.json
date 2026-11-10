@@ -61,6 +61,7 @@
     "test:period": "node scripts/periodReportTests.mjs",
     "test:radarclean": "node scripts/radarCleanupTests.mjs",
     "test:margin": "node scripts/marginTrackTests.mjs && node scripts/futuresMarginRunTests.mjs",
+    "test:brokerclient": "node scripts/brokerMarginClientTests.mjs",
     "test:gate": "node scripts/robotGateTests.mjs",
     "test:leverage": "node scripts/leverageMathTests.mjs",
     "test:turnover": "node scripts/dayTurnoverTests.mjs",

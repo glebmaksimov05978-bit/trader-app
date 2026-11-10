@@ -72,8 +72,8 @@ let run2 = M.planMarginRun({ prev: run1.state, wanted, table: T2, prefs: PREFS, 
 ok('ГО +5 % → одно изменение по MMZ6, RNZ6 не тронут', run2.changes.length === 1 && run2.changes[0].secid === 'MMZ6' && near(run2.changes[0].pct.buy, 5, 1e-6));
 ok('в состоянии видно прошлое значение и время изменения', near(run2.state.items.MMZ6.prevBuy, 2750.56, 1e-6) && !!run2.state.items.MMZ6.since);
 const msg = M.formatMarginMessage(run2);
-ok('сообщение: плечо — главное и первое (9,0× → 8,5× при цене), затем ГО было → стало с процентом, пометка про биржу', /Изменилось плечо/.test(msg) && /MMZ6/.test(msg) && /плечо 9,0× → 8,5× \(при цене 2\s?469\)/.test(msg) && /ГО 2\s?751 → 2\s?888 ₽ \(\+5,0 %\)/.test(msg) && msg.indexOf('плечо 9') < msg.indexOf('ГО 2') && /по данным биржи/.test(msg));
-ok('плечо в сообщении упало (было 9,0×, стало 8,5×: 24 692 ₽ / 2 888 ₽)', /9,0× → 8,5×/.test(msg));
+ok('сообщение: плечо — главное и первое (8,98× → 8,55× при цене), затем ГО было → стало с копейками и процентом, пометка про биржу', /Изменилось плечо/.test(msg) && /MMZ6/.test(msg) && /плечо 8,98× → 8,55× \(при цене 2\s?469\)/.test(msg) && /ГО 2\s?750,56 → 2\s?888,09 ₽ \(\+5,0 %\)/.test(msg) && msg.indexOf('плечо 8,98') < msg.indexOf('ГО 2') && /по данным биржи/.test(msg));
+ok('плечо в сообщении упало (было 8,98×, стало 8,55×: 24 691,5 / 2 888,09)', /8,98× → 8,55×/.test(msg));
 
 // Маленькие шаги копятся: +2 %, затем ещё +2 % → вместе 4 % ≥ порога → сообщение на втором шаге
 const Ta = M.parseFortsTable(mk(2750.56 * 1.02)), Tb = M.parseFortsTable(mk(2750.56 * 1.0404));
@@ -132,17 +132,25 @@ ok('несуществующий тикер попадает в missing, про�
 // --- строка для радара
 const v = M.marginView({ ticker: 'MM', table: T, state: run1.state, now: NOW });
 ok('радар: корень MM показывает данные MMZ6', v.secid === 'MMZ6' && v.viaRoot === 'MM' && v.src === 'moex');
-ok('радар: строка «плечо ≈ 9× · ГО 2 751 ₽» — плечо первым и округлённое', /^плечо ≈ 9× · ГО 2\s?751 ₽$/.test(M.marginLine(v)));
-ok('плечо в радаре не «рябит»: 8,6× и 9,4× подписываются одинаково («9×»), малое — с десятой (4,3×)', M.levShort(8.6) === '9×' && M.levShort(9.4) === '9×' && M.levShort(4.26) === '4,3×' && M.levShort(0) === '');
+ok('радар: строка «плечо 8,98× · ГО 2 750,56 ₽» — плечо первым, ничего не округлено', /^плечо 8,98× · ГО 2\s750,56 ₽$/.test(M.marginLine(v)));
+ok('плечо в радаре не округляется до целого: 8,6× и 9,4× — разные подписи («8,60×», «9,40×»), малое — тоже два знака', M.levShort(8.6) === '8,60×' && M.levShort(9.4) === '9,40×' && M.levShort(4.26) === '4,26×' && M.levShort(0) === '');
+ok('ГО с копейками: 2 750,56; целое — без «,00»', M.ruGo(2750.56) === '2\u00a0750,56' && M.ruGo(3300) === '3\u00a0300' && M.ruGo(3300.5) === '3\u00a0300,50');
+// ГО брокера, которое приложение спросило само, главнее и биржевого, и состояния робота
+const brk = new Map([['MMZ6', { buy: 2900.12, sell: 3300.5 }]]);
+const vBrk = M.marginView({ ticker: 'MM', table: T, state: run1.state, broker: brk, now: NOW });
+ok('радар: ГО Т-Банка, спрошенное в приложении, главнее биржевого — src «tbank», лонг/шорт отдельно', vBrk.src === 'tbank' && vBrk.buy === 2900.12 && vBrk.sell === 3300.5 && /^плечо 8,51× \/ 7,48× · ГО лонг 2\s900,12 \/ шорт 3\s300,50 ₽$/.test(M.marginLine(vBrk)));
+ok('…а без ответа брокера остаётся биржа', M.marginView({ ticker: 'MM', table: T, state: run1.state, broker: new Map(), now: NOW }).src === 'moex' && M.marginView({ ticker: 'MM', table: T, state: run1.state, broker: null, now: NOW }).src === 'moex');
+ok('…и если у брокера пришла только одна сторона, вторая берётся такой же', M.marginView({ ticker: 'MM', table: T, state: null, broker: new Map([['MMZ6', { buy: 3000, sell: 0 }]]), now: NOW }).sell === 3000);
 const vTb = M.marginView({ ticker: 'MMZ6', table: T, state: { ...sw.state }, now: NOW });
 ok('радар: данные Т-Банка (лонг/шорт) показываются, пока состояние свежее', vTb.src === 'tbank' && /лонг 2\s?900 \/ шорт 3\s?300/.test(M.marginLine(vTb)));
 const vOld = M.marginView({ ticker: 'MMZ6', table: T, state: { ...sw.state, at: '2026-11-01T00:00:00Z' }, now: NOW });
 ok('…а устаревшее состояние (>36 ч) не выдаётся за актуальное: показываем биржу', vOld.src === 'moex' && vOld.buy === 2750.56);
 const vChg = M.marginView({ ticker: 'MMZ6', table: T2, state: run2.state, now: NOW });
-ok('радар: изменение ГО (+5 %) запомнено, но значок скрыт — подпись плеча та же («9×»): не рябим', vChg.change && near(vChg.change.pct, 5, 1e-6) && vChg.change.visible === false);
+ok('радар: изменение ГО (+5 %) запомнено и значок виден — подпись плеча теперь другая (8,98× → 8,55×)', vChg.change && near(vChg.change.pct, 5, 1e-6) && vChg.change.visible === true && M.levShort(vChg.change.levFrom) === '8,98×' && M.levShort(vChg.change.levTo) === '8,55×');
+ok('значок «было …» не показывается, если ГО спрошено у брокера, а робот следил за биржей (числа разных источников не сравниваем)', M.marginView({ ticker: 'MMZ6', table: T2, state: run2.state, broker: brk, now: NOW }).change === null);
 const bigPrev = { at: NOW.toISOString(), items: { MMZ6: { buy: 2292.13, sell: 2292.13, src: 'moex', prevBuy: 2292.13, prevSell: 2292.13, since: NOW.toISOString() } } };
 const vBig = M.marginView({ ticker: 'MMZ6', table: T, state: { ...bigPrev, items: { MMZ6: { buy: 2750.56, sell: 2750.56, src: 'moex', prevBuy: 2292.13, prevSell: 2292.13, since: NOW.toISOString() } } }, now: NOW });
-ok('радар: ГО +20 % меняет подпись плеча (11× → 9×) — значок виден', vBig.change.visible === true && M.levShort(vBig.change.levFrom) === '11×' && M.levShort(vBig.change.levTo) === '9×');
+ok('радар: ГО +20 % меняет подпись плеча (10,77× → 8,98×) — значок виден', vBig.change.visible === true && M.levShort(vBig.change.levFrom) === '10,77×' && M.levShort(vBig.change.levTo) === '8,98×');
 const vChgOld = M.marginView({ ticker: 'MMZ6', table: T2, state: run2.state, now: new Date(NOW.getTime() + 20 * 86400e3) });
 ok('…и пропадает через 14 суток', vChgOld.change === null);
 ok('нет такого фьючерса → null, пустая строка', M.marginView({ ticker: 'ZZZ9', table: T, state: null, now: NOW }) === null && M.marginLine(null) === '');

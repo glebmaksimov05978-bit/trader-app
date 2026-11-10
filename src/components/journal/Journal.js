@@ -30,7 +30,7 @@ import ImportModal from './ImportModal';
 import './Journal.css';
 
 import Icon from '../shared/Icon';
-import { tradeLeverage, leverageText, returnOnMarginPct } from '../../services/leverageMath';
+import { tradeLeverage, leverageText, returnOnMarginPct, rubText } from '../../services/leverageMath';
 const COLS = ['Тикер', 'Дата', 'Направление', 'Вход', 'Выход', 'Объём', 'P&L', '% депоз.', 'Статус', ''];
 
 export default function Journal() {
@@ -809,10 +809,12 @@ export default function Journal() {
                           return (
                             <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:12}} data-testid="journal-trade-leverage">
                               Плечо при открытии: <strong style={{color:'var(--text-primary)'}}>{leverageText(lv.leverage)}</strong>
-                              {lv.margin > 0 && <> · ГО {formatCurrency(lv.margin)} × {formatNumber(parseFloat(trade.volume) || 0, 0)} = <strong style={{color:'var(--text-primary)'}}>{formatCurrency(lv.marginTotal)}</strong>
-                                {dep > 0 ? ` (${formatNumber((lv.marginTotal / dep) * 100, 0)} % депозита)` : ''}</>}
+                              {lv.margin > 0 && <> · ГО {rubText(lv.margin)} × {formatNumber(parseFloat(trade.volume) || 0, 0)} = <strong style={{color:'var(--text-primary)'}}>{rubText(lv.marginTotal)}</strong>
+                                {dep > 0 ? ` (${formatNumber((lv.marginTotal / dep) * 100, 1)} % депозита)` : ''}</>}
+                              {lv.source === 'tbank' && ' · ГО Т-Банка'}
                               {lv.source === 'moex' && ' · ГО по данным биржи'}
-                              {ret != null && <> · результат <strong style={{color: ret >= 0 ? 'var(--green)' : 'var(--red)'}}>{ret >= 0 ? '+' : '−'}{formatNumber(Math.abs(ret), Math.abs(ret) < 10 ? 1 : 0)} % от ГО</strong></>}
+                              {lv.source === 'manual' && ' · ГО введено вручную'}
+                              {ret != null && <> · результат <strong style={{color: ret >= 0 ? 'var(--green)' : 'var(--red)'}}>{ret >= 0 ? '+' : '−'}{formatNumber(Math.abs(ret), 2)} % от ГО</strong></>}
                             </div>
                           );
                         })()}
