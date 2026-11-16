@@ -25,7 +25,8 @@ export default function ReportExportModal({
   open, onClose, realTrades = [], paperTrades = [], strategyList = [], defaultScope = 'real', defaultStrategies = [],
   profile = {}, legPnl = null, habitsFn = null, userName = '', pageRange = null, canSchedule = false, updateUserProfile = null,
 }) {
-  const [tab, setTab] = useState('now');
+  // Вкладки «Скачать / По расписанию» больше нет: расписание — в Настройках → Уведомления.
+  const tab = 'now';
   const saved = useMemo(readPrefs, []);
   const [preset, setPreset] = useState(saved.preset || 'last_month');
   const [from, setFrom] = useState(saved.from || '');
@@ -35,7 +36,7 @@ export default function ReportExportModal({
   const [sections, setSections] = useState(Array.isArray(saved.sections) && saved.sections.length ? saved.sections : DEFAULT_SECTIONS);
   const [busy, setBusy] = useState('');
 
-  useEffect(() => { if (open) { setScope(defaultScope); setPicked(defaultStrategies); setTab('now'); } }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (open) { setScope(defaultScope); setPicked(defaultStrategies); } }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
@@ -111,11 +112,11 @@ export default function ReportExportModal({
           <button type="button" className="rx-x" aria-label="Закрыть" onClick={onClose}><Icon name="close" size={16} /></button>
         </header>
 
+        {/* Отправка по расписанию переехала в Настройки → Уведомления (решение владельца, 2026-11-15). */}
         {canSchedule && (
-          <div className="rx-tabs" role="tablist" aria-label="Режим">
-            <button type="button" role="tab" aria-selected={tab === 'now'} className={tab === 'now' ? 'on' : ''} onClick={() => setTab('now')}>Скачать сейчас</button>
-            <button type="button" role="tab" aria-selected={tab === 'schedule'} className={tab === 'schedule' ? 'on' : ''} onClick={() => setTab('schedule')}>По расписанию</button>
-          </div>
+          <p className="rx-note" style={{ margin: '0 20px' }}>
+            Отправка отчёта по расписанию (Telegram, почта) — в <a href="/settings?tab=notif">Настройках → Уведомления</a>.
+          </p>
         )}
 
         {tab === 'schedule' && canSchedule ? (

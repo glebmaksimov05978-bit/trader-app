@@ -78,7 +78,8 @@ export default function Journal() {
   const [savingManualSpec, setSavingManualSpec] = useState(null); // tradeId в процессе сохранения
   // "Сделки" | "Радар" — watchlist of tickers with a setup forming, kept separate from
   // the trades table because a radar item isn't a position yet.
-  const [view, setView] = useState('trades');
+  // ?view=radar — сразу на вкладку «Радар» (ссылка из «Готовности к Сопровождению» в Стратегиях).
+  const [view, setView] = useState(() => { try { return new URLSearchParams(window.location.search).get('view') === 'radar' ? 'radar' : 'trades'; } catch { return 'trades'; } });
   const [radarItems, setRadarItems] = useState([]);
   const [radarLoading, setRadarLoading] = useState(true);
   const [radarState, setRadarState] = useState({}); // itemId -> { loading, data, error }

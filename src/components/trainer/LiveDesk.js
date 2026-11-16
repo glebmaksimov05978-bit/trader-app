@@ -32,7 +32,7 @@ async function loadCandles({ ticker, instrumentType, timeframe, tinkoffToken, si
   return fetchDailyCandles({ ticker, instrumentType, toDate: new Date(), tinkoffToken, timeframe, lookbackDays: days });
 }
 
-export default function LiveDesk({ trades, onChanged }) {
+export default function LiveDesk({ trades, onChanged , defaultRisk }) {
   const { user, userProfile } = useAuth();
   const strategies = useMemo(() => getStrategies(userProfile), [userProfile]);
   const token = userProfile?.tinkoffToken || null;
@@ -45,7 +45,11 @@ export default function LiveDesk({ trades, onChanged }) {
   const [ticker, setTicker] = useState('SBER');
   const [timeframe, setTimeframe] = useState('D1');
   const [strategyId, setStrategyId] = useState('');
-  const [riskMoney, setRiskMoney] = useState('1000');
+  // Риск сделки по умолчанию — от учебного счёта (риск % × текущий баланс); своё число человека не перезаписывается.
+  const [riskMoney, setRiskMoneyRaw] = useState(String(defaultRisk > 0 ? defaultRisk : 1000));
+  const riskTouched = useRef(false);
+  const setRiskMoney = (v) => { riskTouched.current = true; setRiskMoneyRaw(v); };
+  useEffect(() => { if (!riskTouched.current && defaultRisk > 0) setRiskMoneyRaw(String(defaultRisk)); }, [defaultRisk]);
   const [orderStop, setOrderStop] = useState('');
   const [orderTake, setOrderTake] = useState('');
   const [form, setForm] = useState(null);           // { ticker, timeframe, instrumentType, candles }
@@ -297,7 +301,7 @@ export default function LiveDesk({ trades, onChanged }) {
                   <input id="tr-live-take" className="input" inputMode="decimal" value={orderTake} onChange={(e) => setOrderTake(e.target.value)} />
                 </div>
                 <div className="input-group">
-                  <label className="input-label" htmlFor="tr-live-risk">Риск на сделку, ₽ (условно)</label>
+                  <label className="input-label" htmlFor="tr-live-risk">Риск на сделку, ₽ (от учебного счёта)</label>
                   <input id="tr-live-risk" className="input" inputMode="decimal" value={riskMoney} onChange={(e) => setRiskMoney(e.target.value)} />
                 </div>
                 <div className="input-group">

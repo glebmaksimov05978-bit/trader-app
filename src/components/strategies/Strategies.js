@@ -17,6 +17,8 @@ import { writeCkView } from '../cockpit/Cockpit';
 import Capital from '../capital/Capital';
 import Backtest from '../backtest/Backtest';
 import StrategyOverview from '../cockpit/StrategyOverview';
+import StrategyReadiness from './StrategyReadiness';
+import { getRadarItems } from '../../services/radar';
 import '../cockpit/Cockpit.css';
 import '../report/MonthlyReport.css';
 
@@ -36,9 +38,15 @@ export default function Strategies() {
   const strategies = useMemo(() => getStrategies(userProfile), [userProfile]);
   const [paper, setPaper] = useState(null);
   useEffect(() => {
-    if (tab !== 'live' || !user || paper) return;
+    if (!user || paper) return;
     getPaperTrades(user.uid).then(setPaper).catch(() => setPaper([]));
-  }, [tab, user, paper]);
+  }, [user, paper]);
+  // Радар — для «Готовности к Сопровождению» (есть ли у стратегии инструменты, которые робот смотрит).
+  const [radarItems, setRadarItems] = useState(null);
+  useEffect(() => {
+    if (tab !== 'rules' || !user || radarItems) return;
+    getRadarItems(user.uid).then(setRadarItems).catch(() => setRadarItems([]));
+  }, [tab, user, radarItems]);
   const groups = useMemo(() => groupPaperByStrategy(paper || []).groups, [paper]);
 
   // Нажатие на стратегию открывает Сопровождение уже в её режиме.
@@ -60,7 +68,12 @@ export default function Strategies() {
         ))}
       </div>
 
-      {tab === 'rules' && <Capital view="strategies" embedded />}
+      {tab === 'rules' && (
+        <>
+          <StrategyReadiness strategies={strategies} radarItems={radarItems || []} paperTrades={paper || []} userProfile={userProfile} />
+          <Capital view="strategies" embedded />
+        </>
+      )}
 
       {tab === 'history' && canBacktest && <Backtest embedded />}
 

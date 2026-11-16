@@ -11,11 +11,29 @@ import { normalizeTaPrefs } from '../../services/analytics/taView';
 import TaSettingsCard from './TaSettingsCard';
 import OnboardingCard from '../onboarding/OnboardingCard';
 import { TRUSTED_UIDS } from '../../constants/trustedUids';
+import ReportScheduleTab from '../report/ReportScheduleTab';
+import { DEFAULT_SECTIONS } from '../../services/report/exportReport';
+import '../report/ReportExport.css';
+import '../report/MonthlyReport.css';
 import toast from 'react-hot-toast';
 
 import Icon from '../shared/Icon';
+// Вкладки настроек (решение владельца, 2026-11-11/15): подключения, уведомления, торговля. Риск и деньги — в «Капитале».
+const SETTINGS_TABS = [['conn', 'Подключения'], ['notif', 'Уведомления'], ['trade', 'Торговля']];
+
 export default function Settings() {
+  const [setTab, setSetTab] = useState(() => {
+    let t = null;
+    try { t = new URLSearchParams(window.location.search).get('tab'); } catch { /* нет адреса */ }
+    return SETTINGS_TABS.some((x) => x[0] === t) ? t : 'conn';
+  });
+  const pickSetTab = (id) => {
+    setSetTab(id);
+    try { const u = new URL(window.location.href); u.searchParams.set('tab', id); window.history.replaceState(null, '', u.toString()); } catch { /* не важно */ }
+  };
   const { user, userProfile, updateUserProfile } = useAuth();
+  // Отчёт по расписанию — пока только доверенным (как было в окне выгрузки).
+  const canSchedule = userProfile?.role === 'admin' || TRUSTED_UIDS.includes(user?.uid);
   // Оборот по фьючерсам за сегодня — по записям журнала; нужен карточке тарифа, чтобы показать
   // ступень лестницы комиссии. Не получилось загрузить — карточка просто без этой строки.
   const [todayTurnover, setTodayTurnover] = useState(null);
@@ -153,10 +171,17 @@ export default function Settings() {
     <div className="page">
       <div className="page-header">
         <h1 className="page-title">Настройки</h1>
-        <p className="page-subtitle">Профиль и интеграции</p>
+        <p className="page-subtitle">Подключения, уведомления и торговые параметры. Деньги и риск — в «Капитале»</p>
       </div>
 
       <div style={{maxWidth: 1040}} className="settings-wrap">
+        <div className="mr-tabs" role="tablist" aria-label="Разделы настроек" style={{ marginBottom: 16 }}>
+          {SETTINGS_TABS.map(([id, label]) => (
+            <button key={id} role="tab" aria-selected={setTab === id} className={setTab === id ? 'on' : ''} onClick={() => pickSetTab(id)}>{label}</button>
+          ))}
+        </div>
+
+        {setTab === 'conn' && (<>
         <div className="card" style={{marginBottom:20}}>
           <div className="section-title">
             <div className="section-title-icon"><Icon name="user" size={15} /></div>
@@ -204,7 +229,9 @@ export default function Settings() {
             </button>
           </div>
         </div>
+        </>)}
 
+        {setTab === 'conn' && (<>
         <div className="card" style={{marginBottom:20}}>
           <div className="section-title">
             <div className="section-title-icon"><Icon name="lock" size={15} /></div>
@@ -249,16 +276,24 @@ export default function Settings() {
             <div className="input-hint">Токен хранится в вашем профиле Firestore, не передаётся третьим лицам</div>
           </div>
         </div>
+        </>)}
 
+        {setTab === 'trade' && (<>
         <TariffCard tariffId={form.brokerTariff} onChange={(id) => set('brokerTariff', id)} onSave={save} saving={saving} turnover={todayTurnover} />
+        </>)}
 
+        {setTab === 'conn' && (<>
         <OrderWorkerCard userProfile={userProfile} updateUserProfile={updateUserProfile} />
+        </>)}
 
+        {setTab === 'trade' && (<>
         {/* Часы работы фонового робота. Раньше он был жёстко прибит к 10:00-18:40 МСК и
             всю вечернюю сессию не видел вообще — а по фьючерсам это живая половина дня.
             Теперь сессии берутся из общего расписания, а трейдер решает, какие смотреть. */}
         <TaSettingsCard value={taPrefs} onChange={setTaPrefs} onSave={saveTaPrefs} saving={taSaving} dirty={taDirty} />
+        </>)}
 
+        {setTab === 'notif' && (<>
         <div className="card" style={{marginBottom:20}}>
           <div className="section-title">
             <div className="section-title-icon"><Icon name="clock" size={15} /></div>
@@ -303,7 +338,9 @@ export default function Settings() {
             {saving ? 'Сохранение…' : 'Сохранить'}
           </button>
         </div>
+        </>)}
 
+        {setTab === 'notif' && (<>
         {/* Бумажные сделки ведёт робот, реальных денег они не касаются — поэтому здесь
             можно позволить то, что для настоящей торговли было бы опасно. */}
         <div className="card" style={{marginBottom:20}}>
@@ -401,7 +438,9 @@ export default function Settings() {
             {saving ? 'Сохранение…' : 'Сохранить'}
           </button>
         </div>
+        </>)}
 
+        {setTab === 'trade' && (<>
         <div className="card" style={{marginBottom:20}}>
           <div className="section-title">
             <div className="section-title-icon"><Icon name="chart" size={15} /></div>
@@ -444,8 +483,10 @@ export default function Settings() {
             </div>
           </div>
         </div>
+        </>)}
 
 
+        {setTab === 'notif' && (<>
         <div className="card" style={{marginBottom:20}}>
           <div className="section-title">
             <div className="section-title-icon"><Icon name="bell" size={15} /></div>
@@ -495,7 +536,9 @@ export default function Settings() {
             </div>
           )}
         </div>
+        </>)}
 
+        {setTab === 'notif' && (<>
         <div className="card" style={{marginBottom:20}}>
           <div className="section-title">
             <div className="section-title-icon"><Icon name="bell" size={15} /></div>
@@ -528,7 +571,9 @@ export default function Settings() {
             </div>
           )}
         </div>
+        </>)}
 
+        {setTab === 'trade' && (<>
         <div className="card" style={{marginBottom:20}}>
           <div className="section-title">
             <div className="section-title-icon"><Icon name="journal" size={15} /></div>
@@ -564,8 +609,22 @@ export default function Settings() {
             </button>
           </div>
         </div>
+        </>)}
 
+        {setTab === 'trade' && (<>
         <OnboardingCard trusted={userProfile?.role === 'admin' || TRUSTED_UIDS.includes(user?.uid)} />
+        </>)}
+
+        {setTab === 'notif' && canSchedule && (
+          <div className="card" style={{marginBottom:20}}>
+            <div className="section-title">
+              <div className="section-title-icon"><Icon name="file" size={15} /></div>
+              Отчёт по расписанию
+            </div>
+            <p className="text-sm text-secondary" style={{ marginTop: 0 }}>PDF-отчёт за прошедший период — в Telegram или на почту. Раньше настраивался в окне «Выгрузить отчёт» в Анализе.</p>
+            <ReportScheduleTab profile={userProfile} updateUserProfile={updateUserProfile} strategyList={getStrategies(userProfile).map((x) => ({ name: x.name || 'Без названия', count: 0 }))} defaultSections={DEFAULT_SECTIONS} />
+          </div>
+        )}
 
         <button className="btn btn-primary btn-lg" onClick={save} disabled={saving}>
           {saving ? <><div className="spinner" style={{width:16,height:16}}/> Сохранение...</> : 'Сохранить все настройки'}

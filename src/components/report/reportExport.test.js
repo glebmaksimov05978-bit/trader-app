@@ -19,6 +19,8 @@ jest.mock('../../services/report/exportClient', () => ({
 }));
 
 const ReportExportModal = require('./ReportExportModal').default;
+// Расписание переехало в Настройки → Уведомления: проверяется тот же компонент, что там показывается.
+const ReportScheduleTab = require('./ReportScheduleTab').default;
 
 const NOW = Date.now();
 const iso = (daysAgo) => new Date(NOW - daysAgo * 86400000).toISOString();
@@ -179,13 +181,12 @@ test('ошибка сборки показывается сообщением, �
   expect(byText('Скачать PDF').disabled).toBe(false);
 });
 
-// ---------- вкладка «По расписанию» ----------
+// ---------- расписание отчётов (Настройки → Уведомления) ----------
 function SchedHarness({ initial = {}, saves }) {
   const [profile, setProfile] = React.useState(initial);
   const update = async (d) => { saves.push(d); setProfile((p) => ({ ...p, ...d })); };
   return (
-    <ReportExportModal open onClose={() => {}} realTrades={trades} paperTrades={[]} strategyList={[{ name: 'Пробой', count: 2 }, { name: 'Отскок', count: 1 }]}
-      defaultScope="real" defaultStrategies={[]} pageRange={null} profile={profile} canSchedule updateUserProfile={update} />
+    <ReportScheduleTab profile={profile} updateUserProfile={update} strategyList={[{ name: 'Пробой', count: 2 }, { name: 'Отскок', count: 1 }]} />
   );
 }
 async function mountSched(initial = {}) {
@@ -193,11 +194,10 @@ async function mountSched(initial = {}) {
   host = document.createElement('div'); document.body.appendChild(host);
   root = createRoot(host);
   await act(async () => { root.render(<SchedHarness initial={initial} saves={saves} />); });
-  await click(byText('По расписанию'));
   return saves;
 }
 
-test('без права на расписания вкладки «По расписанию» нет', async () => {
+test('в окне выгрузки вкладки «По расписанию» больше нет — расписание в Настройках', async () => {
   await mount();
   expect(byText('По расписанию')).toBeUndefined();
 });

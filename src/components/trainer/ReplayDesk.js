@@ -7,7 +7,7 @@
 //
 // «Слепой режим» (по умолчанию): тикер и даты скрыты, пока сделка не закрыта — иначе игрок «вспоминает», что было дальше.
 import confirmDialog from '../shared/confirmDialog';
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import toast from 'react-hot-toast';
 import CandleChart from '../shared/CandleChart';
 import Icon from '../shared/Icon';
@@ -30,7 +30,7 @@ const fmtR = (x) => `${x >= 0 ? '+' : '−'}${Math.abs(x).toFixed(2).replace('.'
 const fmtPrice = (x) => (x == null ? '—' : x.toLocaleString('ru-RU', { maximumFractionDigits: 4 }));
 const REASON = { stop: 'сработал стоп', take: 'сработал тейк', manual: 'закрыто вручную', end: 'данные кончились' };
 
-export default function ReplayDesk({ onSaved }) {
+export default function ReplayDesk({ onSaved , defaultRisk }) {
   const { user, userProfile } = useAuth();
   const strategies = useMemo(() => getStrategies(userProfile), [userProfile]);
 
@@ -38,7 +38,11 @@ export default function ReplayDesk({ onSaved }) {
   const [ticker, setTicker] = useState('SBER');
   const [blind, setBlind] = useState(true);
   const [strategyId, setStrategyId] = useState('');
-  const [riskMoney, setRiskMoney] = useState('1000');
+  // Риск сделки по умолчанию — от учебного счёта (риск % × текущий баланс); своё число человека не перезаписывается.
+  const [riskMoney, setRiskMoneyRaw] = useState(String(defaultRisk > 0 ? defaultRisk : 1000));
+  const riskTouched = useRef(false);
+  const setRiskMoney = (v) => { riskTouched.current = true; setRiskMoneyRaw(v); };
+  useEffect(() => { if (!riskTouched.current && defaultRisk > 0) setRiskMoneyRaw(String(defaultRisk)); }, [defaultRisk]);
   // --- ход игры ---
   const [phase, setPhase] = useState('setup');      // setup | loading | run | done
   const [all, setAll] = useState([]);                // все свечи инструмента
@@ -209,7 +213,7 @@ export default function ReplayDesk({ onSaved }) {
             </select>
           </div>
           <div className="input-group">
-            <label className="input-label" htmlFor="tr-risk">Риск на сделку, ₽ (условно)</label>
+            <label className="input-label" htmlFor="tr-risk">Риск на сделку, ₽ (от учебного счёта)</label>
             <input id="tr-risk" className="input" inputMode="decimal" value={riskMoney} onChange={(e) => setRiskMoney(e.target.value)} />
           </div>
           <label className="tr-check">
