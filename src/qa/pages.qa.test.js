@@ -178,6 +178,13 @@ run('страницы для просмотра глазами', () => {
           for (const [text, suffix] of [['Мои ошибки', 'mistakes'], ['Я и система', 'versus'], ['Стратегии', 'strategies'], ['Итоги', 'summary']]) {
             const b = tabBtn(text);
             if (b) { await act(async () => { b.dispatchEvent(new MouseEvent('click', { bubbles: true })); }); snap(`tab-${suffix}`); }
+            // «Мои ошибки»: симулятор выходов по кнопке.
+            const sim = suffix === 'mistakes' && [...host.querySelectorAll('button')].find((x) => x.textContent.startsWith('Посчитать по'));
+            if (sim) {
+              await act(async () => { sim.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+              await act(async () => { await new Promise((r) => setTimeout(r, 500)); });
+              snap('simulator');
+            }
           }
           const kpi = host.querySelector('.mr-kpi.mr-clickable');
           if (kpi) {

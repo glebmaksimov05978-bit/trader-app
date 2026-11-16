@@ -226,3 +226,12 @@ td.mr-num { text-align: right; }
 
 .mr-pop-weeks { display: flex; flex-direction: column; max-height: 320px; overflow-y: auto; gap: 2px; }
 .mr-pop-weeks .mr-pop-cell { text-align: left; white-space: nowrap; }
+
+/* ---------- симулятор выходов ---------- */
+.xs-table { display: flex; flex-direction: column; border: 1px solid var(--border-subtle); border-radius: 10px; overflow: hidden; margin-bottom: 8px; }
+.xs-row { display: grid; grid-template-columns: minmax(0, 2.2fr) 0.6fr 1fr 1fr 0.9fr; gap: 8px; padding: 8px 12px; font-size: 13px; align-items: center; border-top: 1px solid var(--border-subtle); }
+.xs-row:first-child { border-top: 0; }
+.xs-head { font-size: 11.5px; color: var(--text-muted); background: var(--bg-surface-2); }
+.xs-row b { font-variant-numeric: tabular-nums; }
+.xs-ceiling { color: var(--text-muted); font-style: italic; }
+@media (max-width: 640px) { .xs-row { grid-template-columns: minmax(0, 1.6fr) 0.5fr 1fr 1fr; } .xs-row > :nth-child(5) { display: none; } }

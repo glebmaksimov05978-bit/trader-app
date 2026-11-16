@@ -80,3 +80,19 @@ test('поправка брокера (фандинг) не попадает в 
   const r = buildExitReplay({ trade: t, candles: bars, openedAt: new Date(day(1)), closedAt: new Date('2026-11-04T12:00:00Z') });
   expect(r.actual.rub).toBeCloseTo(379.6, 2); // по ценам, без фандинга
 });
+
+test('«держать до стопа или цели» и цель в R', () => {
+  const r = buildExitReplay({ trade, candles: bars, openedAt: new Date('2026-11-01T10:00:00Z'), closedAt: new Date('2026-11-04T12:00:00Z') });
+  // Цель 1R = 105: задета на 3-й свече (максимум 108).
+  expect(r.targetAtR(1)).toBe(105);
+  const t1 = r.holdUntil(r.targetAtR(1));
+  expect(t1.how).toBe('take');
+  expect(t1.idx).toBe(2);
+  expect(t1.r).toBeCloseTo(1, 6);
+  // Цель 3R = 115 не задета — стоп 95 на 6-й свече.
+  const t3 = r.holdUntil(r.targetAtR(3));
+  expect(t3.how).toBe('stop');
+  expect(t3.idx).toBe(5);
+  // Без цели и без стопа — правила нет.
+  expect(buildExitReplay({ trade: { ...trade, stopLoss: null }, candles: bars, openedAt: new Date(day(1)) }).holdUntil(110)).toBeNull();
+});

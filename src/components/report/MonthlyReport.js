@@ -22,6 +22,7 @@ import { buildEntryStats } from '../../services/analytics/entryStats';
 import { PeriodSwitcher, StrategyFilter } from './ReportControls';
 import ReportExportModal from './ReportExportModal';
 import TradeViewModal from './TradeViewModal';
+import ExitSimulator from './ExitSimulator';
 import { TRUSTED_UIDS } from '../../constants/trustedUids';
 import { computeHabitsFor } from '../../services/analytics/insightsEngine';
 import { formatCurrency, formatPercent, tradesWord } from '../../utils/money';
@@ -286,6 +287,7 @@ export default function MonthlyReport() {
                 </>
               )}
               <EntryKindsCard j={journal} />
+              {scope !== 'paper' && <ExitSimulator items={rep.items} userProfile={userProfile} label={rep.label} />}
               {entryStats && entryStats.groups.length > 0 && (
                 <div className="card mr-block">
                   <div className="section-title">Мои входы</div>

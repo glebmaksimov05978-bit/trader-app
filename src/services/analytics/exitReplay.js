@@ -130,8 +130,33 @@ export function buildExitReplay({ trade, candles, openedAt, closedAt }) {
   const captured = actual && inTrade?.best && (inTrade.best.price - entry) * dir > 0
     ? ((exitPrice - entry) * dir) / ((inTrade.best.price - entry) * dir) : null;
 
+  // «Держать до стопа или цели»: первая свеча после входа, задевшая стоп или цель. Обе в одной свече — считаем стоп
+  // (порядок внутри свечи неизвестен, консервативно). Ничего не задето до конца данных — выход по последнему закрытию.
+  const holdUntil = (target) => {
+    if (!(stop > 0) || !riskPerUnit) return null;
+    for (let i = entryIdx + 1; i <= lastIdx; i += 1) {
+      const c = bars[i];
+      const hitStop = dir > 0 ? num(c.low) <= stop : num(c.high) >= stop;
+      const hitTake = target > 0 && (dir > 0 ? num(c.high) >= target : num(c.low) <= target);
+      if (hitStop) {
+        const gap = dir > 0 ? num(c.open) < stop : num(c.open) > stop;
+        return { idx: i, date: c.date, how: 'stop', ...at(gap ? num(c.open) : stop) };
+      }
+      if (hitTake) {
+        const gap = dir > 0 ? num(c.open) > target : num(c.open) < target;
+        return { idx: i, date: c.date, how: 'take', ...at(gap ? num(c.open) : target) };
+      }
+    }
+    const c = bars[lastIdx];
+    return { idx: lastIdx, date: c.date, how: 'end', ...at(num(c.close)) };
+  };
+
   return {
     entryIdx, exitIdx, lastIdx, entry, dir, stop, riskPerUnit, k, kSource: source, brokerAdjustment: adj,
+    /** Выход по правилу «стоп или цель»: цель — цена (null — только стоп и конец данных). */
+    holdUntil,
+    /** Цель на N R от входа (по исходному стопу). */
+    targetAtR: (n) => (riskPerUnit ? entry + dir * riskPerUnit * n : null),
     /** Выход по закрытию свечи i. */
     exitAtBar: (i) => {
       const j = Math.max(entryIdx, Math.min(lastIdx, i));
