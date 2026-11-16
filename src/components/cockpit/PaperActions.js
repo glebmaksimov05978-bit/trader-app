@@ -67,7 +67,7 @@ export default function PaperActions({ trade, journalTrades = [], userProfile, o
       const d = { action: 'trial', via: 'app', trainerTradeId, at: new Date().toISOString() };
       await addPaperDecision(trade.id, d);
       onDecision?.(trade.id, d);
-      toast.success('Пробная сделка поставлена: исполнится по открытию следующей свечи');
+      toast.success('Пробная сделка поставлена — она в «Мои позиции»: исполнится по открытию следующей свечи');
       setTrialOpen(false);
     } catch (e) {
       toast.error(e?.code === 'permission-denied' ? 'Нет прав на запись пробных сделок' : (e.message || 'Не удалось поставить пробную сделку'));
@@ -152,8 +152,8 @@ export default function PaperActions({ trade, journalTrades = [], userProfile, o
       {trialOpen && (
         <div className="pa-trial">
           <div className="pa-trial-note">
-            Пробная сделка — без денег. Исполнится по открытию следующей свечи, дальше её ведёте вы: она появится
-            в «Мои позиции» с меткой «пробная» и в Тренажёре → «Живые цены». С реальными деньгами не складывается.
+            Пробная сделка — без денег. Исполнится по открытию следующей свечи, дальше её ведёте вы здесь, в Сопровождении:
+            она появится в «Мои позиции» с меткой «пробная». С реальными деньгами не складывается.
           </div>
           <div className="pa-trial-row">
             <label>Стоп<input className="ck-order-input" inputMode="decimal" value={trialStop} onChange={(e) => setTrialStop(e.target.value)} placeholder="цена" /></label>

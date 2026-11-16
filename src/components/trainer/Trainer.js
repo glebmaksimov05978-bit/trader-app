@@ -46,6 +46,8 @@ export default function Trainer() {
   // Учебный счёт: стартовый капитал и риск % — в профиле; баланс считается по закрытым учебным сделкам.
   const account = useMemo(() => getTrainerAccount(userProfile), [userProfile]);
   const acc = useMemo(() => accountState(trades, account), [trades, account]);
+  // Пробные сделки по сигналам системы («Вошёл пробно») ведутся в Сопровождении — здесь только свои учебные.
+  const ownTrades = useMemo(() => (trades || []).filter((t) => !t.fromSignal), [trades]);
   const [accEdit, setAccEdit] = useState(null); // { startCapital, riskPct } — форма настройки счёта
   const saveAccount = async (restart) => {
     const start = parseFloat(String(accEdit?.startCapital ?? account.startCapital).replace(/\s/g, '').replace(',', '.'));
@@ -109,8 +111,8 @@ export default function Trainer() {
         {tab === 'patterns' && <PatternGame progress={userProfile?.trainerPatterns || emptyProgress()} onProgress={saveProgress} />}
         {tab === 'real' && <RealPatternGame progress={userProfile?.trainerReal || emptyRealProgress()} onProgress={saveReal} />}
         {tab === 'replay' && <ReplayDesk onSaved={reload} defaultRisk={acc.riskNow} />}
-        {tab === 'live' && <LiveDesk trades={trades} onChanged={reload} defaultRisk={acc.riskNow} />}
-        {tab === 'review' && <TrainerReview trades={trades} onChanged={reload} />}
+        {tab === 'live' && <LiveDesk trades={ownTrades} onChanged={reload} defaultRisk={acc.riskNow} />}
+        {tab === 'review' && <TrainerReview trades={ownTrades} onChanged={reload} />}
       </div>
     </div>
   );

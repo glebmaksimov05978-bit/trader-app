@@ -636,3 +636,14 @@
 
 .ck-order-quick { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; }
 .ck-order-quick .ck-share { padding: 3px 8px; font-size: 11.5px; }
+
+/* ---------- новости ---------- */
+.nw-wrap { display: flex; flex-direction: column; gap: 14px; }
+.nw-block h3 { margin: 0 0 8px; font-size: 14px; }
+.nw-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.nw-list li { display: flex; flex-direction: column; gap: 2px; padding-bottom: 8px; border-bottom: 1px solid var(--border-subtle); }
+.nw-list li:last-child { border-bottom: 0; }
+.nw-list a { color: var(--text-primary); text-decoration: none; font-size: 13.5px; line-height: 1.45; }
+.nw-list a:hover { text-decoration: underline; }
+.nw-meta { font-size: 11.5px; color: var(--text-muted); }
+.nw-note { margin: 0; font-size: 11.5px; }

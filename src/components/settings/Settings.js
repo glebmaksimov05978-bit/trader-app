@@ -11,6 +11,7 @@ import { normalizeTaPrefs } from '../../services/analytics/taView';
 import TaSettingsCard from './TaSettingsCard';
 import OnboardingCard from '../onboarding/OnboardingCard';
 import { TRUSTED_UIDS } from '../../constants/trustedUids';
+import CockpitPrefsCard from './CockpitPrefsCard';
 import ReportScheduleTab from '../report/ReportScheduleTab';
 import { DEFAULT_SECTIONS } from '../../services/report/exportReport';
 import '../report/ReportExport.css';
@@ -19,7 +20,7 @@ import toast from 'react-hot-toast';
 
 import Icon from '../shared/Icon';
 // Вкладки настроек (решение владельца, 2026-11-11/15): подключения, уведомления, торговля. Риск и деньги — в «Капитале».
-const SETTINGS_TABS = [['conn', 'Подключения'], ['notif', 'Уведомления'], ['trade', 'Торговля']];
+const SETTINGS_TABS = [['conn', 'Подключения'], ['notif', 'Уведомления'], ['trade', 'Торговля'], ['cockpit', 'Сопровождение']];
 
 export default function Settings() {
   const [setTab, setSetTab] = useState(() => {
@@ -614,6 +615,8 @@ export default function Settings() {
         {setTab === 'trade' && (<>
         <OnboardingCard trusted={userProfile?.role === 'admin' || TRUSTED_UIDS.includes(user?.uid)} />
         </>)}
+
+        {setTab === 'cockpit' && <CockpitPrefsCard userProfile={userProfile} updateUserProfile={updateUserProfile} />}
 
         {setTab === 'notif' && canSchedule && (
           <div className="card" style={{marginBottom:20}}>

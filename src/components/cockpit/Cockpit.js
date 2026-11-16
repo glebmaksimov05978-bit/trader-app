@@ -18,7 +18,11 @@ import { getOpenPaperTrades, getPaperTrades, updatePaperTrade } from '../../serv
 import { groupPaperByStrategy, paperStrategyKey } from '../../services/analytics/paperGroups';
 import Icon from '../shared/Icon';
 import { fetchDailyCandles, availableTimeframes, describeLoadError, TIMEFRAMES } from '../../services/marketData/candles';
-import { addTrainerTrade, getTrainerTrades } from '../../services/trainer/trainerTrades';
+import { addTrainerTrade, getTrainerTrades, updateTrainerTrade } from '../../services/trainer/trainerTrades';
+import { refreshLiveTrades, liveKeyOf, LIVE_EVENT_TEXT } from '../../services/trainer/liveCandles';
+import TrialTradeView from './TrialTradeView';
+import NewsPanel from './NewsPanel';
+import { getCockpitPrefs, CHART_HEIGHTS } from '../../services/cockpitPrefs';
 import { createLiveOrder } from '../../services/trainer/liveSim';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
@@ -136,6 +140,11 @@ export default function Cockpit() {
   const [allPaper, setAllPaper] = useState([]);
   // Пробные сделки (без денег, «Вошёл пробно»): живут в Тренажёре (коллекция trainerTrades), здесь — только в списке.
   const [trialTrades, setTrialTrades] = useState([]);
+  // Выбранная пробная сделка — открывается в основной области вместо графика позиции.
+  const [trialId, setTrialId] = useState(null);
+  const [trialCandles, setTrialCandles] = useState({}); // `${тикер}|${таймфрейм}` → свечи
+  const [trialRefreshing, setTrialRefreshing] = useState(false);
+  const trialRunning = useRef(false);
   // Что человек смотрел до ухода со вкладки (читается один раз при входе) — см. readCkView.
   const savedView = useRef(null);
   if (savedView.current === null) savedView.current = readCkView();
@@ -194,13 +203,21 @@ export default function Cockpit() {
   // тому же тикеру в радаре не менял бы адрес и не вернул бы предпросмотр обратно.
   const selectTrade = (id) => {
     setActiveId(id);
+    setTrialId(null);
+    if (previewTicker || urlActiveId) setSearchParams({}, { replace: true });
+  };
+  const selectTrial = (id) => {
+    setTrialId(id);
+    setActiveId(null);
     if (previewTicker || urlActiveId) setSearchParams({}, { replace: true });
   };
   // Технический анализ: одна кнопка и одна панель на оба режима — и когда сделка открыта,
   // и когда просто смотришь инструмент из радара. Сами данные грузятся по нажатию.
   const [taOpen, setTaOpen] = useState(!!savedView.current.taOpen);
   // Вкладка под графиком: 'position' | 'entry' | 'ta' | 'similar'. Пусто — первая доступная.
-  const [ckTab, setCkTab] = useState(savedView.current.taOpen ? 'ta' : null);
+  // Вид под себя (Настройки → Сопровождение): списки слева, высота графика, первая вкладка, место панели управления.
+  const prefs = useMemo(() => getCockpitPrefs(userProfile), [userProfile]);
+  const [ckTab, setCkTab] = useState(savedView.current.taOpen || getCockpitPrefs(userProfile).firstTab === 'ta' ? 'ta' : null);
   // «Призма»: смотреть график и анализ через стратегию. '' — без стратегии (стандартные данные,
   // набор блоков — личные настройки). С призмой остаются только индикаторы и уровни, которыми
   // стратегия реально пользуется, и рядом видны её пороги.
@@ -277,6 +294,7 @@ export default function Cockpit() {
     if (id !== 'all') setStrategyId(id);
     // Выбранная сделка могла быть чужой стратегии — сбрасываем, чтобы режим не показывал лишнего.
     setActiveId(null);
+    setTrialId(null);
     if (previewTicker || urlActiveId) setSearchParams({}, { replace: true });
   };
 
@@ -355,10 +373,46 @@ export default function Cockpit() {
     if (!user) { setPaperTrades([]); return; }
     getOpenPaperTrades(user.uid).then(setPaperTrades).catch(() => setPaperTrades([]));
     getPaperTrades(user.uid).then(setAllPaper).catch(() => setAllPaper([]));
+    // Только пробные сделки по сигналам («Вошёл пробно»): учебные сделки Тренажёра живут там.
     getTrainerTrades(user.uid)
-      .then((list) => setTrialTrades(list.filter((t) => t.dataMode === 'live' && (t.status === 'pending' || t.status === 'open'))))
+      .then((list) => setTrialTrades(list.filter((t) => t.fromSignal && t.dataMode === 'live' && (t.status === 'pending' || t.status === 'open'))))
       .catch(() => setTrialTrades([]));
   }, [user]);
+
+  // Дочитать пробные сделки по свежим свечам (исполнение, стоп, цель) — при открытии и раз в минуту, пока вкладка видна.
+  const trialsRef = useRef(trialTrades);
+  trialsRef.current = trialTrades;
+  const refreshTrials = useCallback(async (silent = true) => {
+    if (trialRunning.current) return;
+    const docs = trialsRef.current.filter((t) => t.status === 'pending' || t.status === 'open');
+    if (!docs.length) return;
+    trialRunning.current = true;
+    setTrialRefreshing(true);
+    try {
+      const r = await refreshLiveTrades(docs, { tinkoffToken: userProfile?.tinkoffToken || null, save: updateTrainerTrade });
+      setTrialCandles((m) => ({ ...m, ...r.candles }));
+      if (r.changed.length) {
+        const byId = new Map(r.changed.map((c) => [c.doc.id, c.doc]));
+        setTrialTrades((list) => list.map((t) => byId.get(t.id) || t));
+        r.changed.forEach((c) => c.events.forEach((ev) => toast(`${c.doc.ticker}, пробная: ${LIVE_EVENT_TEXT[ev] || ev}`)));
+      }
+      if (!silent) r.errors.forEach((e) => toast.error(e));
+    } finally {
+      trialRunning.current = false;
+      setTrialRefreshing(false);
+    }
+  }, [userProfile?.tinkoffToken]);
+  const trialKey = trialTrades.filter((t) => t.status === 'pending' || t.status === 'open').map((t) => t.id).join(',');
+  useEffect(() => {
+    if (!trialKey) return undefined;
+    refreshTrials(true);
+    const id = setInterval(() => { if (document.visibilityState !== 'hidden') refreshTrials(true); }, 60000);
+    return () => clearInterval(id);
+  }, [trialKey, refreshTrials]);
+  const saveTrial = async (id, body) => {
+    await updateTrainerTrade(id, body);
+    setTrialTrades((list) => list.map((t) => (t.id === id ? { ...t, ...body } : t)));
+  };
 
   // Сколько тикеров смотрит каждая стратегия и сколько «горячих» (готовность не ниже порога).
   const radarByStrategy = useMemo(() => {
@@ -956,8 +1010,8 @@ export default function Cockpit() {
   ) : null;
   // Какие вкладки есть под графиком: у сделки — «Позиция», у инструмента без сделки — «Вход».
   const ckTabs = trade
-    ? [['position', 'Позиция'], ['ta', 'Тех. анализ'], ...(similar && usesProfitSystem ? [['similar', 'Похожие ситуации']] : [])]
-    : previewTicker ? [['entry', 'Вход'], ['ta', 'Тех. анализ']] : [];
+    ? [['position', 'Позиция'], ['ta', 'Тех. анализ'], ...(similar && usesProfitSystem ? [['similar', 'Похожие ситуации']] : []), ['news', 'Новости']]
+    : previewTicker ? [['entry', 'Вход'], ['ta', 'Тех. анализ'], ['news', 'Новости']] : [];
   const tabNow = ckTabs.some((t) => t[0] === ckTab) ? ckTab : (ckTabs[0]?.[0] || null);
   const pickTab = (id) => { setCkTab(id); setTaOpen(id === 'ta'); };
   // Для короткой заявки: последняя цена и ATR(14) по свечам графика инструмента.
@@ -977,6 +1031,7 @@ export default function Cockpit() {
   };
   // «Вошёл пробно» по сигналу системы: пробная сделка без денег в Тренажёр (Живые цены). Исполнится по открытию
   // следующей свечи графика; стоп — из сигнала (можно поправить), риск — ваш обычный процент от счёта.
+  const trialSel = !trade && !previewTicker && trialId ? (trialTrades.find((t) => t.id === trialId) || null) : null;
   const trialDefaults = trade && isPaper ? {
     stop: trade.stopLoss || null,
     riskMoney: (computeLiveBalance(allTrades, userProfile?.depositSize ?? 0, userProfile?.depositSetAt) * (parseFloat(userProfile?.maxRiskPerTrade) || 1)) / 100,
@@ -997,6 +1052,7 @@ export default function Cockpit() {
     const extra = { fromSignal: true, paperTradeId: trade.id };
     const ref = await addTrainerTrade(user.uid, { ...doc, ...extra });
     setTrialTrades((list) => [{ id: ref.id, ...doc, ...extra }, ...list]);
+    setTrialCandles((m) => ({ ...m, [`${trade.ticker}|${timeframe}`]: bars }));
     return ref.id;
   };
   // Перенос стопа: меняется запись сделки (план), а не заявка у брокера.
@@ -1022,7 +1078,7 @@ export default function Cockpit() {
       <div className="ck-top">
         <div>
           <h1 className="ck-title">Сопровождение</h1>
-          <div className="ck-sub">{trade ? (isPaper ? 'Сделка системы: график, ход и ваши решения' : 'Ваша позиция: график, результат и управление') : 'Выберите позицию или инструмент в радаре — откроется график'}</div>
+          <div className="ck-sub">{trade ? (isPaper ? 'Сделка системы: график, ход и ваши решения' : 'Ваша позиция: график, результат и управление') : trialSel ? 'Пробная сделка без денег: график и ведение' : 'Выберите позицию или инструмент в радаре — откроется график'}</div>
         </div>
         <div className="ck-top-right">
           <button className="ck-btn" onClick={toggleSide} title={sideHidden ? 'Показать списки: мои позиции, сделки системы, радар' : 'Убрать списки — график займёт всю ширину'}>
@@ -1072,7 +1128,7 @@ export default function Cockpit() {
         {/* ---------- сайдбар: позиции, лесенка, радар — одна колонка, каждая секция
             сворачивается сама по себе, без пустых мест на месте свёрнутого блока ---------- */}
         {!sideHidden && <aside className="ck-side scroll-box">
-          <CollapsibleSection title="Мои позиции" badge={trades.length + trialTrades.length || null}>
+          {prefs.showPositions && <CollapsibleSection title="Мои позиции" badge={trades.length + trialTrades.length || null}>
             <div className="ck-pos-list">
               {trades.filter((t) => scopeId === 'all' || !t.entryStrategyId || t.entryStrategyId === scopeId).map((t) => {
                 const on = t.id === activeId;
@@ -1096,10 +1152,10 @@ export default function Cockpit() {
                   </div>
                 );
               })}
-              {/* Пробные сделки (без денег): рядом с реальными, с меткой. Суммы с реальными не складываются. Ведутся в Тренажёре. */}
+              {/* Пробные сделки (без денег): рядом с реальными, с меткой. Суммы с реальными не складываются. Ведутся здесь. */}
               {trialTrades.filter((t) => scopeId === 'all' || !t.strategyId || t.strategyId === scopeId).map((t) => (
-                <div key={`trial-${t.id}`} className="ck-pos ck-pos-trial">
-                  <Link className="ck-pos-main" to="/trainer?tab=live" style={{ textDecoration: 'none', color: 'inherit' }} title="Пробная сделка без денег — открыть в Тренажёре (Живые цены)">
+                <div key={`trial-${t.id}`} className={`ck-pos ck-pos-trial ${trialSel?.id === t.id ? 'on' : ''}`}>
+                  <button className="ck-pos-main" onClick={() => selectTrial(t.id)} title="Пробная сделка без денег — открыть и вести">
                     <div className="ck-pos-row">
                       <span className="ck-ticker">{t.ticker}</span>
                       <span className={`ck-dir ${t.side}`}>{t.side === 'long' ? 'ЛОНГ' : 'ШОРТ'}</span>
@@ -1108,21 +1164,23 @@ export default function Cockpit() {
                     <div className="ck-pos-sub">
                       {t.status === 'pending' ? `ждёт исполнения · стоп ${fmtNum(t.orderStop)}` : `вход ${fmtNum(t.entryPrice)} · стоп ${fmtNum(t.stopPrice)}`}
                     </div>
-                    <div className="ck-pos-sub">без денег · риск {Math.round(t.riskMoney || 0).toLocaleString('ru-RU')} ₽</div>
-                  </Link>
+                    <div className="ck-pos-sub">
+                      {t.status === 'closed' ? `закрыта ${t.r >= 0 ? '+' : '−'}${Math.abs(t.r || 0).toFixed(2).replace('.', ',')}R` : t.status === 'cancelled' ? 'отменена' : `без денег · риск ${Math.round(t.riskMoney || 0).toLocaleString('ru-RU')} ₽`}
+                    </div>
+                  </button>
                 </div>
               ))}
               {trialTrades.length > 0 && trades.length > 0 && (
                 <div className="ck-basket-note" style={{ margin: '4px 2px 0' }}>Реальные и пробные вместе. Суммы не складываются.</div>
               )}
             </div>
-          </CollapsibleSection>
+          </CollapsibleSection>}
 
           {/* Бумажные сделки — отдельной группой, а не вперемешку с настоящими. Их
               открывает и закрывает робот, поэтому кнопки «Закрыть» здесь нет: закрыть
               бумажную сделку руками означало бы вмешаться в тот самый эксперимент, ради
               которого она и заведена. */}
-          <CollapsibleSection title="Сделки системы" badge={paperTrades.length || null} defaultOpen={false}>
+          {prefs.showPaper && <CollapsibleSection title="Сделки системы" badge={paperTrades.length || null} defaultOpen={prefs.paperOpen}>
             <div className="ck-basket-note">
               Их ведёт робот по списку радара: реальных денег не касаются и в Журнал,
               депозит и отчёты не попадают. У каждой стратегии своя лента — их не сравнивают
@@ -1206,17 +1264,30 @@ export default function Cockpit() {
                 </div>
               )}
             </div>
-          </CollapsibleSection>
+          </CollapsibleSection>}
 
-          <RadarPanel filterId={scopeId} onFilterChange={(v) => { if (v !== scopeId) chooseScope(v); }} onItems={setRadarItems} />
+          {prefs.showRadar && <RadarPanel filterId={scopeId} onFilterChange={(v) => { if (v !== scopeId) chooseScope(v); }} onItems={setRadarItems} />}
         </aside>}
         {/* Радар нужен обзору (плашки считают «готово к входу»), даже когда панель скрыта: монтируем
             его невидимо, чтобы данные продолжали загружаться. */}
-        {sideHidden && <div className="ck-hidden-radar" aria-hidden="true"><RadarPanel filterId={scopeId} onFilterChange={() => {}} onItems={setRadarItems} /></div>}
+        {(sideHidden || !prefs.showRadar) && <div className="ck-hidden-radar" aria-hidden="true"><RadarPanel filterId={scopeId} onFilterChange={() => {}} onItems={setRadarItems} /></div>}
 
         {/* ---------- кабина ---------- */}
         <main className="ck-main">
           {error && <div className="ck-panel ck-error">{error}</div>}
+
+          {trialSel && (
+            <TrialTradeView
+              trial={trialSel}
+              candles={trialCandles[liveKeyOf(trialSel)]}
+              onSave={saveTrial}
+              onRefresh={() => refreshTrials(false)}
+              refreshing={trialRefreshing}
+              signal
+              chartHeight={CHART_HEIGHTS[prefs.chartHeight]}
+              panelRight={prefs.orderPanel === 'right'}
+            />
+          )}
 
           {/* Инструмент из радара без сделки: шапка того же вида, что у сделки, только без
               двух линий «ты / система» — им без позиции нечего показывать. */}
@@ -1240,7 +1311,7 @@ export default function Cockpit() {
           {/* Пока ничего не выбрано: обзор стратегий (или карточка одной, если выбрана) и одна строка
               подсказки. Отдельной большой панели «Выберите инструмент» больше нет — она висела
               пустым окном под обзором. */}
-          {!trade && !previewTicker && (
+          {!trade && !previewTicker && !trialSel && (
             <>
               <StrategyOverview
                 strategies={scopeId === 'all' ? scopeStrategies : strategies.filter((x) => x.id === scopeId)}
@@ -1325,7 +1396,7 @@ export default function Cockpit() {
           )}
 
           {/* Рабочая область: слева график и вкладки, справа — панель управления (на широком экране). */}
-          <div className={`ck-work ${trade || previewTicker ? 'has-order' : ''}`}>
+          <div className={`ck-work ${(trade || previewTicker) && prefs.orderPanel === 'right' ? 'has-order' : ''}`}>
             <div className="ck-work-main">
           {/* ---------- график ---------- */}
           {(trade || previewTicker) && (
@@ -1344,7 +1415,7 @@ export default function Cockpit() {
                 drawRequest={drawReq}
                 candles={trade ? candles : taState.data.candles}
                 patterns={trade ? patterns : taState.data.patterns}
-                height={460}
+                height={CHART_HEIGHTS[prefs.chartHeight]}
                 ticker={trade ? trade.ticker : previewTicker}
                 instrumentType={trade ? (trade.instrumentType || 'stock') : previewType}
                 timeframe={trade ? timeframe : (taTf || userProfile?.preferredTimeframe || 'D1')}
@@ -1763,6 +1834,10 @@ export default function Cockpit() {
           )}
 
             </>
+          )}
+
+          {tabNow === 'news' && (
+            <NewsPanel ticker={trade ? trade.ticker : previewTicker} name={catalogEntry(trade ? trade.ticker : previewTicker)?.name || ''} />
           )}
 
           {tabNow === 'similar' && (

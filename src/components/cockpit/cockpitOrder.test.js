@@ -87,7 +87,7 @@ test('инструмент из радара: график сверху, под 
   const tabs = [...host.querySelectorAll('.ck-tabs button')];
   const readiness = [...host.querySelectorAll('h3')].find((h) => /Готовность к входу/.test(h.textContent));
   expect(chart).toBeTruthy();
-  expect(tabs.map((t) => t.textContent)).toEqual(['Вход', 'Тех. анализ']);
+  expect(tabs.map((t) => t.textContent)).toEqual(['Вход', 'Тех. анализ', 'Новости']);
   expect(tabs[0].className).toBe('on');
   expect(readiness).toBeTruthy();
   expect(before(chart, tabs[0])).toBe(true);

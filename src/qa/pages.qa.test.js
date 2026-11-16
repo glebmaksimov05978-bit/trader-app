@@ -76,7 +76,16 @@ jest.mock('../services/trainer/trainerTrades', () => {
       stopMoves: widen ? [{ bar: entryBar + 2, from: 95, to: 92, direction: 'widen' }] : [],
     };
   });
-  return { getTrainerTrades: async () => list, addTrainerTrade: jest.fn(), updateTrainerTrade: jest.fn(), deleteTrainerTrade: jest.fn() };
+  // Пробная сделка по сигналу («Вошёл пробно»): открыта, ведётся в Сопровождении, в Тренажёре не видна.
+  const now = Date.now();
+  list.unshift({
+    id: 'trial1', kind: 'trainer', dataMode: 'live', fromSignal: true, paperTradeId: 'p1', status: 'open', ticker: 'SBER', instrumentType: 'stock',
+    side: 'long', timeframe: 'D1', tfMinutes: 1440, orderPrice: 350, orderStop: 340, orderTake: 370,
+    orderBarTime: new Date(now - 2 * day).toISOString(), lastBarTime: new Date(now + day).toISOString(),
+    stopSchedule: [{ afterMs: 0, price: 340 }], entryPrice: 350, entryDate: new Date(now - day).toISOString(), stopPrice: 340, initialStop: 340,
+    takePrice: 370, riskPerUnit: 10, riskMoney: 1000, qty: 100, feePctPerSide: 0.05, strategyId: 's1', strategyName: 'Пробой', stopMoves: [],
+  });
+  return { getTrainerTrades: async () => list, addTrainerTrade: jest.fn(), updateTrainerTrade: jest.fn(async () => {}), deleteTrainerTrade: jest.fn() };
 });
 jest.mock('../services/broker', () => ({
   fetchOrderConfig: async () => ({ enabled: false }), fetchOrderState: async () => null,
@@ -206,6 +215,16 @@ run('страницы для просмотра глазами', () => {
           if (exportBtn) {
             await act(async () => { exportBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
             snap('export');
+          }
+        }
+        if (name === 'cockpit') {
+          const snap = (suffix) => fs.writeFileSync(path.join(OUT, `${name}-${suffix}-${theme}.html`),
+            `<!doctype html><html lang="ru" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${name}</title><style>${css}</style></head><body>${document.body.innerHTML}</body></html>`, 'utf8');
+          const row = host.querySelector('.ck-pos-trial .ck-pos-main');
+          if (row) {
+            await act(async () => { row.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+            await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
+            snap('trial');
           }
         }
         if (name === 'trainer') {
