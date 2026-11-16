@@ -24,6 +24,8 @@ export const ACTION_LABELS = {
   fixed_partial: 'Снял часть',
   closed_full: 'Закрыл целиком',
   not_this: 'Позиция не по этому сигналу',
+  // Пробная сделка без денег (Тренажёр → Живые цены): деньгами не входил, но проверяет сигнал сам.
+  trial: 'Вошёл пробно, без денег',
 };
 
 const upper = (s) => String(s || '').toUpperCase();
@@ -207,13 +209,14 @@ function fmtQty(q) {
 export function summarizeDecisions(paperTrade) {
   const list = Array.isArray(paperTrade?.decisions) ? [...paperTrade.decisions] : [];
   list.sort((a, b) => (toMs(a.at) || 0) - (toMs(b.at) || 0));
-  const out = { entered: false, skipped: false, skipReason: null, partials: 0, closed: false, declined: false, last: null, auto: false };
+  const out = { entered: false, skipped: false, skipReason: null, partials: 0, closed: false, declined: false, trial: false, last: null, auto: false };
   for (const d of list) {
     if (d.action === 'entered') { out.entered = true; out.skipped = false; out.declined = false; }
     else if (d.action === 'skipped') { out.skipped = true; out.skipReason = d.reason || null; }
     else if (d.action === 'fixed_partial') out.partials += 1;
     else if (d.action === 'closed_full') out.closed = true;
     else if (d.action === 'not_this') { out.entered = false; out.partials = 0; out.closed = false; out.declined = true; }
+    else if (d.action === 'trial') out.trial = true;
   }
   out.last = list.length ? list[list.length - 1] : null;
   out.auto = !!out.last && out.last.via === 'broker';
@@ -227,5 +230,6 @@ export function statusLine(paperTrade) {
   if (s.closed) return `Вы: вышли${s.partials ? `, фиксаций было ${s.partials}` : ''}`;
   if (s.entered) return `Вы: вошли${s.partials ? ` · снято частями ${s.partials}` : ''}`;
   if (s.skipped) return `Вы: пропустили${s.skipReason ? ` — ${s.skipReason}` : ''}`;
+  if (s.trial) return 'Вы: вошли пробно, без денег';
   return null;
 }

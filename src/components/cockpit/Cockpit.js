@@ -17,7 +17,9 @@ import { computeBaskets } from '../../services/analytics/portfolio';
 import { getOpenPaperTrades, getPaperTrades, updatePaperTrade } from '../../services/paperTrades';
 import { groupPaperByStrategy, paperStrategyKey } from '../../services/analytics/paperGroups';
 import Icon from '../shared/Icon';
-import { fetchDailyCandles, availableTimeframes, describeLoadError } from '../../services/marketData/candles';
+import { fetchDailyCandles, availableTimeframes, describeLoadError, TIMEFRAMES } from '../../services/marketData/candles';
+import { addTrainerTrade, getTrainerTrades } from '../../services/trainer/trainerTrades';
+import { createLiveOrder } from '../../services/trainer/liveSim';
 import { computePatternsAtEntry } from '../../services/analytics/patterns';
 import { computeIndicatorsAtEntry } from '../../services/analytics/indicators';
 import { computeMarketContextAtEntry } from '../../services/analytics/marketContext';
@@ -25,10 +27,9 @@ import { catalogEntry } from '../../services/marketData/instrumentCatalog';
 import TechnicalAnalysisBlock from '../shared/TechnicalAnalysisBlock';
 import StrategyChecklist from '../shared/StrategyChecklist';
 import { getActiveStrategy, getStrategies, evaluateStrategy, CONDITION_CATALOG } from '../../services/analytics/strategy';
-import { classifyStrategy, kindBadge } from '../../services/analytics/strategyKind';
 import { followedStrategies, setObserve, isObserved } from '../../services/analytics/strategyMeta';
 import { resolveTaView, chartLayersFor } from '../../services/analytics/taView';
-import { userLevelsForChart } from '../../services/chartDrawings';
+import { userLevelsForChart, atrOf } from '../../services/chartDrawings';
 import { commissionRateFor, DEFAULT_TARIFF } from '../../services/analytics/commission';
 import { computeBothLines, computeLiveState } from '../../services/backtest/livePosition';
 import { computeProfitBreakdown, computeLossBreakdown } from '../../services/backtest/engine';
@@ -133,6 +134,8 @@ export default function Cockpit() {
   // Все бумажные (и закрытые) — только для сводки по стратегиям над списком: сколько каждая
   // уже закрыла и с каким итогом. Ведутся по-прежнему только открытые (paperTrades).
   const [allPaper, setAllPaper] = useState([]);
+  // Пробные сделки (без денег, «Вошёл пробно»): живут в Тренажёре (коллекция trainerTrades), здесь — только в списке.
+  const [trialTrades, setTrialTrades] = useState([]);
   // Что человек смотрел до ухода со вкладки (читается один раз при входе) — см. readCkView.
   const savedView = useRef(null);
   if (savedView.current === null) savedView.current = readCkView();
@@ -201,7 +204,6 @@ export default function Cockpit() {
   // «Призма»: смотреть график и анализ через стратегию. '' — без стратегии (стандартные данные,
   // набор блоков — личные настройки). С призмой остаются только индикаторы и уровни, которыми
   // стратегия реально пользуется, и рядом видны её пороги.
-  const [taLensId, setTaLensId] = useState(savedView.current.taLensId || '');
   // «Показать фигуру на графике»: список рисунков уходит в график и прокручивает страницу к нему.
   const [drawReq, setDrawReq] = useState(null);
   const showPatternOnChart = (list) => {
@@ -221,6 +223,11 @@ export default function Cockpit() {
   const [showSys, setShowSys] = useState(true);
   const [closeShare, setCloseShare] = useState(100);
   const [stopDraft, setStopDraft] = useState(null); // текст в поле «перенести стоп»; null — поле закрыто
+  // Короткая заявка в панели справа (инструмент без сделки): стоп и цель. Объём по риску и отправку делает Калькулятор —
+  // один путь расчёта денег, без второй копии формул.
+  const [entryStop, setEntryStop] = useState('');
+  const [entryTake, setEntryTake] = useState('');
+  useEffect(() => { setEntryStop(''); setEntryTake(''); }, [previewTicker]);
   const [tfOverride, setTfOverride] = useState(null);
   const [sample, setSample] = useState(null);
   const [goal, setGoal] = useState(5);
@@ -267,7 +274,6 @@ export default function Cockpit() {
   const chooseScope = (id) => {
     setScopeId(id);
     setPaperFilter(id);
-    setTaLensId(id === 'all' ? '' : id);
     if (id !== 'all') setStrategyId(id);
     // Выбранная сделка могла быть чужой стратегии — сбрасываем, чтобы режим не показывал лишнего.
     setActiveId(null);
@@ -275,12 +281,12 @@ export default function Cockpit() {
   };
 
   useEffect(() => {
-    writeCkView({ previewTicker: previewTicker || null, previewType: previewTicker ? previewType : null, activeId: previewTicker ? null : activeId, scopeId, taOpen, taLensId, strategyId });
-  }, [previewTicker, previewType, activeId, scopeId, taOpen, taLensId, strategyId]);
+    writeCkView({ previewTicker: previewTicker || null, previewType: previewTicker ? previewType : null, activeId: previewTicker ? null : activeId, scopeId, taOpen, strategyId });
+  }, [previewTicker, previewType, activeId, scopeId, taOpen, strategyId]);
 
   // Запомненный режим мог относиться к стратегии, которую потом удалили, — тогда возвращаемся в общий обзор.
   useEffect(() => {
-    if (scopeId !== 'all' && strategies.length && !strategies.some((x) => x.id === scopeId)) { setScopeId('all'); setPaperFilter('all'); setTaLensId(''); }
+    if (scopeId !== 'all' && strategies.length && !strategies.some((x) => x.id === scopeId)) { setScopeId('all'); setPaperFilter('all'); }
   }, [scopeId, strategies]);
 
   // Выбрали сделку — вкладка сразу ведёт её по ТОЙ стратегии, которой она открыта. Раньше
@@ -349,6 +355,9 @@ export default function Cockpit() {
     if (!user) { setPaperTrades([]); return; }
     getOpenPaperTrades(user.uid).then(setPaperTrades).catch(() => setPaperTrades([]));
     getPaperTrades(user.uid).then(setAllPaper).catch(() => setAllPaper([]));
+    getTrainerTrades(user.uid)
+      .then((list) => setTrialTrades(list.filter((t) => t.dataMode === 'live' && (t.status === 'pending' || t.status === 'open'))))
+      .catch(() => setTrialTrades([]));
   }, [user]);
 
   // Сколько тикеров смотрит каждая стратегия и сколько «горячих» (готовность не ниже порога).
@@ -860,6 +869,9 @@ export default function Cockpit() {
     return out;
   }, [paperTrades]);
 
+  // Линза графика и анализа = выбор «Смотрю через» (scopeId): «Без стратегии» — стандартные данные, иначе — по стратегии.
+  // Раньше было три отдельных выбора (стратегия сверху, полоса режима и линза над графиком) — теперь один.
+  const taLensId = scopeId === 'all' ? '' : scopeId;
   const taLensStrategy = useMemo(() => strategies.find((x) => x.id === taLensId) || null, [strategies, taLensId]);
   const taView = useMemo(
     () => resolveTaView({ prefs: userProfile?.taPrefs, strategy: taLensStrategy }),
@@ -948,6 +960,45 @@ export default function Cockpit() {
     : previewTicker ? [['entry', 'Вход'], ['ta', 'Тех. анализ']] : [];
   const tabNow = ckTabs.some((t) => t[0] === ckTab) ? ckTab : (ckTabs[0]?.[0] || null);
   const pickTab = (id) => { setCkTab(id); setTaOpen(id === 'ta'); };
+  // Для короткой заявки: последняя цена и ATR(14) по свечам графика инструмента.
+  const entryBars = !trade && previewTicker ? (taState.data?.candles || []) : [];
+  const entryLast = entryBars.length ? entryBars[entryBars.length - 1].close : null;
+  const entryAtr = entryBars.length > 15 ? atrOf(entryBars.slice(-60), 14) : null;
+  const roundPx = (v) => Number(Number(v).toPrecision(6));
+  const entryStopNum = parseFloat(String(entryStop).replace(',', '.'));
+  const entryTakeNum = parseFloat(String(entryTake).replace(',', '.'));
+  const entrySide = entryLast && entryStopNum > 0 ? (entryStopNum < entryLast ? 'long' : 'short') : null;
+  const entryRR = entrySide && entryTakeNum > 0 && Math.abs(entryLast - entryStopNum) > 0
+    ? Math.abs(entryTakeNum - entryLast) / Math.abs(entryLast - entryStopNum) : null;
+  const calcLink = (ticker, type, extra = {}) => {
+    const q = new URLSearchParams({ ticker, type: type || 'stock' });
+    for (const [k, v] of Object.entries(extra)) if (v != null && v !== '' && !Number.isNaN(v)) q.set(k, String(v));
+    return `/calculator?${q.toString()}`;
+  };
+  // «Вошёл пробно» по сигналу системы: пробная сделка без денег в Тренажёр (Живые цены). Исполнится по открытию
+  // следующей свечи графика; стоп — из сигнала (можно поправить), риск — ваш обычный процент от счёта.
+  const trialDefaults = trade && isPaper ? {
+    stop: trade.stopLoss || null,
+    riskMoney: (computeLiveBalance(allTrades, userProfile?.depositSize ?? 0, userProfile?.depositSetAt) * (parseFloat(userProfile?.maxRiskPerTrade) || 1)) / 100,
+  } : null;
+  const placeTrial = async ({ stop, riskMoney }) => {
+    const bars = candles || [];
+    const last = bars[bars.length - 1];
+    if (!trade || !last) throw new Error('График ещё не загрузился — попробуйте через секунду');
+    const side = trade.direction === 'short' ? 'short' : 'long';
+    const dir = side === 'long' ? 1 : -1;
+    const take = trade.takeProfit && (trade.takeProfit - last.close) * dir > 0 ? trade.takeProfit : null;
+    const tf = TIMEFRAMES[timeframe] || TIMEFRAMES.D1;
+    const doc = createLiveOrder({
+      side, stop, take, riskMoney, ticker: trade.ticker, instrumentType: trade.instrumentType || 'stock',
+      timeframe, tfMinutes: tf.minutes, lastCandleDate: last.date, lastPrice: last.close,
+      strategyId: trade.entryStrategyId || null, strategyName: trade.entryStrategyName || null,
+    });
+    const extra = { fromSignal: true, paperTradeId: trade.id };
+    const ref = await addTrainerTrade(user.uid, { ...doc, ...extra });
+    setTrialTrades((list) => [{ id: ref.id, ...doc, ...extra }, ...list]);
+    return ref.id;
+  };
   // Перенос стопа: меняется запись сделки (план), а не заявка у брокера.
   const saveStop = async () => {
     const v = parseFloat(String(stopDraft).replace(',', '.'));
@@ -974,24 +1025,6 @@ export default function Cockpit() {
           <div className="ck-sub">{trade ? (isPaper ? 'Сделка системы: график, ход и ваши решения' : 'Ваша позиция: график, результат и управление') : 'Выберите позицию или инструмент в радаре — откроется график'}</div>
         </div>
         <div className="ck-top-right">
-          <label className="ck-strategy-pick">
-            {/* Тип рядом с названием: «Стратегия 2» ничего не говорит о том, чего от неё
-                ждать, а «Пробойная» говорит — и сразу видно, что переключение меняет не
-                только имя в селекторе. */}
-            <span className="ck-k">
-              Работаем по стратегии
-              {strategy && <span className="ck-strategy-kind"> · {kindBadge(classifyStrategy(strategy)).toLowerCase()}</span>}
-            </span>
-            <select
-              value={strategy?.id || ''}
-              onChange={(e) => setStrategyId(e.target.value)}
-              disabled={strategies.length < 2}
-            >
-              {strategies.map((s) => (
-                <option key={s.id} value={s.id}>{s.name || 'без названия'}</option>
-              ))}
-            </select>
-          </label>
           <button className="ck-btn" onClick={toggleSide} title={sideHidden ? 'Показать списки: мои позиции, сделки системы, радар' : 'Убрать списки — график займёт всю ширину'}>
             <Icon name={sideHidden ? 'menu' : 'expand'} size={14} style={{ marginRight: 6 }} />{sideHidden ? 'Показать списки' : 'Скрыть списки'}
           </button>
@@ -1010,11 +1043,13 @@ export default function Cockpit() {
         </div>
       )}
 
-      {/* Режим: общий обзор или одна стратегия. В режиме стратегии весь экран говорит только о ней. */}
+      {/* «Смотрю через»: один выбор на весь экран. «Без стратегии» — просто терминал: график, позиции, заявка.
+          Стратегия — экран говорит только о ней: её сделки системы, готовность к входу, правила ведения, линза графика. */}
       {strategies.length > 0 && (
-        <nav className="ck-scope" aria-label="Режим">
-          <button className={scopeId === 'all' ? 'on' : ''} onClick={() => chooseScope('all')}>
-            <Icon name="dashboard" size={14} /> Обзор
+        <nav className="ck-scope" aria-label="Смотрю через">
+          <span className="ck-scope-label">Смотрю через</span>
+          <button className={scopeId === 'all' ? 'on' : ''} onClick={() => chooseScope('all')} title="Без стратегии: график, позиции и заявка, как в обычном терминале">
+            Без стратегии
           </button>
           {scopeStrategies.map((st) => (
             <button key={st.id} className={scopeId === st.id ? 'on' : ''} onClick={() => chooseScope(st.id)} title={st.name}>
@@ -1037,7 +1072,7 @@ export default function Cockpit() {
         {/* ---------- сайдбар: позиции, лесенка, радар — одна колонка, каждая секция
             сворачивается сама по себе, без пустых мест на месте свёрнутого блока ---------- */}
         {!sideHidden && <aside className="ck-side scroll-box">
-          <CollapsibleSection title="Мои позиции" badge={trades.length}>
+          <CollapsibleSection title="Мои позиции" badge={trades.length + trialTrades.length || null}>
             <div className="ck-pos-list">
               {trades.filter((t) => scopeId === 'all' || !t.entryStrategyId || t.entryStrategyId === scopeId).map((t) => {
                 const on = t.id === activeId;
@@ -1061,6 +1096,25 @@ export default function Cockpit() {
                   </div>
                 );
               })}
+              {/* Пробные сделки (без денег): рядом с реальными, с меткой. Суммы с реальными не складываются. Ведутся в Тренажёре. */}
+              {trialTrades.filter((t) => scopeId === 'all' || !t.strategyId || t.strategyId === scopeId).map((t) => (
+                <div key={`trial-${t.id}`} className="ck-pos ck-pos-trial">
+                  <Link className="ck-pos-main" to="/trainer?tab=live" style={{ textDecoration: 'none', color: 'inherit' }} title="Пробная сделка без денег — открыть в Тренажёре (Живые цены)">
+                    <div className="ck-pos-row">
+                      <span className="ck-ticker">{t.ticker}</span>
+                      <span className={`ck-dir ${t.side}`}>{t.side === 'long' ? 'ЛОНГ' : 'ШОРТ'}</span>
+                      <span className="ck-tag-trial">пробная</span>
+                    </div>
+                    <div className="ck-pos-sub">
+                      {t.status === 'pending' ? `ждёт исполнения · стоп ${fmtNum(t.orderStop)}` : `вход ${fmtNum(t.entryPrice)} · стоп ${fmtNum(t.stopPrice)}`}
+                    </div>
+                    <div className="ck-pos-sub">без денег · риск {Math.round(t.riskMoney || 0).toLocaleString('ru-RU')} ₽</div>
+                  </Link>
+                </div>
+              ))}
+              {trialTrades.length > 0 && trades.length > 0 && (
+                <div className="ck-basket-note" style={{ margin: '4px 2px 0' }}>Реальные и пробные вместе. Суммы не складываются.</div>
+              )}
             </div>
           </CollapsibleSection>
 
@@ -1276,18 +1330,14 @@ export default function Cockpit() {
           {/* ---------- график ---------- */}
           {(trade || previewTicker) && (
           <section className="ck-panel ck-chart" id="ck-chart">
-            <div className="ck-lens">
-              <span className="ck-k">Смотреть график и анализ</span>
-              <select className="ck-lens-sel" value={taLensId} onChange={(e) => setTaLensId(e.target.value)}>
-                <option value="">без стратегии — стандартные данные</option>
-                {strategies.map((x) => <option key={x.id} value={x.id}>по стратегии «{x.name || 'без названия'}»</option>)}
-              </select>
-              {taLensStrategy && (
+            {taLensStrategy && (
+              <div className="ck-lens">
+                <span className="ck-k">График по стратегии «{taLensStrategy.name || 'без названия'}»</span>
                 <span className="ck-lens-note">
-                  {taView.empty ? 'у стратегии нет рыночных условий' : 'остались только индикаторы и уровни стратегии'}
+                  {taView.empty ? 'у стратегии нет рыночных условий — показаны стандартные данные' : 'на графике только индикаторы и уровни стратегии'}
                 </span>
-              )}
-            </div>
+              </div>
+            )}
             {(trade ? candles : taState.data?.candles)?.length ? (
               <CandleChart
                 drawingTools
@@ -1822,7 +1872,8 @@ export default function Cockpit() {
                     </div>
                     <Link
                       className="ck-btn" style={{ textDecoration: 'none', textAlign: 'center' }}
-                      to={`/calculator?ticker=${encodeURIComponent(trade.ticker)}&type=${encodeURIComponent(trade.instrumentType || 'stock')}`}
+                      to={calcLink(trade.ticker, trade.instrumentType, { sl: trade.stopLoss || null, tp: trade.takeProfit || null })}
+                      title="Калькулятор откроется с тем же стопом и целью"
                     >
                       Докупить — посчитать в Калькуляторе
                     </Link>
@@ -1895,6 +1946,8 @@ export default function Cockpit() {
               trade={trade}
               journalTrades={allTrades}
               userProfile={userProfile}
+              onTrial={placeTrial}
+              trialDefaults={trialDefaults}
               onDecision={(id, d) => {
                 const add = (list) => list.map((t) => (t.id === id ? { ...t, decisions: [...(t.decisions || []), d] } : t));
                 setPaperTrades(add);
@@ -1905,17 +1958,39 @@ export default function Cockpit() {
 
                 {!trade && previewTicker && (
                   <section className="ck-panel ck-order-card">
-                    <h3>Вход в сделку</h3>
+                    <h3>Заявка</h3>
                     <div className="ck-order-sub">
-                      {previewTicker}: объём по вашему риску, стоп и цель считаются в Калькуляторе — оттуда же уходит заявка.
+                      {previewTicker}{entryLast ? <> · последняя цена <b>{fmtNum(entryLast)}</b></> : null}
+                      {entryAtr ? <> · ATR(14) ≈ {fmtNum(entryAtr)}</> : null}
                     </div>
                     {riskBaseLine}
+                    <div className="ck-order-row">
+                      <span className="ck-k">Стоп</span>
+                      <input className="ck-order-input" inputMode="decimal" value={entryStop} placeholder="цена" onChange={(e) => setEntryStop(e.target.value)} />
+                      {entrySide && <span className={`ck-dir ${entrySide}`}>{entrySide === 'long' ? 'ЛОНГ' : 'ШОРТ'}</span>}
+                    </div>
+                    {entryAtr && entryLast && (
+                      <div className="ck-order-quick">
+                        <span className="ck-k">лонг:</span>
+                        {[1, 2].map((m) => <button key={`l${m}`} className="ck-share" onClick={() => setEntryStop(String(roundPx(entryLast - entryAtr * m)))} title={`Стоп на ${m} ATR ниже цены`}>−{m} ATR</button>)}
+                        <span className="ck-k">шорт:</span>
+                        {[1, 2].map((m) => <button key={`s${m}`} className="ck-share" onClick={() => setEntryStop(String(roundPx(entryLast + entryAtr * m)))} title={`Стоп на ${m} ATR выше цены`}>+{m} ATR</button>)}
+                      </div>
+                    )}
+                    <div className="ck-order-row">
+                      <span className="ck-k">Цель</span>
+                      <input className="ck-order-input" inputMode="decimal" value={entryTake} placeholder="необязательно" onChange={(e) => setEntryTake(e.target.value)} />
+                      {entryRR != null && <span className="ck-k">прибыль к риску {ruNum(entryRR, 1)}</span>}
+                    </div>
                     <Link
                       className="ck-btn ck-btn-primary" style={{ textDecoration: 'none', textAlign: 'center' }}
-                      to={`/calculator?ticker=${encodeURIComponent(previewTicker)}&type=${encodeURIComponent(previewType)}`}
+                      to={calcLink(previewTicker, previewType, { sl: entryStopNum > 0 ? entryStopNum : null, tp: entryTakeNum > 0 ? entryTakeNum : null })}
                     >
-                      Войти в сделку
+                      {entrySide === 'short' ? 'Продать' : entrySide === 'long' ? 'Купить' : 'Войти в сделку'} — объём по риску в Калькуляторе
                     </Link>
+                    <div className="ck-order-hint" style={{ textAlign: 'left', maxWidth: 'none' }}>
+                      Калькулятор откроется с этим стопом и целью, посчитает объём от суммы выше и комиссию; заявка уходит оттуда, после проверки брокером.
+                    </div>
                   </section>
                 )}
               </aside>

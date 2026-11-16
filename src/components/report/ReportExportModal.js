@@ -47,6 +47,12 @@ export default function ReportExportModal({
   const pageDates = useMemo(() => {
     if (!pageRange?.key) return null;
     if (pageRange.type === 'year') return { from: `${pageRange.key}-01-01`, to: `${pageRange.key}-12-31` };
+    if (pageRange.type === 'all') return null;
+    if (pageRange.type === 'week') {
+      const [wy, wm, wd] = pageRange.key.split('-').map(Number);
+      const end = new Date(Date.UTC(wy, wm - 1, wd + 6));
+      return { from: pageRange.key, to: end.toISOString().slice(0, 10) };
+    }
     const [y, m] = pageRange.key.split('-').map(Number);
     const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
     return { from: `${y}-${String(m).padStart(2, '0')}-01`, to: `${y}-${String(m).padStart(2, '0')}-${String(last).padStart(2, '0')}` };

@@ -6,7 +6,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import CandleChart from '../shared/CandleChart';
 import Icon from '../shared/Icon';
-import { fetchDailyCandles, availableTimeframes, recommendTimeframe } from '../../services/marketData/candles';
+import { fetchDailyCandles, availableTimeframes, recommendTimeframe, TIMEFRAMES } from '../../services/marketData/candles';
+import ExitReplay from './ExitReplay';
 import { resolveOpenedAt, resolveClosedAt } from '../../services/tradeDates';
 import { describeLegs } from '../../services/tradeLegs';
 import { guessInstrumentType } from '../../services/import/instrumentResolver';
@@ -19,7 +20,7 @@ const dateTime = (d) => (d instanceof Date && !Number.isNaN(d.getTime())
   ? d.toLocaleString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
 
 export default function TradeViewModal({ item, userProfile, onClose }) {
-  const trade = item?.raw || {};
+  const trade = useMemo(() => item?.raw || {}, [item]);
   const hasToken = !!userProfile?.tinkoffToken;
   const openedAt = useMemo(() => resolveOpenedAt(trade), [trade]);
   const closedAt = useMemo(() => (item?.closed instanceof Date ? item.closed : resolveClosedAt(trade)), [item, trade]);
@@ -43,8 +44,10 @@ export default function TradeViewModal({ item, userProfile, onClose }) {
     setState({ loading: true, candles: null, error: null });
     (async () => {
       try {
-        // немного свечей и после выхода — чтобы было видно, что было дальше; но не дальше «сейчас»
-        const toDate = new Date(Math.min(Date.now(), (closedAt ? closedAt.getTime() : Date.now()) + 2 * 86400000));
+        // Свечи и после выхода — для переигровки выхода «что было дальше»: столько же, сколько длилась сделка
+        // (не меньше 3 и не больше 30 дней), но не дальше «сейчас».
+        const after = Math.min(30 * 86400000, Math.max(3 * 86400000, (durationMin || 0) * 60000));
+        const toDate = new Date(Math.min(Date.now(), (closedAt ? closedAt.getTime() : Date.now()) + after));
         const candles = await fetchDailyCandles({ ticker, instrumentType, toDate, tinkoffToken: userProfile?.tinkoffToken, timeframe });
         if (!alive) return;
         if (!candles.length) throw new Error('По этому инструменту нет свечей за нужный период');
@@ -107,6 +110,15 @@ export default function TradeViewModal({ item, userProfile, onClose }) {
               timeframeOptions={availableTimeframes(hasToken)}
               onTimeframeChange={setPicked}
               height={Math.max(300, Math.min(760, vh - (ops.length ? 400 : 320)))}
+            />
+          )}
+          {state.candles && openedAt && (
+            <ExitReplay
+              trade={trade}
+              candles={state.candles}
+              openedAt={openedAt}
+              closedAt={trade.status === 'closed' ? closedAt : null}
+              timeframeLabel={TIMEFRAMES[timeframe]?.label}
             />
           )}
           {/* Те же метки, что на графике, но списком — как это шло по времени: вход, докупки, частичные фиксации, выход.

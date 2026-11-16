@@ -17,7 +17,7 @@ import { buildStrategyComparison, comparisonNote } from '../../services/analytic
 import { buildOpenRisk } from '../../services/analytics/openRisk';
 import { buildDecisionJournal } from '../../services/analytics/decisionJournal';
 import { buildMonthlyReport, reportVerdict } from '../../services/analytics/monthlyReport';
-import { buildPeriodReport, listPeriods, listStrategyNames, strategyNameOf, monthKey, SCOPES } from '../../services/analytics/periodReport';
+import { buildPeriodReport, listPeriods, listStrategyNames, strategyNameOf, periodKeyOf, SCOPES } from '../../services/analytics/periodReport';
 import { buildEntryStats } from '../../services/analytics/entryStats';
 import { PeriodSwitcher, StrategyFilter } from './ReportControls';
 import ReportExportModal from './ReportExportModal';
@@ -88,7 +88,7 @@ export default function MonthlyReport() {
   const paper = useMemo(() => (filterOn ? paperAll.filter((t) => chosen.includes(strategyNameOf(t, 'paper'))) : paperAll), [paperAll, filterOn, chosen]);
 
   // Ключ текущего периода: блок «Сейчас в рынке» показывается только в нём.
-  const currentKey = type === 'year' ? String(new Date().getFullYear()) : monthKey(new Date());
+  const currentKey = periodKeyOf(type, new Date());
 
   const periods = useMemo(() => listPeriods(real, paper, type, legPnl), [real, paper, type]);
   // По умолчанию — самый свежий период, где что-то закрывалось: пустая страница в первые дни
@@ -182,10 +182,11 @@ export default function MonthlyReport() {
           ))}
         </div>
         <div className="mr-seg">
-          <button className={type === 'month' ? 'on' : ''} onClick={() => { setType('month'); setPickedKey(null); }}>Месяц</button>
-          <button className={type === 'year' ? 'on' : ''} onClick={() => { setType('year'); setPickedKey(null); }}>Год</button>
+          {[['week', 'Неделя'], ['month', 'Месяц'], ['year', 'Год'], ['all', 'Всё время']].map(([id, label]) => (
+            <button key={id} className={type === id ? 'on' : ''} onClick={() => { setType(id); setPickedKey(null); }}>{label}</button>
+          ))}
         </div>
-        <PeriodSwitcher periods={periods} value={key} onChange={setPickedKey} type={type} />
+        {type !== 'all' && <PeriodSwitcher periods={periods} value={key} onChange={setPickedKey} type={type} />}
         <StrategyFilter names={strategyNames} selected={chosen} onChange={setPickedStrategies} />
         {hasToken && scope === 'real' && (
           <label className="mr-check" title="Считать только сделки, подтверждённые брокером: загруженные из отчёта или Т-Банка либо исполненные заявками из приложения">
@@ -228,7 +229,9 @@ export default function MonthlyReport() {
               <div className="card mr-block">
                 <div className="section-title">Накопленный результат</div>
                 <p className="mr-note" style={{ marginTop: 0, marginBottom: 6 }}>
-                  Сплошная линия — {rep.label.toLowerCase()}, пунктир — {rep.prevLabel.toLowerCase()} для сравнения.
+                  {rep.prevKey
+                    ? <>Сплошная линия — {rep.label.toLowerCase()}, пунктир — {rep.prevLabel.toLowerCase()} для сравнения.</>
+                    : <>По месяцам, с первой закрытой сделки.</>}
                 </p>
                 <EquityChart curve={rep.curve} prev={rep.prevCurve} type={type} />
               </div>
@@ -633,7 +636,7 @@ function KpiRow({ rep, onDrill = {} }) {
     { label: 'Результат', value: money(s.pnl), cls: sgn(s.pnl), drill: onDrill.all,
       sub: (
         <>
-          {d.hasPrev ? <><Delta value={d.pnl} /> к {rep.prevLabel.toLowerCase()}</> : 'прошлый период без сделок'}
+          {d.hasPrev ? <><Delta value={d.pnl} /> к {rep.prevLabel.toLowerCase()}</> : rep.prevKey ? 'прошлый период без сделок' : 'за всё время'}
           {s.realizedOpen !== 0 && (
             <div title="Часть прибыли, зафиксированная по сделкам, которые ещё открыты. Входит в результат, но не в число сделок.">
               в т.ч. зафиксировано по открытым: <b className={sgn(s.realizedOpen)}>{money(s.realizedOpen)}</b>
@@ -681,7 +684,11 @@ function EquityChart({ curve, prev, type }) {
   const end = own[own.length - 1] ?? 0;
   const color = end >= 0 ? 'var(--green)' : 'var(--red)';
   const ticks = [max - pad, 0, min + pad].map((v) => Math.round(v));
-  const xLabels = type === 'year' ? [0, 3, 6, 9, 11] : [0, 7, 14, 21, series.length - 1];
+  const n1 = series.length - 1;
+  const xLabels = type === 'year' ? [0, 3, 6, 9, 11]
+    : type === 'week' ? [0, 1, 2, 3, 4, 5, 6]
+      : type === 'all' ? [...new Set([0, Math.round(n1 / 4), Math.round(n1 / 2), Math.round((3 * n1) / 4), n1])]
+        : [0, 7, 14, 21, n1];
   const area = `${path(own, series.length)} L${x(own.length - 1, series.length).toFixed(1)},${y(0).toFixed(1)} L${x(0, series.length).toFixed(1)},${y(0).toFixed(1)} Z`;
   return (
     <div className="mr-chart">

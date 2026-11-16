@@ -183,6 +183,15 @@ run('страницы для просмотра глазами', () => {
           if (kpi) {
             await act(async () => { kpi.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
             snap('drill');
+            // Окно сделки с переигровкой выхода: первая сделка из списка.
+            const row = document.body.querySelector('.mr-subrow-wide');
+            if (row) {
+              await act(async () => { row.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+              await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
+              snap('tradeview');
+              const x = document.body.querySelector('.rx-x');
+              if (x) await act(async () => { x.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+            }
             const close = document.body.querySelector('.modal-close');
             if (close) await act(async () => { close.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
           }

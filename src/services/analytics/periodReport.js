@@ -1,6 +1,6 @@
 // src/services/analytics/periodReport.js
 //
-// Отчёт за период (месяц или год) по трём срезам: реальные сделки, бумажные (их ведёт робот)
+// Отчёт за период (неделя, месяц, год или всё время) по срезам: реальные сделки, бумажные (их ведёт робот)
 // и «всё вместе». Главный вопрос отчёта — «насколько хорошо я торгую» относительно прошлого
 // периода, относительно системы и по стратегиям.
 //
@@ -43,6 +43,23 @@ export function strategyNameOf(t, src = 'real') {
 const pad = (n) => String(n).padStart(2, '0');
 export const monthKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
 export const yearKey = (d) => String(d.getFullYear());
+const dayKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+/** Неделя — по понедельнику, в которой она начинается: '2026-11-16'. Время местное, как у месяца. */
+export const weekKey = (d) => {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+  return dayKey(x);
+};
+const parseDay = (key) => { const [y, m, d] = key.split('-').map(Number); return new Date(y, m - 1, d); };
+/** Ключ периода для даты: 'YYYY' | 'YYYY-MM' | понедельник недели 'YYYY-MM-DD' | 'all'. */
+export const periodKeyOf = (type, d) => (type === 'year' ? yearKey(d) : type === 'week' ? weekKey(d) : type === 'all' ? 'all' : monthKey(d));
+// «10–16 ноября 2026» или «27 октября – 2 ноября 2026».
+function weekRange(key) {
+  const a = parseDay(key);
+  const b = new Date(a); b.setDate(b.getDate() + 6);
+  if (a.getMonth() === b.getMonth()) return `${a.getDate()}–${b.getDate()} ${MONTHS_GEN[b.getMonth()]} ${b.getFullYear()}`;
+  return `${a.getDate()} ${MONTHS_GEN[a.getMonth()]} – ${b.getDate()} ${MONTHS_GEN[b.getMonth()]} ${b.getFullYear()}`;
+}
 
 /**
  * Привести сделки обоих источников к одной форме; фильтр «закрыта и есть результат».
@@ -79,15 +96,20 @@ export function normalize(realTrades, paperTrades, scopeRaw, legPnl = null) {
   return out;
 }
 
-const inPeriod = (type, key) => (x) => (type === 'year' ? yearKey(x.closed) : monthKey(x.closed)) === key;
+const inPeriod = (type, key) => (x) => periodKeyOf(type, x.closed) === key;
 
 export function prevPeriodKey(type, key) {
+  if (type === 'all' || !key) return null;
   if (type === 'year') return String(Number(key) - 1);
+  if (type === 'week') { const d = parseDay(key); d.setDate(d.getDate() - 7); return dayKey(d); }
   const [y, m] = key.split('-').map(Number);
   return m === 1 ? `${y - 1}-12` : `${y}-${pad(m - 1)}`;
 }
 
 export function periodLabel(type, key) {
+  if (!key) return '';
+  if (type === 'all') return 'Всё время';
+  if (type === 'week') return `Неделя ${weekRange(key)}`;
   if (type === 'year') return `${key} год`;
   const [y, m] = key.split('-').map(Number);
   return `${MONTHS[m - 1]} ${y}`;
@@ -95,12 +117,18 @@ export function periodLabel(type, key) {
 
 /** «августа 2025» / «2025 года» — для оборотов «против …». */
 export function periodLabelGen(type, key) {
+  if (!key) return '';
+  if (type === 'all') return 'всего времени';
+  if (type === 'week') return `недели ${weekRange(key)}`;
   if (type === 'year') return `${key} года`;
   const [y, m] = key.split('-').map(Number);
   return `${MONTHS_GEN[m - 1]} ${y}`;
 }
 /** «августе 2025» / «2025 году» — для оборотов «в …». */
 export function periodLabelIn(type, key) {
+  if (!key) return '';
+  if (type === 'all') return 'всё время';
+  if (type === 'week') return `неделю ${weekRange(key)}`;
   if (type === 'year') return `${key} году`;
   const [y, m] = key.split('-').map(Number);
   return `${MONTHS_PREP[m - 1]} ${y}`;
@@ -109,7 +137,7 @@ export function periodLabelIn(type, key) {
 /** Периоды, в которых что-то закрывалось (по любому из источников), от свежего к старому. */
 export function listPeriods(realTrades, paperTrades, type, legPnl = null) {
   const keys = new Set();
-  for (const x of normalize(realTrades, paperTrades, 'all', legPnl)) keys.add(type === 'year' ? yearKey(x.closed) : monthKey(x.closed));
+  for (const x of normalize(realTrades, paperTrades, 'all', legPnl)) keys.add(periodKeyOf(type, x.closed));
   return [...keys].sort().reverse().map((key) => ({ key, label: periodLabel(type, key) }));
 }
 
@@ -153,14 +181,36 @@ export function statsOf(items) {
   };
 }
 
-/** Накопленная кривая: по дням для месяца, по месяцам для года. */
+const WEEKDAYS = ['пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
+/** Накопленная кривая: по дням для недели и месяца, по месяцам для года и всего времени. */
 export function buildCurve(items, type, key) {
-  const slots = type === 'year'
-    ? Array.from({ length: 12 }, (_, i) => ({ idx: i, label: MONTHS_SHORT[i] }))
-    : Array.from({ length: new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)), 0).getDate() }, (_, i) => ({ idx: i, label: String(i + 1) }));
+  if (!key) return [];
+  let slots;
+  let slotOf;
+  if (type === 'year') {
+    slots = Array.from({ length: 12 }, (_, i) => ({ idx: i, label: MONTHS_SHORT[i] }));
+    slotOf = (d) => d.getMonth();
+  } else if (type === 'week') {
+    slots = WEEKDAYS.map((label, i) => ({ idx: i, label }));
+    slotOf = (d) => (d.getDay() + 6) % 7;
+  } else if (type === 'all') {
+    // От месяца первой сделки до месяца последней.
+    if (!items.length) return [];
+    const ms = items.map((x) => x.closed.getFullYear() * 12 + x.closed.getMonth());
+    const lo = Math.min(...ms), hi = Math.max(...ms);
+    slots = Array.from({ length: hi - lo + 1 }, (_, i) => {
+      const m = (lo + i) % 12, y = Math.floor((lo + i) / 12);
+      return { idx: i, label: `${MONTHS_SHORT[m]} ${String(y).slice(2)}` };
+    });
+    slotOf = (d) => d.getFullYear() * 12 + d.getMonth() - lo;
+  } else {
+    slots = Array.from({ length: new Date(Number(key.slice(0, 4)), Number(key.slice(5, 7)), 0).getDate() }, (_, i) => ({ idx: i, label: String(i + 1) }));
+    slotOf = (d) => d.getDate() - 1;
+  }
   const pnl = new Array(slots.length).fill(0), cnt = new Array(slots.length).fill(0);
   for (const x of items) {
-    const i = type === 'year' ? x.closed.getMonth() : x.closed.getDate() - 1;
+    const i = slotOf(x.closed);
+    if (i < 0 || i >= slots.length) continue;
     pnl[i] += x.pnl; cnt[i] += 1;
   }
   let cum = 0;
@@ -186,14 +236,14 @@ export function groupBy(items, keyFn) {
  * @param {Array} a.realTrades
  * @param {Array} a.paperTrades
  * @param {'real'|'paper'|'all'} a.scope
- * @param {'month'|'year'} a.type
- * @param {string} a.key — 'YYYY-MM' или 'YYYY'
+ * @param {'week'|'month'|'year'|'all'} a.type
+ * @param {string} a.key — 'YYYY-MM-DD' (понедельник недели), 'YYYY-MM', 'YYYY' или 'all'
  */
 export function buildPeriodReport({ realTrades, paperTrades, scope = 'real', type = 'month', key, legPnl = null }) {
   const all = normalize(realTrades, paperTrades, scope, legPnl);
   const cur = all.filter(inPeriod(type, key));
   const prevKey = prevPeriodKey(type, key);
-  const prev = all.filter(inPeriod(type, prevKey));
+  const prev = prevKey ? all.filter(inPeriod(type, prevKey)) : [];
   const stats = statsOf(cur);
   const prevStats = statsOf(prev);
 

@@ -66,8 +66,8 @@ export function PeriodSwitcher({ periods, value, onChange, type }) {
 
       {open && (
         <div className="mr-period-pop" role="listbox">
-          {type === 'year' ? (
-            <div className="mr-pop-years">
+          {type === 'year' || type === 'week' ? (
+            <div className={`mr-pop-years ${type === 'week' ? 'mr-pop-weeks' : ''}`}>
               {periods.map((p) => (
                 <button key={p.key} type="button" role="option" aria-selected={p.key === value} className={`mr-pop-cell ${p.key === value ? 'on' : ''}`} onClick={() => pick(p.key)}>
                   {p.label}

@@ -23,9 +23,13 @@ const fmtAt = (v) => {
   return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 };
 
-export default function PaperActions({ trade, journalTrades = [], userProfile, onDecision }) {
+export default function PaperActions({ trade, journalTrades = [], userProfile, onDecision, onTrial, trialDefaults }) {
   const [busy, setBusy] = useState(false);
   const [skipOpen, setSkipOpen] = useState(false);
+  // «Вошёл пробно»: короткая форма — стоп и риск в рублях; сама сделка ставится в Тренажёр (Живые цены), без денег.
+  const [trialOpen, setTrialOpen] = useState(false);
+  const [trialStop, setTrialStop] = useState('');
+  const [trialRisk, setTrialRisk] = useState('');
   const [found, setFound] = useState(null); // результат проверки по Т-Банку: { events, patch }
 
   const sum = useMemo(() => summarizeDecisions(trade), [trade]);
@@ -44,6 +48,29 @@ export default function PaperActions({ trade, journalTrades = [], userProfile, o
       toast.success(message || 'Записано');
     } catch (e) {
       toast.error('Не удалось записать: ' + (e.message || 'ошибка'));
+    }
+    setBusy(false);
+  };
+
+  const openTrial = () => {
+    setTrialOpen((v) => !v);
+    setSkipOpen(false);
+    if (!trialStop && trialDefaults?.stop) setTrialStop(String(trialDefaults.stop));
+    if (!trialRisk && trialDefaults?.riskMoney) setTrialRisk(String(Math.round(trialDefaults.riskMoney)));
+  };
+  const placeTrial = async () => {
+    const stop = parseFloat(String(trialStop).replace(',', '.'));
+    const riskMoney = parseFloat(String(trialRisk).replace(',', '.').replace(/\s/g, ''));
+    setBusy(true);
+    try {
+      const trainerTradeId = await onTrial({ stop, riskMoney });
+      const d = { action: 'trial', via: 'app', trainerTradeId, at: new Date().toISOString() };
+      await addPaperDecision(trade.id, d);
+      onDecision?.(trade.id, d);
+      toast.success('Пробная сделка поставлена: исполнится по открытию следующей свечи');
+      setTrialOpen(false);
+    } catch (e) {
+      toast.error(e?.code === 'permission-denied' ? 'Нет прав на запись пробных сделок' : (e.message || 'Не удалось поставить пробную сделку'));
     }
     setBusy(false);
   };
@@ -103,7 +130,12 @@ export default function PaperActions({ trade, journalTrades = [], userProfile, o
         <button className="ck-btn" disabled={busy} onClick={() => record({ action: 'entered', via: 'app' }, 'Отметила: вошли по сигналу')}>
           <Icon name="check" size={14} style={{ marginRight: 6 }} />Вошёл
         </button>
-        <button className="ck-btn" disabled={busy} onClick={() => setSkipOpen((v) => !v)}>
+        {onTrial && !sum.trial && (
+          <button className="ck-btn" disabled={busy} onClick={openTrial} title="Без денег: сделка ставится в Тренажёр по живым ценам, ведёте её сами">
+            Вошёл пробно
+          </button>
+        )}
+        <button className="ck-btn" disabled={busy} onClick={() => { setSkipOpen((v) => !v); setTrialOpen(false); }}>
           <Icon name="minus" size={14} style={{ marginRight: 6 }} />Пропустил
         </button>
         <button className="ck-btn" disabled={busy} onClick={() => record({ action: 'fixed_partial', via: 'app' }, 'Отметила: сняли часть')}>
@@ -116,6 +148,20 @@ export default function PaperActions({ trade, journalTrades = [], userProfile, o
           <Icon name="refresh" size={14} style={{ marginRight: 6 }} />{busy ? 'Смотрю…' : 'Проверить по Т-Банку'}
         </button>
       </div>
+
+      {trialOpen && (
+        <div className="pa-trial">
+          <div className="pa-trial-note">
+            Пробная сделка — без денег. Исполнится по открытию следующей свечи, дальше её ведёте вы: она появится
+            в «Мои позиции» с меткой «пробная» и в Тренажёре → «Живые цены». С реальными деньгами не складывается.
+          </div>
+          <div className="pa-trial-row">
+            <label>Стоп<input className="ck-order-input" inputMode="decimal" value={trialStop} onChange={(e) => setTrialStop(e.target.value)} placeholder="цена" /></label>
+            <label>Риск, ₽<input className="ck-order-input" inputMode="decimal" value={trialRisk} onChange={(e) => setTrialRisk(e.target.value)} placeholder="1000" /></label>
+            <button className="ck-btn ck-btn-primary" disabled={busy} onClick={placeTrial}>Поставить пробную</button>
+          </div>
+        </div>
+      )}
 
       {skipOpen && (
         <div className="pa-reasons">

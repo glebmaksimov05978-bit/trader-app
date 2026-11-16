@@ -62,5 +62,26 @@ ok('отчёт только по стратегии А: 2 закрытые, +150
 ok('открытая бумажная сделка в отчёт не попала («плавающего» результата нет)', ra.items.every((x) => x.raw.status === 'closed'));
 
 ok('пустой период не падает',buildPeriodReport({ realTrades: [], paperTrades: [], scope: 'all', type: 'month', key: '2026-10' }).empty === true && statsOf([]).total === 0);
+
+// Неделя (по понедельнику) и всё время.
+{
+  const wk = [
+    { status: 'closed', pnl: 100, closedAt: '2026-11-16T10:00:00', ticker: 'A' },   // понедельник
+    { status: 'closed', pnl: -40, closedAt: '2026-11-22T20:00:00', ticker: 'B' },   // воскресенье той же недели
+    { status: 'closed', pnl: 30, closedAt: '2026-11-15T12:00:00', ticker: 'C' },    // воскресенье прошлой недели
+    { status: 'closed', pnl: 7, closedAt: '2025-03-02T12:00:00', ticker: 'D' },
+  ];
+  const weeks = listPeriods(wk, [], 'week');
+  ok('недели: по понедельнику, свежая первой', weeks[0].key === '2026-11-16' && weeks[1].key === '2026-11-09' && weeks.length === 3);
+  ok('подпись недели', weeks[0].label === 'Неделя 16–22 ноября 2026');
+  ok('прошлая неделя', prevPeriodKey('week', '2026-11-16') === '2026-11-09' && prevPeriodKey('week', '2026-03-02') === '2026-02-23');
+  const rw = buildPeriodReport({ realTrades: wk, paperTrades: [], scope: 'real', type: 'week', key: '2026-11-16' });
+  ok('неделя: две сделки, +60, против прошлой +30', rw.stats.total === 2 && rw.stats.pnl === 60 && rw.prevStats.pnl === 30 && rw.delta.hasPrev);
+  ok('неделя: кривая по дням пн…вс', rw.curve.length === 7 && rw.curve[0].label === 'пн' && rw.curve[6].cumulative === 60);
+  const ra2 = buildPeriodReport({ realTrades: wk, paperTrades: [], scope: 'real', type: 'all', key: 'all' });
+  ok('всё время: все 4 сделки, без «прошлого периода»', ra2.stats.total === 4 && ra2.stats.pnl === 97 && ra2.prevKey === null && !ra2.delta.hasPrev && ra2.prevCurve.length === 0);
+  ok('всё время: кривая по месяцам от первой сделки', ra2.curve.length === 21 && ra2.curve[0].label === 'мар 25' && ra2.curve[20].cumulative === 97);
+  ok('всё время: один «период»', listPeriods(wk, [], 'all').length === 1 && listPeriods([], [], 'all').length === 0);
+}
 if (fails) { console.log(`\nПровалено: ${fails}`); process.exit(1); }
 console.log('\nВсе проверки отчёта за период прошли ✓');

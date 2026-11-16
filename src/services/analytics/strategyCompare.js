@@ -7,7 +7,7 @@
 //     разбор по общим инструментам, лучшее значение в каждой строке подсвечивается.
 //
 // Чистые функции без React и Firebase.
-import { statsOf, monthKey, yearKey } from './periodReport.js';
+import { statsOf, periodKeyOf } from './periodReport.js';
 import { capturedMovePct } from './excursion.js';
 import { classKey, captionOf, workTimeframeOf, horizonById } from './strategyMeta.js';
 
@@ -49,7 +49,7 @@ const holdDays = (t) => {
   return a && b && b >= a ? (b - a) / 86400000 : null;
 };
 
-const inPeriodDate = (type, key) => (d) => d && (type === 'year' ? yearKey(d) : monthKey(d)) === key;
+const inPeriodDate = (type, key) => (d) => d && periodKeyOf(type, d) === key;
 
 /**
  * @param {object} a

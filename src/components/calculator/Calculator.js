@@ -448,6 +448,13 @@ export default function Calculator() {
   // клик по радару открывал Журнал вместо графика инструмента).
   const [searchParams] = useSearchParams();
   const autoLoadTickerRef = useRef(searchParams.get('ticker')?.toUpperCase() || null);
+  const pendingLevelsRef = useRef(null); // стоп и цель из адреса — ждут, пока загрузится цена
+  useEffect(() => {
+    if (loadingPrice || !pendingLevelsRef.current) return;
+    const { sl, tp } = pendingLevelsRef.current;
+    pendingLevelsRef.current = null;
+    setForm((f) => ({ ...f, ...(sl ? { stopLoss: String(sl) } : {}), ...(tp ? { takeProfit: String(tp) } : {}) }));
+  }, [loadingPrice]);
   useEffect(() => {
     const t = autoLoadTickerRef.current;
     if (!t) return;
@@ -455,6 +462,12 @@ export default function Calculator() {
     const type = searchParams.get('type');
     if (type === 'stock' || type === 'future' || type === 'currency') setInstrumentType(type);
     handleTickerChange(t);
+    // Из короткой заявки Сопровождения приходят стоп и цель (?sl=…&tp=…): направление Калькулятор выводит сам —
+    // стоп ниже цены = лонг, выше = шорт.
+    // Подставляются ПОСЛЕ загрузки цены: загрузка нового тикера сама очищает стоп и цель (см. loadInstrument).
+    const sl = parseFloat(searchParams.get('sl'));
+    const tp = parseFloat(searchParams.get('tp'));
+    if (sl > 0 || tp > 0) pendingLevelsRef.current = { sl: sl > 0 ? sl : null, tp: tp > 0 ? tp : null };
     // form ещё не перерисовался с новым тикером — loadInstrument читает form.ticker,
     // поэтому даём React один тик на применение setForm выше. loadInstrument объявлен
     // ниже по коду той же функции, но вызывается только здесь, в эффекте, уже после

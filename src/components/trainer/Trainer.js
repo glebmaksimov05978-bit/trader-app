@@ -25,7 +25,13 @@ const TABS = [
 
 export default function Trainer() {
   const { user, userProfile, updateUserProfile } = useAuth();
-  const [tab, setTab] = useState('patterns');
+  // Вкладка из адреса: из Сопровождения пробная сделка открывается сразу в «Живых ценах» (/trainer?tab=live).
+  // Адрес читается напрямую (без useSearchParams): страница должна открываться и вне роутера — так её проверяют тесты.
+  const [tab, setTab] = useState(() => {
+    let want = null;
+    try { want = new URLSearchParams(window.location.search).get('tab'); } catch { /* нет адреса */ }
+    return TABS.some((t) => t.id === want) ? want : 'patterns';
+  });
   const [trades, setTrades] = useState([]);
   const [loadError, setLoadError] = useState(false);
 

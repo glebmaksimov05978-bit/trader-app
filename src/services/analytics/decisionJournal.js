@@ -10,6 +10,7 @@
 //
 // Чистые функции без зависимостей.
 import { summarizeDecisions } from './actionMatch.js';
+import { periodKeyOf as keyOfDate } from './periodReport.js';
 
 const toMs = (v) => {
   if (!v) return null;
@@ -20,11 +21,8 @@ const toMs = (v) => {
   return Number.isNaN(t) ? null : t;
 };
 
-const pad = (n) => String(n).padStart(2, '0');
-const periodKeyOf = (type, ms) => {
-  const d = new Date(ms);
-  return type === 'year' ? String(d.getFullYear()) : `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
-};
+// Неделя / месяц / год / всё время — тот же ключ, что у отчёта за период (periodReport.js).
+const periodKeyOf = (type, ms) => keyOfDate(type, new Date(ms));
 
 const bucket = () => ({ count: 0, pnl: 0, wins: 0 });
 const addTo = (b, pnl) => { b.count += 1; b.pnl += pnl; if (pnl > 0) b.wins += 1; };
