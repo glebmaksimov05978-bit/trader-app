@@ -3,11 +3,12 @@ import { newTradeRef, tradeRefById, tradeHistoryRef, commitTradeBatch } from '..
 import { matchTransactionsToTrades } from './fifoMatcher.js';
 import { TinkoffAPI, parseFutureInfo } from '../tinkoff.js';
 import { resolveFuturesSpecFromMoex } from '../marketData/futuresSpecs.js';
+import { findSimilarManual } from './similarManual.js';
 
 const OBJECTIVE_FIELDS = [
   'entryPrice', 'exitPrice', 'volume', 'remainingVolume', 'commission', 'openCommissionPerUnit',
   'openedAt', 'closedAt', 'direction', 'status', 'pnl', 'pnlNeedsSpecs', 'expiredUnclosed',
-  'instrumentType',
+  'instrumentType', 'brokerAdjustment', 'brokerVmChecked', 'brokerVmShared',
 ];
 const SUBJECTIVE_FIELDS = ['emotion', 'setup', 'notes'];
 
@@ -56,22 +57,41 @@ function findFuzzyDuplicate(candidate, existingTrades) {
 }
 
 // Categorizes matched positions against existing Firestore trades for the preview UI.
+// 'similar' — похожа на ручную запись (similarManual.js): окно импорта предлагает заменить её точными данными брокера.
+// Если человек согласился, у позиции стоит replaceTradeId — тогда это обычное 'update' этой записи; если отказался —
+// позиция пишется новой ('similar' при записи ведёт себя как 'new').
 export function classifyForPreview(matchedTrades, existingTrades) {
+  const used = new Set();
   return matchedTrades.map((candidate) => {
     if (candidate.existingTradeId) {
       return { candidate, status: 'update', existing: existingTrades.find((t) => t.id === candidate.existingTradeId) };
     }
+    if (candidate.replaceTradeId) {
+      const target = existingTrades.find((t) => t.id === candidate.replaceTradeId);
+      if (target) { used.add(target.id); return { candidate, status: 'update', existing: target }; }
+    }
     const exact = findExactDuplicate(candidate, existingTrades);
     if (exact) return { candidate, status: 'duplicate', existing: exact };
     const fuzzy = findFuzzyDuplicate(candidate, existingTrades);
-    if (fuzzy) return { candidate, status: 'update', existing: fuzzy };
+    if (fuzzy && !used.has(fuzzy.id)) { used.add(fuzzy.id); return { candidate, status: 'update', existing: fuzzy }; }
+    const similar = findSimilarManual(candidate, existingTrades, used);
+    if (similar) { used.add(similar.id); return { candidate, status: 'similar', existing: similar }; }
     return { candidate, status: 'new', existing: null };
   });
 }
 
-function pnlFromSpec(trade, priceStep, stepCost) {
-  const pnl = trade.pnlPoints * (stepCost / priceStep) - trade.commission;
-  return { ...trade, pnl: Math.round(pnl * 100) / 100, pnlNeedsSpecs: false };
+// Рубли из «пунктов» импортированного фьючерса. Формула повторяет pointsPnlRub из services/contractMath.js (совпадение
+// закреплено сверкой scripts/moneyAuditTests.mjs); сюда она вписана напрямую, потому что проверка импорта запускает
+// этот файл отдельно от остального приложения.
+// Комиссия — только за ЗАКРЫТУЮ часть позиции: все комиссии закрытий + доля комиссии входа на закрытый объём. Раньше у
+// частично закрытого фьючерса вычиталась комиссия входа за всю позицию — результат был занижен, а при закрытии остатка
+// вручную комиссия входа этой части учитывалась второй раз. У закрытой целиком сделки число прежнее.
+export function pnlFromSpec(trade, priceStep, stepCost) {
+  const realizedCommission = Math.max(0, (Number(trade.commission) || 0)
+    - (Number(trade.openCommissionPerUnit) || 0) * (Number(trade.remainingVolume) || 0));
+  const pnl = trade.pnlPoints * (stepCost / priceStep) - realizedCommission;
+  // rubPerPoint — чем считали (нужно сверке с вариационной маржой брокера, varMargin.js); в базу не пишется.
+  return { ...trade, pnl: Math.round(pnl * 100) / 100, pnlNeedsSpecs: false, rubPerPoint: stepCost / priceStep };
 }
 
 // Futures P&L needs each instrument's point value. Tinkoff's API is the primary source
@@ -130,6 +150,16 @@ function mergePatch(existing, candidate) {
     if (!existing[field] && candidate[field]) patch[field] = candidate[field];
   }
   patch.dataSource = existing.dataSource === 'manual' ? 'hybrid' : (existing.dataSource || 'imported');
+  // Ручная запись заменяется брокерской: дата входа и признаки инструмента — тоже от брокера. Стратегия, стоп, заметки,
+  // эмоции и прочее, что вводил человек, остаются (в OBJECTIVE_FIELDS их нет).
+  if (!existing.sourceTransactionIds?.length) {
+    if (existing.dataSource !== 'imported') patch.dataSource = 'hybrid';
+    if (candidate.openedAt) patch.date = new Date(candidate.openedAt).toISOString().split('T')[0];
+    if (candidate.isFuture != null) patch.isFuture = !!candidate.isFuture;
+    if (candidate.pnlPoints != null) patch.pnlPoints = candidate.pnlPoints;
+    if (candidate.parseMethod) patch.parseMethod = candidate.parseMethod;
+    patch.brokerSource = 'tinkoff';
+  }
   // legs/sourceTransactionIds are arrays — candidate's version already carries the fully
   // extended history (fifoMatcher re-hydrated it from `existing` before adding new legs),
   // so it's always the authoritative superset, not something to diff field-by-field.
@@ -221,6 +251,10 @@ export async function commitImport(uid, checkedTrades, existingTrades) {
           expiredUnclosed: rest.expiredUnclosed || false,
           legs: rest.legs,
           sourceTransactionIds: rest.sourceTransactionIds,
+          // Поправка по вариационной марже брокера (фандинг вечных фьючерсов, курс шага долларовых) — уже внутри pnl.
+          ...(rest.brokerVmChecked ? {
+            brokerAdjustment: rest.brokerAdjustment || 0, brokerVmChecked: true, brokerVmShared: !!rest.brokerVmShared,
+          } : {}),
         },
       });
       created++;

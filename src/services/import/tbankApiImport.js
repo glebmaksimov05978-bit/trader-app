@@ -11,6 +11,8 @@
 //
 // Модуль чистый (без зависимостей), кроме функций, которым передают объект API.
 
+import { fetchVarMarginOperations, vmOperationsFromApi } from './varMarginApi';
+
 const money = (v) => (v ? Number(v.units || 0) + Number(v.nano || 0) / 1e9 : 0);
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 
@@ -158,6 +160,14 @@ export async function importFromTbankApi(api, { accountId, from, to, onProgress 
   const items = await fetchTradeOperations(api, { accountId, from, to, onProgress });
   const lotByTicker = await resolveStockLots(api, items);
   const { transactions, skipped, stats } = tbankOperationsToTransactions(items, { lotByTicker });
+  // Вариационная маржа — отдельным запросом и только если есть фьючерсы. Не получилось — импорт идёт как раньше,
+  // просто без сверки (причина видна в предпросмотре).
+  let vmRaw = [];
+  let vmError = null;
+  if (stats.byKind.future > 0) {
+    try { vmRaw = await fetchVarMarginOperations(api, { accountId, from, to }); } catch (e) { vmError = e?.message || 'ошибка запроса'; }
+  }
+  const vmOps = vmOperationsFromApi(vmRaw);
   return {
     ok: true,
     transactions,
@@ -166,7 +176,8 @@ export async function importFromTbankApi(api, { accountId, from, to, onProgress 
     parseMethod: 'tbank-api',
     flaggedForReview: [],
     unparsedDealNumbers: [],
-    apiInfo: { stats, skipped, rawItems: items, lotByTicker },
+    vmOps,
+    apiInfo: { stats, skipped, rawItems: items, lotByTicker, vmRaw, vmError, vmCount: vmOps.length, vmWithTicker: vmOps.filter((o) => o.ticker).length },
   };
 }
 
@@ -176,5 +187,15 @@ export function buildApiDiagnostics(apiInfo, limit = 30) {
     const { brokerAccountId, cursor, ...rest } = i;
     return rest;
   });
-  return JSON.stringify({ stats: apiInfo.stats, skipped: apiInfo.skipped.slice(0, 30), lotByTicker: apiInfo.lotByTicker, sampleOperations: sample }, null, 1);
+  // Операции вариационной маржи: первые 12 как есть (без номера счёта) — по ним видно, привязаны ли они к контракту и
+  // каким временем датированы; от этого зависит сверка фьючерсов.
+  const vmSample = (apiInfo.vmRaw || []).slice(0, 12).map((i) => {
+    const { brokerAccountId, cursor, ...rest } = i;
+    return rest;
+  });
+  return JSON.stringify({
+    stats: apiInfo.stats, skipped: apiInfo.skipped.slice(0, 30), lotByTicker: apiInfo.lotByTicker,
+    varMargin: { operations: apiInfo.vmCount || 0, withTicker: apiInfo.vmWithTicker || 0, error: apiInfo.vmError || null, check: apiInfo.vmSummary || null, sample: vmSample },
+    sampleOperations: sample,
+  }, null, 1);
 }

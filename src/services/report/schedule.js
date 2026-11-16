@@ -135,7 +135,8 @@ export function normalizeSchedule(raw) {
   s.tz = isValidTimeZone(raw.tz) ? raw.tz : MSK_TZ;
   s.hour = hoursForZone(s.tz).includes(raw.hour) ? raw.hour : (hoursForZone(s.tz).includes(9) ? 9 : hoursForZone(s.tz)[0]);
   s.period = SCHEDULE_PERIODS.includes(raw.period) ? raw.period : (s.frequency === 'weekly' ? 'last_week' : 'last_month');
-  s.scope = ['real', 'paper', 'all'].includes(raw.scope) ? raw.scope : 'real';
+  // 'all' («Всё вместе») больше не бывает: реальные и условные рубли не складываются — старые расписания становятся «Реальные».
+  s.scope = raw.scope === 'paper' ? 'paper' : 'real';
   s.strategies = Array.isArray(raw.strategies) ? raw.strategies.filter((x) => typeof x === 'string').slice(0, 30) : [];
   const ids = SECTIONS.map((x) => x.id);
   const secs = Array.isArray(raw.sections) ? raw.sections.filter((x) => ids.includes(x)) : [];

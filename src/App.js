@@ -15,9 +15,9 @@ import Capital from './components/capital/Capital';
 import Advisor from './components/advisor/Advisor';
 import Settings from './components/settings/Settings';
 import AdminPanel from './components/admin/AdminPanel';
-import Backtest from './components/backtest/Backtest';
 import Cockpit from './components/cockpit/Cockpit';
 import Trainer from './components/trainer/Trainer';
+import Strategies from './components/strategies/Strategies';
 import LoadingScreen from './components/LoadingScreen';
 import { TRUSTED_UIDS } from './constants/trustedUids';
 import './styles/globals.css';
@@ -74,8 +74,10 @@ function AppRoutes() {
         <Route path="admin" element={
           <AdminRoute><AdminPanel /></AdminRoute>
         } />
+        {/* «Стратегии» — мастерская правил: правила, проверка на истории, вживую. Старый адрес бэктеста ведёт сюда же. */}
+        <Route path="strategies" element={<Strategies />} />
         <Route path="backtest" element={
-          <TrustedRoute><Backtest /></TrustedRoute>
+          <TrustedRoute><Navigate to="/strategies?tab=history" replace /></TrustedRoute>
         } />
         {/* «Сопровождение» открыто всем — см. комментарий в constants/navItems.js:
             сама вкладка полезна с любой стратегией, а её части, завязанные на конкретные

@@ -43,10 +43,58 @@ function ChartView() {
   );
 }
 
+// ?view=marks — метки сделки на графике во всех вариантах: полная история операций, сделка системы (в операциях только
+// закрытия), открытый шорт без операций, вход и выход внутри одной свечи.
+function MarksView() {
+  const candles = useMemo(() => fakeCandles(300, 7), []);
+  document.documentElement.setAttribute('data-theme', 'dark');
+  const at = (i, h = 10) => new Date(candles[i].date.getTime() + h * 3600000).toISOString();
+  const px = (i) => Number(candles[i].close.toFixed(2));
+  const cases = [
+    { title: 'Реальная: вход, докупка, две фиксации, выход', props: {
+      direction: 'long', entryPrice: px(240), exitPrice: px(275),
+      legs: [
+        { type: 'open', quantity: 10, price: px(240), timestampUtc: at(240) },
+        { type: 'open', quantity: 5, price: px(246), timestampUtc: at(246) },
+        { type: 'close', quantity: 5, price: px(255), timestampUtc: at(255) },
+        { type: 'close', quantity: 5, price: px(263), timestampUtc: at(263) },
+        { type: 'close', quantity: 5, price: px(275), timestampUtc: at(275) },
+      ] } },
+    { title: 'Сделка системы: в операциях только закрытия, сделка ещё открыта', props: {
+      direction: 'long', entryPrice: px(262),
+      entryMarker: { date: at(262), price: px(262), direction: 'long', quantity: 10 },
+      legs: [{ type: 'close', quantity: 4, price: px(280), timestampUtc: at(280) }],
+      planLines: { entry: px(262), stop: px(262) - 6, take: px(262) + 14 } } },
+    { title: 'Шорт без истории операций, закрыт', props: {
+      direction: 'short', entryPrice: px(200), exitPrice: px(215),
+      entryMarker: { date: at(200), price: px(200), direction: 'short', quantity: 3 },
+      exitMarker: { date: at(215), price: px(215) } } },
+    { title: 'Вход и выход внутри одной свечи', props: {
+      direction: 'long', entryPrice: px(150), exitPrice: px(150) + 1,
+      legs: [
+        { type: 'open', quantity: 2, price: px(150), timestampUtc: at(150, 8) },
+        { type: 'close', quantity: 2, price: px(150) + 1, timestampUtc: at(150, 14) },
+      ] } },
+  ];
+  return (
+    <AuthProvider>
+      <div style={{ padding: 16, background: 'var(--bg-primary)', minHeight: '100vh', color: 'var(--text-primary)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        {cases.map((c) => (
+          <div className="card" style={{ padding: 12 }} key={c.title}>
+            <div style={{ fontSize: 13, marginBottom: 6 }}>{c.title}</div>
+            <CandleChart candles={candles} ticker="TEST" timeframe="D1" height={300} {...c.props} />
+          </div>
+        ))}
+      </div>
+    </AuthProvider>
+  );
+}
+
 // ?view=trainer — страница тренажёра целиком (без входа в аккаунт): проверить игру глазами
 export default function ChartHarness() {
   if (new URLSearchParams(window.location.search).get('view') === 'trainer') {
     return <AuthProvider><div style={{ background: 'var(--bg-primary)', minHeight: '100vh' }}><Trainer /></div></AuthProvider>;
   }
+  if (new URLSearchParams(window.location.search).get('view') === 'marks') return <MarksView />;
   return <ChartView />;
 }

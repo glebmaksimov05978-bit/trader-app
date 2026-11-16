@@ -59,7 +59,7 @@ ok('в строках сделок — дата, тикер, сторона, с�
 const mp = buildExportReport({ realTrades, paperTrades, scope: 'paper', period: oct, now: NOW });
 ok('срез «бумажные»: 2 сделки, +150', mp.stats.total === 2 && mp.stats.pnl === 150 && mp.meta.scopeLabel === 'Бумажные');
 const ma = buildExportReport({ realTrades, paperTrades, scope: 'all', period: oct, now: NOW });
-ok('«всё вместе»: 6 сделок; в стратегиях виден источник (реал/бумага)', ma.stats.total === 6 && ma.byStrategy.some((g) => /бумага/.test(g.label)) && ma.byStrategy.some((g) => /реал/.test(g.label)));
+ok('старое «всё вместе» = реальные: бумажных в выгрузке нет', ma.stats.total === m.stats.total && !ma.byStrategy.some((g) => /бумага/.test(g.label)));
 const mf = buildExportReport({ realTrades, paperTrades, scope: 'real', strategyNames: ['Отскок'], period: oct, now: NOW });
 ok('фильтр по стратегии «Отскок»: 1 сделка, −400, в шапке указан фильтр', mf.stats.total === 1 && mf.stats.pnl === -400 && mf.meta.strategiesText === 'Отскок');
 ok('без фильтра в шапке — «Все стратегии»', m.meta.strategiesText === 'Все стратегии');

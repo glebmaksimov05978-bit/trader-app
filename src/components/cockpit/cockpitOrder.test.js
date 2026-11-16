@@ -79,16 +79,23 @@ const before = (a, b) => !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITIO
 
 beforeEach(() => { try { sessionStorage.clear(); } catch { /* нет хранилища — не страшно */ } });
 
-test('инструмент из радара: готовность к входу, затем график, затем кнопка «Технический анализ»', async () => {
+// Вид терминала (макет Сопровождения, согласован 2026-11-15): график сверху, под ним вкладки. У инструмента без сделки
+// открыта вкладка «Вход» с готовностью к входу; технический анализ — соседняя вкладка.
+test('инструмент из радара: график сверху, под ним вкладки «Вход» и «Тех. анализ»', async () => {
   const { host, unmount } = await mount('/cockpit?previewTicker=SBER&previewType=stock');
   const chart = host.querySelector('#ck-chart');
-  const ta = [...host.querySelectorAll('button')].find((b) => /Технический анализ/.test(b.textContent));
+  const tabs = [...host.querySelectorAll('.ck-tabs button')];
   const readiness = [...host.querySelectorAll('h3')].find((h) => /Готовность к входу/.test(h.textContent));
   expect(chart).toBeTruthy();
-  expect(ta).toBeTruthy();
+  expect(tabs.map((t) => t.textContent)).toEqual(['Вход', 'Тех. анализ']);
+  expect(tabs[0].className).toBe('on');
   expect(readiness).toBeTruthy();
-  expect(before(readiness, chart)).toBe(true);
-  expect(before(chart, ta)).toBe(true);
+  expect(before(chart, tabs[0])).toBe(true);
+  expect(before(tabs[0], readiness)).toBe(true);
+  // переключение на анализ убирает готовность и ничего не роняет
+  await act(async () => { tabs[1].dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+  expect([...host.querySelectorAll('h3')].some((h) => /Готовность к входу/.test(h.textContent))).toBe(false);
+  expect(host.querySelector('.ck-tabs button.on').textContent).toBe('Тех. анализ');
   unmount();
 });
 

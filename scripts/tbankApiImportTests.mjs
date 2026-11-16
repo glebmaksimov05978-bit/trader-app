@@ -16,6 +16,7 @@ function esmify(name) {
   fs.writeFileSync(out, t, 'utf8');
   return pathToFileURL(out).href;
 }
+esmify('varMarginApi.js');
 const api = await import(esmify('tbankApiImport.js'));
 esmify('instrumentResolver.js');
 const { matchTransactionsToTrades } = await import(esmify('fifoMatcher.js'));

@@ -194,7 +194,9 @@ export default function LiveDesk({ trades, onChanged }) {
             <span className="tr-muted">{token ? 'Данные Т-Инвестиций' : 'Данные MOEX, задержка около 15 минут'}{refreshedAt ? ` · обновлено ${refreshedAt.toLocaleTimeString('ru-RU')}` : ''}</span>
           </div>
           {shown.length ? (
-            <CandleChart candles={shown} ticker={selected?.ticker || form?.ticker || ''} timeframe={selected?.timeframe || form?.timeframe || 'D1'} height={360} planLines={planLines} />
+            <CandleChart candles={shown} ticker={selected?.ticker || form?.ticker || ''} timeframe={selected?.timeframe || form?.timeframe || 'D1'} height={360} planLines={planLines}
+              direction={selected?.side}
+              entryMarker={selected?.status === 'open' && selected.entryDate ? { date: selected.entryDate, price: selected.entryPrice, direction: selected.side } : null} />
           ) : (
             <p className="tr-muted" style={{ padding: '60px 10px', textAlign: 'center' }}>Загрузите график справа или выберите свою позицию ниже.</p>
           )}

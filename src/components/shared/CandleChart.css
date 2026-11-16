@@ -47,3 +47,47 @@
 /* Сигнальная линия (★) в панели рисования */
 .cc-draw-signal.on { color: var(--gold, #e0b341); border-color: var(--gold, #e0b341); }
 .cc-draw-signal.on svg path { fill: currentColor; fill-opacity: 0.25; }
+
+/* ---------- шапка графика: тикер, меню индикаторов, таймфреймы ---------- */
+.cc-head { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; flex-shrink: 0; }
+.cc-head-left, .cc-head-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cc-ticker { font-size: 15px; font-weight: 700; color: var(--text-primary); letter-spacing: .01em; }
+.cc-menu-wrap { position: relative; }
+.cc-menu-btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border-subtle); background: var(--bg-surface-2); color: var(--text-secondary); font-family: inherit; font-size: 12px; font-weight: 500; cursor: pointer; }
+.cc-menu-btn:hover, .cc-menu-btn.on { color: var(--text-primary); border-color: var(--border-medium); }
+.cc-menu-count { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--bg-surface-3); color: var(--text-primary); font-size: 10px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; }
+.cc-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 60; width: 250px; max-height: 60vh; overflow-y: auto; padding: 8px; background: var(--bg-surface); border: 1px solid var(--border-medium); border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,0.35); }
+.cc-menu-group + .cc-menu-group { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border-subtle); }
+.cc-menu-title { font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); padding: 4px 8px; }
+.cc-menu-item { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; font-size: 13px; color: var(--text-primary); cursor: pointer; }
+.cc-menu-item:hover { background: var(--bg-surface-2); }
+.cc-menu-item input[type="checkbox"] { accent-color: var(--accent-primary); margin: 0; }
+.cc-menu-item > span:nth-child(2) { flex: 1; }
+.cc-swatch { position: relative; width: 22px; height: 12px; border-radius: 3px; border: 1px solid var(--border-subtle); flex-shrink: 0; cursor: pointer; }
+.cc-swatch input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.cc-tf { display: inline-flex; padding: 2px; gap: 1px; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-surface-2); }
+.cc-tf button { border: none; background: transparent; color: var(--text-secondary); font-family: inherit; font-size: 11.5px; font-weight: 500; padding: 4px 8px; border-radius: 6px; cursor: pointer; }
+.cc-tf button:hover { color: var(--text-primary); }
+.cc-tf button.on { background: var(--bg-surface-3); color: var(--text-primary); font-weight: 600; }
+.cc-icon-btn { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--border-subtle); border-radius: 8px; background: var(--bg-surface-2); color: var(--text-secondary); font-family: inherit; cursor: pointer; }
+.cc-icon-btn:hover { color: var(--text-primary); border-color: var(--border-medium); }
+
+/* ---------- подпись на графике: цены свечи и значения индикаторов ---------- */
+.cc-legend { position: absolute; top: 6px; left: 8px; z-index: 4; display: flex; flex-direction: column; gap: 2px; font-size: 11.5px; line-height: 1.45; color: var(--text-muted); pointer-events: none; font-variant-numeric: tabular-nums; max-width: calc(100% - 80px); }
+.cc-legend b { font-weight: 500; color: var(--text-secondary); }
+.cc-legend b.up { color: var(--green); }
+.cc-legend b.down { color: var(--red); }
+.cc-legend-ohlc { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.cc-legend-row { display: inline-flex; align-items: center; gap: 6px; width: fit-content; pointer-events: auto; padding-right: 2px; border-radius: 4px; }
+.cc-legend-row i { width: 10px; height: 2px; border-radius: 1px; flex-shrink: 0; }
+.cc-legend-name { color: var(--text-secondary); }
+.cc-legend-x { border: none; background: transparent; color: var(--text-muted); font-size: 13px; line-height: 1; padding: 0 3px; cursor: pointer; opacity: 0; }
+.cc-legend-row:hover { background: color-mix(in srgb, var(--bg-surface-2) 85%, transparent); }
+.cc-legend-row:hover .cc-legend-x { opacity: 1; }
+.cc-legend-x:hover { color: var(--red); }
+@media (max-width: 640px) {
+  .cc-menu { position: fixed; left: 12px; right: 12px; top: auto; bottom: 12px; width: auto; max-height: 65vh; }
+  .cc-legend { font-size: 10.5px; }
+  .cc-legend-x { opacity: 1; }
+  .cc-tf { overflow-x: auto; max-width: 100%; }
+}

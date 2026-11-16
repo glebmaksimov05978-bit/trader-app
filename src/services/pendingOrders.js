@@ -1,4 +1,4 @@
-import { positionValueRub } from './contractMath.js';
+import { sideCommission } from './contractMath.js';
 // src/services/pendingOrders.js
 //
 // Заявки, которые брокер принял, но не исполнил сразу (лимитная, ждущая цены, или рыночная вне
@@ -50,7 +50,9 @@ export function planPendingUpdate(trade, state, now = new Date()) {
         remainingVolume: vol,
         openedAt: at,
         date: at.split('T')[0],
-        commission: price ? Math.round(positionValueRub({ ...trade, lot }, price, vol) * rate * 2) : trade.commission ?? null,
+        // только комиссия входа, до копеек; выход добавит закрытие (см. sideCommission в contractMath.js)
+        commission: price ? sideCommission({ ...trade, lot }, price, vol, rate) : trade.commission ?? null,
+        entryCommissionIncluded: !!price,
         pendingOrder: { ...po, filledLots: vol, filledAt: at },
         legs: [{
           type: 'open', side: trade.direction === 'short' ? 'sell' : 'buy', price, quantity: vol, commission: 0,

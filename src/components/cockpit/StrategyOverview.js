@@ -35,6 +35,7 @@ const MAX_CHIPS = 4;
  */
 export default function StrategyOverview({
   strategies, groups, radar, onPick, onOpenTicker, onToggleObserve, single = false, knownIds = null, pending = null,
+  showRadar = true, // в разделе «Стратегии → Вживую» радара нет: там только сделки системы
 }) {
   const byId = new Map(groups.map((g) => [g.key, g]));
   // Стратегии из профиля — всегда, даже без сделок; плюс «осиротевшие» группы (стратегия удалена).
@@ -81,7 +82,7 @@ export default function StrategyOverview({
                 {cap ? (
                   <span className="so-cap">{cap}</span>
                 ) : r.strategy ? (
-                  <Link to="/capital" className="so-cap-missing" onClick={(e) => e.stopPropagation()}>
+                  <Link to="/strategies" className="so-cap-missing" onClick={(e) => e.stopPropagation()}>
                     {tfFromTrades ? `таймфрейм ${tfFromTrades} · ` : ''}задайте горизонт и таймфрейм
                   </Link>
                 ) : (
@@ -102,7 +103,7 @@ export default function StrategyOverview({
 
               {/* Радар этой стратегии: сколько тикеров смотрит, и горячие — кнопками. Нажатие
                   открывает ГРАФИК инструмента без «призмы» стратегии. */}
-              <div className="so-radar">
+              {showRadar && <div className="so-radar">
                 <span className="so-radar-k">
                   радар: {rd.total}{rd.hot > 0 && <b className="so-hot"> · готово к входу {rd.hot}</b>}
                 </span>
@@ -121,7 +122,7 @@ export default function StrategyOverview({
                     {more > 0 && <span className="so-more">+{more}</span>}
                   </span>
                 )}
-              </div>
+              </div>}
 
               {(pending?.[r.id] || 0) > 0 && (
                 <div className="so-pending" title="Откройте сделку этой стратегии и отметьте, вошли вы по сигналу или пропустили">

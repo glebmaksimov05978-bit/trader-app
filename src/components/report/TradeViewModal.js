@@ -97,10 +97,12 @@ export default function TradeViewModal({ item, userProfile, onClose }) {
               direction={item.direction}
               legs={legs}
               entryPrice={num(trade.entryPrice)}
-              exitPrice={num(trade.exitPrice)}
+              // цена выхода — только у закрытой целиком: иначе последняя частичная фиксация рисовалась бы как выход
+              exitPrice={trade.status === 'partial' || trade.status === 'open' ? null : num(trade.exitPrice)}
               planLines={{ entry: null, stop, take: take || null }}
-              entryMarker={!legs && openedAt ? { date: openedAt, price: num(trade.entryPrice), direction: item.direction } : null}
-              exitMarker={!legs && closedAt && num(trade.exitPrice) != null ? { date: closedAt, price: num(trade.exitPrice) } : null}
+              // Передаём всегда: у сделки системы в операциях есть только закрытия, вход берётся отсюда.
+              entryMarker={openedAt ? { date: openedAt, price: num(trade.entryPrice), direction: item.direction, quantity: num(trade.volume) } : null}
+              exitMarker={closedAt && trade.status !== 'partial' && num(trade.exitPrice) != null ? { date: closedAt, price: num(trade.exitPrice) } : null}
               timeframe={timeframe}
               timeframeOptions={availableTimeframes(hasToken)}
               onTimeframeChange={setPicked}
@@ -126,7 +128,7 @@ export default function TradeViewModal({ item, userProfile, onClose }) {
               </table>
             </div>
           )}
-          <p className="rx-note">Открыта: {dateTime(openedAt)}. На графике: стрелка — вход, кружки — фиксации и выход, белая линия — средняя цена входа{stop != null || take ? ', пунктиры — стоп и цель' : ''}. Таймфрейм можно сменить над графиком, кнопка ⛶ — на весь экран.</p>
+          <p className="rx-note">Открыта: {dateTime(openedAt)}. На графике: зелёная стрелка вверх — купили, красная вниз — продали, белая линия — средняя цена входа{stop != null || take ? ', пунктиры — стоп и цель' : ''}. Подписи и сами стрелки выключаются кнопками «Подписи меток» и «Стрелки сделок» над графиком. Таймфрейм можно сменить там же, кнопка ⛶ — на весь экран.</p>
         </div>
       </div>
     </div>,

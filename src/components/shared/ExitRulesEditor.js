@@ -118,7 +118,7 @@ export default function ExitRulesEditor({ value, onChange, maxBarsEnabled, onMax
           couldn't find "where do I turn the adverse threshold on" or "where's the
           profit system toggle" even though they existed — everything below is now one
           row per control: checkbox/label, the number, and at most one short line of
-          context. Full explanations live in HANDOFF_NEXT_SESSION.md, not the UI. */}
+          context. Full explanations live in ПАСПОРТ_АЛГОРИТМИЧЕСКИХ_СТРАТЕГИЙ_И_ИСТОРИЯ_РАБОТЫ.md (раздел АРХИВ), not the UI. */}
       <div style={{padding:'10px 14px', borderRadius:10, background:'var(--bg-surface-2)', border:'1px solid var(--border-subtle)'}}>
         <label className="flex gap-2" style={{alignItems:'center', fontSize:13, cursor:'pointer', fontWeight:600}}>
           <input type="checkbox" checked={!!value.trailEnabled}
@@ -172,7 +172,7 @@ export default function ExitRulesEditor({ value, onChange, maxBarsEnabled, onMax
             {/* Profit-capture score — replaces the blunt "give back 50% of peak" rule with
                 a weighted score over 27 indicators (RSI extreme, EMA13 stretch, profit>8%,
                 Боллинджер10>0.85, held 15+ bars, low ADX, volume spike). See
-                HANDOFF_NEXT_SESSION.md for the full calibration. */}
+                ПАСПОРТ_АЛГОРИТМИЧЕСКИХ_СТРАТЕГИЙ_И_ИСТОРИЯ_РАБОТЫ.md (раздел АРХИВ) for the full calibration. */}
             <label className="flex gap-2" style={{alignItems:'center', fontSize:13, cursor:'pointer', fontWeight:600, marginTop:4}}>
               <input type="checkbox" checked={!!value.profitCaptureEnabled}
                 onChange={(e) => onChange({ ...value, profitCaptureEnabled: e.target.checked })} />

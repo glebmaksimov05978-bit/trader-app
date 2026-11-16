@@ -52,3 +52,77 @@ export function moveRub(t, entry, exit, qty) {
 export function roundTripCommission(t, price, qty, rate) {
   return positionValueRub(t, price, qty) * num(rate) * 2;
 }
+
+/**
+ * Комиссия, которая относится к уже ЗАКРЫТОЙ части импортированной позиции: все комиссии закрытий + доля комиссии
+ * входа на закрытый объём. У частично закрытого фьючерса раньше вычиталась комиссия входа за ВСЮ позицию — результат
+ * был занижен, а при закрытии остатка вручную комиссия входа этой части учитывалась второй раз. У закрытой целиком
+ * сделки число то же, что и раньше.
+ */
+export function realizedCommission(t) {
+  const total = num(t?.commission);
+  return Math.max(0, total - num(t?.openCommissionPerUnit) * num(t?.remainingVolume));
+}
+
+/** Результат импортированного фьючерса в рублях: накопленные «пункты × объём» × рубли за пункт − комиссия закрытой части. До копеек. */
+export function pointsPnlRub(t, rubPerPt) {
+  return Math.round((num(t?.pnlPoints) * num(rubPerPt) - realizedCommission(t)) * 100) / 100;
+}
+
+/**
+ * Комиссия ОДНОЙ стороны сделки (вход или выход) в рублях, до копеек: стоимость позиции по этой цене × ставка.
+ * При открытии сделки в неё пишется только комиссия входа (с пометкой entryCommissionIncluded) — комиссию выхода
+ * добавляет закрытие. Раньше при открытии писалась комиссия «за круг», а закрытие прибавляло её ещё раз.
+ */
+export function sideCommission(t, price, qty, rate) {
+  return Math.round(positionValueRub(t, price, qty) * num(rate) * 100) / 100;
+}
+
+/**
+ * Итог сделки по истории операций брокера (кнопка «Синхронизировать с Т-Банком» в Журнале): объём, остаток, средние
+ * цены входа и выхода, результат и комиссия — той же формулой, что и обычное закрытие. Раньше синхронизация меняла
+ * только статус и остаток: сделка становилась «закрыта», а результат оставался пустым или старым.
+ *
+ * Брокер отдаёт акции в штуках, а Журнал ведёт объём в лотах: у акции с лотом больше 1 количество делится на лот
+ * (если делится нацело; иначе операции оставляются как есть и units = 'shares' — такую сделку надо проверить руками).
+ *
+ * @param {object} trade  сделка журнала (instrumentType, direction, lot, minStep, minStepAmount)
+ * @param {Array<{type:'open'|'close', price:number, quantity:number, timestampUtc:any}>} legs
+ * @param {number} rate   ставка комиссии за сторону
+ */
+export function summarizeLegs(trade, legs, rate) {
+  const r2 = (v) => Math.round(v * 100) / 100;
+  const lot = num(trade?.lot) || 1;
+  let list = (Array.isArray(legs) ? legs : []).filter((l) => l && (l.type === 'open' || l.type === 'close') && num(l.quantity) > 0);
+  let units = 'lots';
+  if (!isFutureLike(trade) && lot > 1) {
+    if (list.every((l) => Number.isInteger(num(l.quantity) / lot))) list = list.map((l) => ({ ...l, quantity: num(l.quantity) / lot }));
+    else units = 'shares';
+  }
+  const opens = list.filter((l) => l.type === 'open');
+  const closes = list.filter((l) => l.type === 'close');
+  const opened = opens.reduce((s, l) => s + num(l.quantity), 0);
+  const closed = closes.reduce((s, l) => s + num(l.quantity), 0);
+  if (!(opened > 0)) return null;
+  const entryPrice = opens.reduce((s, l) => s + num(l.price) * num(l.quantity), 0) / opened;
+  const exitPrice = closed > 0 ? closes.reduce((s, l) => s + num(l.price) * num(l.quantity), 0) / closed : null;
+  let pnl = 0;
+  let exitCommission = 0;
+  for (const l of closes) {
+    const q = num(l.quantity), px = num(l.price);
+    const commission = (positionValueRub(trade, entryPrice, q) + positionValueRub(trade, px, q)) * num(rate);
+    pnl += r2(moveRub(trade, entryPrice, px, q) - commission);
+    exitCommission += r2(positionValueRub(trade, px, q) * num(rate));
+  }
+  const remaining = Math.max(0, opened - closed);
+  const lastClose = closes.length ? closes[closes.length - 1].timestampUtc : null;
+  return {
+    legs: list, units,
+    volume: opened, remainingVolume: remaining,
+    status: remaining <= 1e-9 ? 'closed' : (closed > 0 ? 'partial' : 'open'),
+    entryPrice, exitPrice,
+    pnl: closed > 0 ? r2(pnl) : null,
+    commission: r2(sideCommission(trade, entryPrice, opened, rate) + exitCommission),
+    closedAt: remaining <= 1e-9 ? lastClose : null,
+  };
+}

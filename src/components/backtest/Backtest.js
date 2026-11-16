@@ -45,7 +45,8 @@ function StatCard({ label, value, tone }) {
   );
 }
 
-export default function Backtest() {
+// embedded — страница показана вкладкой «История» в разделе «Стратегии»: без собственного заголовка.
+export default function Backtest({ embedded = false }) {
   const { userProfile } = useAuth();
   const strategies = getStrategies(userProfile);
   const activeStrategy = getActiveStrategy(userProfile);
@@ -410,7 +411,12 @@ export default function Backtest() {
   }, [selectedStrategy]);
 
   return (
-    <div className="page">
+    <div className={embedded ? undefined : 'page'}>
+      {embedded ? (
+        <p className="text-xs text-muted" style={{margin:'0 4px 14px', lineHeight:1.6}}>
+          Проверка стратегии на реальной истории: что было бы, если бы вы торговали по ней раньше. Доступно только вам — расчёты ещё калибруются.
+        </p>
+      ) : (
       <div className="page-header">
         <div>
           <h1 className="page-title">Бэктест</h1>
@@ -419,6 +425,7 @@ export default function Backtest() {
           </p>
         </div>
       </div>
+      )}
 
       <div className="card" style={{marginBottom:16}}>
         <div className="section-title"><div className="section-title-icon"><Icon name="settings" size={15} /></div>Параметры прогона</div>

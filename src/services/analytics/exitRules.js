@@ -78,7 +78,7 @@ export function resolveTrailGiveBackPct(exitRules, patternName) {
 // 1.0 (not 0.5) per 2026-08-13 validation: on D1 it beat 0.5 outright (+15.2% vs +11.6%,
 // worst trade -2.0% vs -3.5%, 21-ticker holdout); on H1 it roughly halved the share of
 // "penny" trades under a 0.3% round-trip cost floor (71.6% -> 44.0% of trades), which
-// 0.5 didn't fix even though it stopped the stuck-position bug. See HANDOFF_NEXT_SESSION.md.
+// 0.5 didn't fix even though it stopped the stuck-position bug. See ПАСПОРТ_АЛГОРИТМИЧЕСКИХ_СТРАТЕГИЙ_И_ИСТОРИЯ_РАБОТЫ.md (раздел АРХИВ).
 export const DEFAULT_TRAIL_MIN_PEAK_ATR_MULT = 1.0;
 
 export function defaultExitRules() {
@@ -103,7 +103,7 @@ export function defaultExitRules() {
     trailAdverseMult: DEFAULT_TRAIL_ADVERSE_MULT,
     // Opt-in like the other trail features — new, only wired in 2026-08-14, not yet
     // proven to be PROFITABLE (only proven to correctly predict recovery vs reversal;
-    // see HANDOFF_NEXT_SESSION.md for the honesty caveat). Off by default until a money
+    // see ПАСПОРТ_АЛГОРИТМИЧЕСКИХ_СТРАТЕГИЙ_И_ИСТОРИЯ_РАБОТЫ.md (раздел АРХИВ) for the honesty caveat). Off by default until a money
     // backtest confirms it's worth the added complexity for every existing strategy.
     signalExitEnabled: false,
     // Opt-in like the other trail refinements — validated to beat the blunt "give back 50%
@@ -168,7 +168,7 @@ export function resolveTrailAdverseThresholdPct(exitRules, entryPrice, atr) {
 // --- Post-entry indicator dynamics ("откат vs разворот") -------------------------------
 //
 // Trader's own idea (2026-08-14), validated on real holdout data (D1: 4733 cases, H1:
-// 33717 cases — see HANDOFF_NEXT_SESSION.md "НАСТОЯЩАЯ НАХОДКА"): the CHANGE in RSI from
+// 33717 cases — see ПАСПОРТ_АЛГОРИТМИЧЕСКИХ_СТРАТЕГИЙ_И_ИСТОРИЯ_РАБОТЫ.md (раздел АРХИВ) "НАСТОЯЩАЯ НАХОДКА"): the CHANGE in RSI from
 // entry to the moment price first crosses the adverse noise threshold — not RSI's value at
 // entry, which every earlier calibration this session already showed doesn't predict
 // anything — combined with which side of EMA100/200 price is on, splits what happens next
@@ -198,7 +198,7 @@ export function isConfirmedReversal(direction, entryRsi14, currentRsi14, current
 // default. Validated on real holdout data: 81385 labeled points on winning trades (was the
 // remaining move to the trade's ACTUAL eventual peak small (<20% of what's already banked,
 // "near_top") or large (>50% more, "still_running")?), 11 of 12 tested features confirmed.
-// See HANDOFF_NEXT_SESSION.md "профит-капчур" section for the full calibration and the
+// See ПАСПОРТ_АЛГОРИТМИЧЕСКИХ_СТРАТЕГИЙ_И_ИСТОРИЯ_РАБОТЫ.md (раздел АРХИВ) "профит-капчур" section for the full calibration and the
 // money backtest (portfolio return +18.4% -> +23.7% swapping the blunt give-back rule for
 // this score at threshold >=2, on top of the market-regime filter + the tightened
 // trailAdverseMult=2 safety net).

@@ -329,6 +329,42 @@ function extractSection43FuturesCodes(pages) {
   return new Set(columns.map((c) => (c[2] || '').replace(/\s+/g, '')).filter(Boolean));
 }
 
+// Раздел 3.3 «Позиционное состояние по производным инструментам»: по каждому контракту за каждый торговый день —
+// позиция на начало и конец дня и вариационная маржа. Это настоящие деньги по фьючерсам (с фандингом вечных контрактов
+// и с курсом шага долларовых), по ним сверяется результат сделок — см. varMargin.js.
+// Запись читается как поток слов: дата, название, код, два целых числа, сумма. Слово перед двумя целыми — код контракта.
+function extractVarMargin(pages) {
+  const start = findMarkerItem(pages, /3\.3\s*Информация о позиционном состоянии/);
+  if (!start) return [];
+  const next = findMarkerItem(pages, /3\.4\s*Информация/);
+  const endPageIdx = next ? next.pageIdx : pages.length - 1;
+  const tokens = [];
+  for (let pi = start.pageIdx; pi <= endPageIdx; pi++) {
+    const minX = pi === start.pageIdx ? start.x + 1 : -Infinity;
+    const maxX = (next && next.pageIdx === pi) ? next.x : Infinity;
+    const items = pages[pi].items.filter((it) => it.x > minX && it.x < maxX && !/^\d+\s*из\s*\d+$/.test(it.str.trim()));
+    for (const col of clusterColumns(items)) {
+      for (const it of col.items) tokens.push(...it.str.trim().split(/\s+/));
+    }
+  }
+  const isInt = (s) => /^-?\d+$/.test(s);
+  const isMoney = (s) => /^-?[\d,]+\.\d\d$/.test(s);
+  const rows = [];
+  let date = null;
+  for (let i = 0; i < tokens.length; i++) {
+    const m = /^(\d\d)\.(\d\d)\.(\d{4})$/.exec(tokens[i]);
+    if (m) { date = `${m[3]}-${m[2]}-${m[1]}`; continue; }
+    if (date && isInt(tokens[i + 1] || '') && isInt(tokens[i + 2] || '') && isMoney(tokens[i + 3] || '') && !isInt(tokens[i]) && !isMoney(tokens[i])) {
+      rows.push({
+        date, code: tokens[i], posStart: parseInt(tokens[i + 1], 10), posEnd: parseInt(tokens[i + 2], 10),
+        amount: parseFloat(tokens[i + 3].replace(/,/g, '')),
+      });
+      i += 3;
+    }
+  }
+  return rows;
+}
+
 export async function parseTinkoffPdfExact(file) {
   try {
     const pdfjsLib = await getPdfjs();
@@ -421,6 +457,7 @@ export async function parseTinkoffPdfExact(file) {
       transactions,
       repoOperations,
       reportPeriod,
+      varMargin: extractVarMargin(pages),
       unparsedDealNumbers,
       unexecutedCount,
       cancelledCount,

@@ -225,7 +225,7 @@ export default function ReportScheduleTab({ profile, updateUserProfile, strategy
               </label>
             </div>
             <p className="rx-sched-line">
-              {s.scope === 'real' ? 'Реальные' : s.scope === 'paper' ? 'Бумажные' : 'Всё вместе'} · {s.strategies.length ? s.strategies.join(', ') : 'все стратегии'} · разделов: {s.sections.length}
+              {s.scope === 'paper' ? 'Бумажные' : 'Реальные'} · {s.strategies.length ? s.strategies.join(', ') : 'все стратегии'} · разделов: {s.sections.length}
             </p>
             <p className="rx-sched-line">Куда: {describeChannels(s)}</p>
             <p className="rx-sched-line">

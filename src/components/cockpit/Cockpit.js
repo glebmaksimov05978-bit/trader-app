@@ -12,7 +12,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../context/AuthContext';
-import { addTrade, getUserTrades, resolveOpenedAt } from '../../services/trades';
+import { addTrade, getUserTrades, resolveOpenedAt, computeLiveBalance } from '../../services/trades';
+import { computeBaskets } from '../../services/analytics/portfolio';
 import { getOpenPaperTrades, getPaperTrades, updatePaperTrade } from '../../services/paperTrades';
 import { groupPaperByStrategy, paperStrategyKey } from '../../services/analytics/paperGroups';
 import Icon from '../shared/Icon';
@@ -29,8 +30,6 @@ import { followedStrategies, setObserve, isObserved } from '../../services/analy
 import { resolveTaView, chartLayersFor } from '../../services/analytics/taView';
 import { userLevelsForChart } from '../../services/chartDrawings';
 import { commissionRateFor, DEFAULT_TARIFF } from '../../services/analytics/commission';
-import { computeBaskets, getPortfolio } from '../../services/analytics/portfolio';
-import { formatCurrency, formatPercent } from '../../utils/money';
 import { computeBothLines, computeLiveState } from '../../services/backtest/livePosition';
 import { computeProfitBreakdown, computeLossBreakdown } from '../../services/backtest/engine';
 import { evaluateAlerts, DEFAULT_ALERT_PREFS } from '../../services/alerts';
@@ -59,7 +58,7 @@ const CK_VIEW_KEY = 'ck_view_v1';
 export function readCkView() {
   try { return JSON.parse(sessionStorage.getItem(CK_VIEW_KEY) || 'null') || {}; } catch { return {}; }
 }
-function writeCkView(patch) {
+export function writeCkView(patch) {
   try { sessionStorage.setItem(CK_VIEW_KEY, JSON.stringify({ ...readCkView(), ...patch })); } catch { /* не критично */ }
 }
 const fmtPct = (v, d = 2) => (v == null ? '—' : `${Number(v.toFixed(d)) > 0 ? '+' : ''}${(Number(v.toFixed(d)) || 0).toFixed(d)}%`);
@@ -197,6 +196,8 @@ export default function Cockpit() {
   // Технический анализ: одна кнопка и одна панель на оба режима — и когда сделка открыта,
   // и когда просто смотришь инструмент из радара. Сами данные грузятся по нажатию.
   const [taOpen, setTaOpen] = useState(!!savedView.current.taOpen);
+  // Вкладка под графиком: 'position' | 'entry' | 'ta' | 'similar'. Пусто — первая доступная.
+  const [ckTab, setCkTab] = useState(savedView.current.taOpen ? 'ta' : null);
   // «Призма»: смотреть график и анализ через стратегию. '' — без стратегии (стандартные данные,
   // набор блоков — личные настройки). С призмой остаются только индикаторы и уровни, которыми
   // стратегия реально пользуется, и рядом видны её пороги.
@@ -219,6 +220,7 @@ export default function Cockpit() {
   const [showMe, setShowMe] = useState(true);
   const [showSys, setShowSys] = useState(true);
   const [closeShare, setCloseShare] = useState(100);
+  const [stopDraft, setStopDraft] = useState(null); // текст в поле «перенести стоп»; null — поле закрыто
   const [tfOverride, setTfOverride] = useState(null);
   const [sample, setSample] = useState(null);
   const [goal, setGoal] = useState(5);
@@ -237,6 +239,8 @@ export default function Cockpit() {
   // Повтор бумажной сделки настоящей заявкой — { lots }. Единственный путь, которым
   // бумажная сделка превращается в реальную позицию, и только по явному нажатию человека.
   const [repeatOrder, setRepeatOrder] = useState(null);
+  // Свой объём для повтора: перед окном заявки трейдер видит объём системы и может поставить свой.
+  const [repeatDraft, setRepeatDraft] = useState(null);
 
   useEffect(() => { loadBacktestSample().then(setSample); }, []);
 
@@ -528,6 +532,13 @@ export default function Cockpit() {
     return () => clearInterval(id);
   }, [trade, recompute]);
 
+  // Метка входа для графика. useMemo — чтобы объект не пересоздавался на каждый рендер и график не перерисовывался зря.
+  const tradeEntryMarker = useMemo(() => {
+    const at = trade ? resolveOpenedAt(trade) : null;
+    if (!at || Number.isNaN(at.getTime())) return null;
+    return { date: at, price: parseFloat(trade.entryPrice) || null, direction: trade.direction, quantity: parseFloat(trade.volume) || null };
+  }, [trade]);
+
   // Где система закрыла бы позицию (целиком или частями) — метки на графике рядом с реальными
   // операциями. Берутся из теневой линии: движок исполняет там каждый свой сигнал. У бумажной
   // сделки метки не нужны — её и так ведёт система, реальные операции там не с чем сравнивать.
@@ -708,6 +719,12 @@ export default function Cockpit() {
   const openRepeatOrder = () => {
     const lots = Math.max(1, Math.round(parseFloat(trade?.volume) || 0));
     if (!(lots >= 1)) return;
+    setRepeatDraft(String(lots));
+  };
+  const confirmRepeatDraft = () => {
+    const lots = Math.round(parseFloat(String(repeatDraft).replace(',', '.')));
+    if (!(lots >= 1)) { toast.error('Объём — целое число лотов, не меньше 1'); return; }
+    setRepeatDraft(null);
     setRepeatOrder({ lots });
   };
 
@@ -829,29 +846,7 @@ export default function Cockpit() {
     [userProfile?.tinkoffToken],
   );
 
-  // --- корзины портфеля ---
-  // Раньше портфель жил только в Капитале: чтобы посмотреть, сколько выделено стратегии и
-  // как она идёт, приходилось уходить с вкладки и возвращаться (запрос трейдера — держать
-  // это рядом с позициями). Расчёт тот же самый, computeBaskets, второго источника правды
-  // не заводим.
-  const baskets = useMemo(
-    () => computeBaskets({ userProfile, strategies, trades: allTrades }),
-    [userProfile, strategies, allTrades],
-  );
-  const [newBasketId, setNewBasketId] = useState('');
-  const [newBasketPct, setNewBasketPct] = useState('');
-  const [savingBasket, setSavingBasket] = useState(false);
-
-  const savePortfolio = async (next) => {
-    setSavingBasket(true);
-    try {
-      await updateUserProfile({ portfolio: next });
-    } catch {
-      toast.error('Не удалось сохранить портфель');
-    } finally {
-      setSavingBasket(false);
-    }
-  };
+  // Корзины портфеля из Сопровождения убраны (решение владельца, 2026-11-15): это про деление денег — они в «Капитале».
 
   // Режим наблюдения стратегии прямо с плашки обзора: бумажные сделки идут, уведомлений нет.
   // Сколько открытых бумажных сигналов каждой стратегии ждут вашей отметки («вошёл / пропустил»).
@@ -885,23 +880,6 @@ export default function Cockpit() {
     } catch {
       toast.error('Не удалось сохранить');
     }
-  };
-
-  // Плюсик добавляет стратегию в портфель и спрашивает её долю. Первая же добавленная
-  // корзина включает режим — отдельная галочка «включить» здесь была бы лишним шагом.
-  const addBasket = async () => {
-    const pct = parseFloat(newBasketPct);
-    if (!newBasketId || !(pct > 0)) { toast.error('Выберите стратегию и укажите процент'); return; }
-    const cur = getPortfolio(userProfile);
-    const rest = cur.baskets.filter((b) => b.strategyId !== newBasketId);
-    await savePortfolio({ enabled: true, baskets: [...rest, { strategyId: newBasketId, sharePct: pct }] });
-    setNewBasketId('');
-    setNewBasketPct('');
-  };
-
-  const removeBasket = async (strategyId) => {
-    const cur = getPortfolio(userProfile);
-    await savePortfolio({ ...cur, baskets: cur.baskets.filter((b) => b.strategyId !== strategyId) });
   };
 
   // --- третья линия: как эту же сделку вела бы ДРУГАЯ стратегия ---
@@ -945,6 +923,46 @@ export default function Cockpit() {
 
   const a = state?.actual;
   const s = state?.shadow;
+  // От каких денег считается риск этой сделки: корзина стратегии (если включён портфель и стратегия в нём) или весь
+  // счёт. Тот же расчёт, что в Калькуляторе (capitalForStrategy) — строка рядом с заявкой, чтобы было видно, откуда
+  // взялся объём (решение владельца, 2026-11-16).
+  const riskBase = (() => {
+    if (!userProfile || isPaper || !(trade || previewTicker)) return null;
+    const sid = trade ? trade.entryStrategyId : strategy?.id;
+    const computed = computeBaskets({ userProfile, strategies, trades: allTrades });
+    const row = computed.enabled && sid ? computed.baskets.find((b) => b.strategyId === sid) : null;
+    if (row) return { basket: true, name: row.name, sharePct: row.sharePct, rub: row.balance };
+    return { basket: false, rub: computeLiveBalance(allTrades, userProfile.depositSize ?? 0, userProfile.depositSetAt), portfolioOn: computed.enabled };
+  })();
+  const riskBaseLine = riskBase && riskBase.rub > 0 ? (
+    <div className="ck-order-base" title="Риск на сделку в процентах считается от этих денег. Корзины настраиваются в разделе «Капитал»">
+      {riskBase.basket
+        ? <>Риск считается от корзины «{riskBase.name}» ({ruNum(riskBase.sharePct, 0)} %): <b>{Math.round(riskBase.rub).toLocaleString('ru-RU')} ₽</b></>
+        : <>Риск считается от всего счёта: <b>{Math.round(riskBase.rub).toLocaleString('ru-RU')} ₽</b>{riskBase.portfolioOn ? ' — этой стратегии нет в корзинах' : ''}</>}
+      {' '}<Link to="/capital">Капитал</Link>
+    </div>
+  ) : null;
+  // Какие вкладки есть под графиком: у сделки — «Позиция», у инструмента без сделки — «Вход».
+  const ckTabs = trade
+    ? [['position', 'Позиция'], ['ta', 'Тех. анализ'], ...(similar && usesProfitSystem ? [['similar', 'Похожие ситуации']] : [])]
+    : previewTicker ? [['entry', 'Вход'], ['ta', 'Тех. анализ']] : [];
+  const tabNow = ckTabs.some((t) => t[0] === ckTab) ? ckTab : (ckTabs[0]?.[0] || null);
+  const pickTab = (id) => { setCkTab(id); setTaOpen(id === 'ta'); };
+  // Перенос стопа: меняется запись сделки (план), а не заявка у брокера.
+  const saveStop = async () => {
+    const v = parseFloat(String(stopDraft).replace(',', '.'));
+    if (!(v > 0)) { toast.error('Укажите цену стопа'); return; }
+    try {
+      await updateTrade(trade.id, { stopLoss: v, stopIsSizingOnly: false });
+      const patch = (list) => list.map((t) => (t.id === trade.id ? { ...t, stopLoss: v, stopIsSizingOnly: false } : t));
+      setTrades(patch);
+      setAllTrades(patch);
+      setStopDraft(null);
+      toast.success(`Стоп перенесён на ${v}`);
+    } catch (e) {
+      toast.error('Не удалось сохранить стоп: ' + (e.message || 'ошибка'));
+    }
+  };
   const base = (!showMe && s) ? s : a;
   const verdictAction = alerts.some((x) => x.severity === 'action' || x.severity === 'danger');
 
@@ -953,7 +971,7 @@ export default function Cockpit() {
       <div className="ck-top">
         <div>
           <h1 className="ck-title">Сопровождение</h1>
-          <div className="ck-sub">{trade ? (isPaper ? 'Бумажная сделка изнутри' : 'Открытая позиция изнутри') : 'Выберите инструмент в радаре — откроется его график'}</div>
+          <div className="ck-sub">{trade ? (isPaper ? 'Сделка системы: график, ход и ваши решения' : 'Ваша позиция: график, результат и управление') : 'Выберите позицию или инструмент в радаре — откроется график'}</div>
         </div>
         <div className="ck-top-right">
           <label className="ck-strategy-pick">
@@ -974,11 +992,11 @@ export default function Cockpit() {
               ))}
             </select>
           </label>
-          <button className="ck-btn" onClick={toggleSide} title={sideHidden ? 'Показать левую панель: позиции, бумажные сделки, радар' : 'Убрать левую панель — график займёт всю ширину'}>
-            <Icon name={sideHidden ? 'menu' : 'expand'} size={14} style={{ marginRight: 6 }} />{sideHidden ? 'Показать панель' : 'Скрыть панель'}
+          <button className="ck-btn" onClick={toggleSide} title={sideHidden ? 'Показать списки: мои позиции, сделки системы, радар' : 'Убрать списки — график займёт всю ширину'}>
+            <Icon name={sideHidden ? 'menu' : 'expand'} size={14} style={{ marginRight: 6 }} />{sideHidden ? 'Показать списки' : 'Скрыть списки'}
           </button>
-          <button className="ck-btn" onClick={recompute} disabled={computing}>
-            <Icon name="refresh" size={14} style={{ marginRight: 6 }} />{computing ? 'Считаю…' : 'Обновить'}
+          <button className="ck-btn" onClick={recompute} disabled={computing} title="Пересчитать сейчас" aria-label="Обновить">
+            <Icon name="refresh" size={14} />{computing ? <span style={{ marginLeft: 6 }}>Считаю…</span> : null}
           </button>
         </div>
       </div>
@@ -987,7 +1005,7 @@ export default function Cockpit() {
         <div className="ck-strategy-warn">
           У стратегии «{strategy?.name || 'без названия'}» не настроены правила ведения позиции —
           вкладке нечем считать: ни пика, ни счёта систем, ни предложений по фиксации.
-          Откройте <Link to="/capital">Капитал → правила выхода</Link> и включите хотя бы трейлинг.
+          Откройте <Link to="/strategies">Стратегии → правила выхода</Link> и включите хотя бы трейлинг.
           {strategies.length < 2 && ' Там же можно завести вторую стратегию, чтобы переключаться между ними здесь.'}
         </div>
       )}
@@ -1019,7 +1037,7 @@ export default function Cockpit() {
         {/* ---------- сайдбар: позиции, лесенка, радар — одна колонка, каждая секция
             сворачивается сама по себе, без пустых мест на месте свёрнутого блока ---------- */}
         {!sideHidden && <aside className="ck-side scroll-box">
-          <CollapsibleSection title="Открытые позиции" badge={trades.length}>
+          <CollapsibleSection title="Мои позиции" badge={trades.length}>
             <div className="ck-pos-list">
               {trades.filter((t) => scopeId === 'all' || !t.entryStrategyId || t.entryStrategyId === scopeId).map((t) => {
                 const on = t.id === activeId;
@@ -1050,7 +1068,7 @@ export default function Cockpit() {
               открывает и закрывает робот, поэтому кнопки «Закрыть» здесь нет: закрыть
               бумажную сделку руками означало бы вмешаться в тот самый эксперимент, ради
               которого она и заведена. */}
-          <CollapsibleSection title="Бумажные сделки" badge={paperTrades.length || null} defaultOpen={false}>
+          <CollapsibleSection title="Сделки системы" badge={paperTrades.length || null} defaultOpen={false}>
             <div className="ck-basket-note">
               Их ведёт робот по списку радара: реальных денег не касаются и в Журнал,
               депозит и отчёты не попадают. У каждой стратегии своя лента — их не сравнивают
@@ -1117,7 +1135,7 @@ export default function Cockpit() {
                         title="Открыть такую же настоящую позицию (будет окно подтверждения)"
                         onClick={() => {
                           selectTrade(t.id);
-                          setRepeatOrder({ lots: Math.max(1, Math.round(parseFloat(t.volume) || 1)) });
+                          setRepeatDraft(String(Math.max(1, Math.round(parseFloat(t.volume) || 1))));
                         }}
                       >
                         Повторить
@@ -1133,121 +1151,6 @@ export default function Cockpit() {
                     : 'У этой стратегии сейчас нет открытых бумажных сделок.'}
                 </div>
               )}
-            </div>
-          </CollapsibleSection>
-
-          {trade && (
-            <CollapsibleSection title="Лесенка фиксаций" badge={(state?.actualFills || []).length}>
-              <div className="ck-ladder-body">
-                {(state?.actualFills || []).length === 0 && (
-                  <div className="ck-rung muted">
-                    <div className="ck-rung-1">Пока ни одной</div>
-                    <div className="ck-rung-2">позиция целиком в рынке</div>
-                  </div>
-                )}
-                {(state?.actualFills || []).map((f, idx) => (
-                  <div className="ck-rung" key={idx}>
-                    <div className="ck-rung-1">{Math.round(f.fraction * 100)}% · {fmtNum(f.price)}</div>
-                    <div className="ck-rung-2">
-                      {f.timestampUtc ? new Date(f.timestampUtc).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}
-                    </div>
-                  </div>
-                ))}
-                {/* Что предлагал движок, а ты этого не делал */}
-                {(s?.fired || []).filter((f) => !(state?.actualFills || [])
-                  .some((x) => Math.abs(x.index - f.index) <= 1)).map((f, idx) => (
-                    <div className="ck-rung sys" key={`s${idx}`}>
-                      <div className="ck-rung-1">{Math.round((f.fraction || 0) * 100)}% · {fmtNum(f.price)}</div>
-                      <div className="ck-rung-2">система зафиксировала бы здесь</div>
-                    </div>
-                ))}
-                {money && (
-                  <div className="ck-rung now">
-                    <div className="ck-rung-1">{fmtNum(money.remainingVol, 0)} конт. · {fmtNum(money.price)}</div>
-                    <div className="ck-rung-2">сейчас в рынке · {fmtPct(a?.currentPct, 1)}</div>
-                  </div>
-                )}
-              </div>
-            </CollapsibleSection>
-          )}
-
-          <CollapsibleSection
-            title="Корзины портфеля"
-            badge={baskets.baskets.length || null}
-            defaultOpen={false}
-          >
-            <div className="ck-basket-note">
-              Корзина — это учёт, а не отдельный счёт у брокера. Влияет ровно на одно: риск
-              на сделку считается от денег корзины её стратегии, а не от всего депозита.
-            </div>
-
-            <div className="ck-basket-list">
-              {baskets.baskets.map((b) => (
-                <div className="ck-basket" key={b.strategyId}>
-                  <div className="ck-basket-main">
-                    <div className="ck-basket-name">{b.name}</div>
-                    <div className="ck-basket-sub">
-                      {formatCurrency(Math.round(b.allocated))} · {b.sharePct}%
-                      {Math.abs(b.driftPct) >= 5 && (
-                        <span className="ck-basket-drift">
-                          {' '}(сейчас {b.driftPct > 0 ? '+' : ''}{b.driftPct.toFixed(0)} п.п.)
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className={`ck-basket-pnl ${b.pnl >= 0 ? 'up' : 'down'}`}>{fmtRub(b.pnl)}</div>
-                  <button className="ck-radar-del" onClick={() => removeBasket(b.strategyId)} title="Убрать корзину">✕</button>
-                </div>
-              ))}
-              {!baskets.baskets.length && (
-                <div className="ck-radar-empty">
-                  Портфель не разбит на корзины — риск считается от всего депозита.
-                  Добавьте стратегию ниже, чтобы у неё была своя доля счёта.
-                </div>
-              )}
-            </div>
-
-            {/* Доли не подгоняются под 100% молча — трейдер должен видеть, что часть счёта
-                не отдана ни одной стратегии (та же логика, что в карточке Капитала). */}
-            {!!baskets.baskets.length && Math.abs(baskets.shareTotal - 100) > 0.01 && (
-              <div className="ck-basket-warn">
-                Сумма долей — {baskets.shareTotal}%.{' '}
-                {baskets.shareTotal < 100
-                  ? `${(100 - baskets.shareTotal).toFixed(0)}% счёта не участвуют.`
-                  : 'Больше 100%: риск будет считаться от несуществующих денег.'}
-              </div>
-            )}
-
-            <div className="ck-basket-add">
-              <select
-                className="ck-select-dark ck-basket-sel"
-                value={newBasketId}
-                onChange={(e) => setNewBasketId(e.target.value)}
-              >
-                <option value="">+ добавить стратегию…</option>
-                {strategies
-                  .filter((s) => !baskets.baskets.some((b) => b.strategyId === s.id))
-                  .map((s) => (
-                    <option key={s.id} value={s.id}>{s.name || 'Без названия'}</option>
-                  ))}
-              </select>
-              {!!newBasketId && (
-                <>
-                  <input
-                    className="ck-basket-pct"
-                    type="number" min="0" max="100" step="5" placeholder="%"
-                    value={newBasketPct}
-                    onChange={(e) => setNewBasketPct(e.target.value)}
-                  />
-                  <button className="ck-btn" onClick={addBasket} disabled={savingBasket}>
-                    {savingBasket ? '…' : 'Добавить'}
-                  </button>
-                </>
-              )}
-            </div>
-
-            <div className="ck-basket-note">
-              Полная таблица с результатом каждой корзины — в <Link to="/capital">Капитале</Link>.
             </div>
           </CollapsibleSection>
 
@@ -1275,7 +1178,7 @@ export default function Cockpit() {
                 <ContractStrip ticker={previewTicker} deposit={parseFloat(userProfile?.depositSize) || 0} maxMarginPercent={parseFloat(userProfile?.maxMarginPercent) || 30} />
               )}
               <div className="ck-line-sub">
-                По инструменту сейчас нет ни твоей, ни бумажной сделки. График — ниже; технический анализ и готовность к входу — кнопкой и панелью под ним.
+                По инструменту сейчас нет ни твоей, ни бумажной сделки. График — ниже; готовность к входу и технический анализ — во вкладках под ним.
               </div>
             </section>
           )}
@@ -1353,7 +1256,7 @@ export default function Cockpit() {
                         {on.map((c) => <li key={c.id}>{label(c)}</li>)}
                         {(st.customConditions || []).map((c) => <li key={c.id}>{c.label} <span className="ck-line-sub">(отмечается вручную)</span></li>)}
                       </ul>
-                    ) : <div className="ck-line-sub">Условий входа нет — <Link to="/capital">добавьте в Капитале</Link>.</div>}
+                    ) : <div className="ck-line-sub">Условий входа нет — <Link to="/strategies">добавьте в Стратегиях</Link>.</div>}
                     <div className="ck-line-sub" style={{ marginTop: 8 }}>
                       Радар слева и список сделок сейчас показывают только тикеры и сделки этой стратегии. Если там пусто — к ней ещё не привязан ни один тикер радара (при добавлении тикера выбирается стратегия).
                     </div>
@@ -1367,6 +1270,77 @@ export default function Cockpit() {
             </>
           )}
 
+          {/* Рабочая область: слева график и вкладки, справа — панель управления (на широком экране). */}
+          <div className={`ck-work ${trade || previewTicker ? 'has-order' : ''}`}>
+            <div className="ck-work-main">
+          {/* ---------- график ---------- */}
+          {(trade || previewTicker) && (
+          <section className="ck-panel ck-chart" id="ck-chart">
+            <div className="ck-lens">
+              <span className="ck-k">Смотреть график и анализ</span>
+              <select className="ck-lens-sel" value={taLensId} onChange={(e) => setTaLensId(e.target.value)}>
+                <option value="">без стратегии — стандартные данные</option>
+                {strategies.map((x) => <option key={x.id} value={x.id}>по стратегии «{x.name || 'без названия'}»</option>)}
+              </select>
+              {taLensStrategy && (
+                <span className="ck-lens-note">
+                  {taView.empty ? 'у стратегии нет рыночных условий' : 'остались только индикаторы и уровни стратегии'}
+                </span>
+              )}
+            </div>
+            {(trade ? candles : taState.data?.candles)?.length ? (
+              <CandleChart
+                drawingTools
+                drawRequest={drawReq}
+                candles={trade ? candles : taState.data.candles}
+                patterns={trade ? patterns : taState.data.patterns}
+                height={460}
+                ticker={trade ? trade.ticker : previewTicker}
+                instrumentType={trade ? (trade.instrumentType || 'stock') : previewType}
+                timeframe={trade ? timeframe : (taTf || userProfile?.preferredTimeframe || 'D1')}
+                timeframeOptions={tfOptions}
+                onTimeframeChange={trade ? setTfOverride : (tf) => { setTaTf(tf); loadTa(tf); }}
+                legs={trade?.legs}
+                // Вход по дате самой сделки: у сделки системы в операциях только закрытия, у сделки из Калькулятора
+                // операций нет вовсе — без этого стрелки входа на графике не было.
+                entryMarker={tradeEntryMarker}
+                systemMarkers={systemMarkers}
+                layerPreset={taLayerPreset}
+                direction={trade?.direction}
+                entryPrice={trade?.entryPrice ? parseFloat(trade.entryPrice) : null}
+                planLines={{
+                  entry: trade?.entryPrice ? parseFloat(trade.entryPrice) : null,
+                  stop: trade?.stopLoss ? parseFloat(trade.stopLoss) : null,
+                  take: trade?.takeProfit ? parseFloat(trade.takeProfit) : null,
+                }}
+              />
+            ) : (
+              <div className="ck-loading">
+                {trade
+                  ? (computing ? 'Загружаю график…' : 'Нет данных')
+                  : (taState.loading ? 'Загружаю график…' : (taState.error || 'Нет данных'))}
+                {!trade && !taState.loading && taState.error && (
+                  <div style={{ marginTop: 10 }}><button className="ck-btn" onClick={() => loadTa(taTf)}>Повторить</button></div>
+                )}
+              </div>
+            )}
+          </section>
+          )}
+
+          {/* ---------- вкладки под графиком ----------
+              Раньше всё шло одной длинной лентой: шапка сделки, вердикт, график где-то в середине, расчёты, системы.
+              Теперь, как в терминале, график сверху, а под ним вкладки: «Позиция» — всё про открытую сделку,
+              «Вход» — готовность к входу по стратегии, «Тех. анализ», «Похожие ситуации». */}
+          {ckTabs.length > 0 && (
+            <div className="ck-tabs" role="tablist" aria-label="Разделы под графиком">
+              {ckTabs.map(([id, label]) => (
+                <button key={id} role="tab" aria-selected={tabNow === id} className={tabNow === id ? 'on' : ''} onClick={() => pickTab(id)}>{label}</button>
+              ))}
+            </div>
+          )}
+
+          {tabNow === 'position' && (
+            <>
           {trade && (
             <section className="ck-panel ck-head">
               <div className="ck-head-id">
@@ -1507,35 +1481,6 @@ export default function Cockpit() {
             </section>
           )}
 
-          {/* Вместо профит-/лосс-систем, которым без позиции нечего оценивать (они считают
-              пик, просадку и число баров С ВХОДА), — готовность к входу по условиям стратегии:
-              те же условия проверяет робот и показывает Калькулятор. */}
-          {previewReady && (() => {
-            const share = (r) => (r.total ? r.passed / r.total : 0);
-            const auto = share(previewReady.long) >= share(previewReady.short) ? 'long' : 'short';
-            const dir = previewDir || auto;
-            return (
-              <section className="ck-panel">
-                <div className="ck-hist-top">
-                  <h3>Готовность к входу</h3>
-                  <div className="ck-shares">
-                    <button className={`ck-share ${dir === 'long' ? 'on' : ''}`} onClick={() => setPreviewDir('long')}>Лонг</button>
-                    <button className={`ck-share ${dir === 'short' ? 'on' : ''}`} onClick={() => setPreviewDir('short')}>Шорт</button>
-                  </div>
-                </div>
-                <div className="ck-hist-note">
-                  Условия входа стратегии «{strategy?.name || 'без названия'}» на текущем баре.
-                  Робот открывает бумажную сделку, когда сходятся все условия (порог стратегии).
-                </div>
-                <StrategyChecklist
-                  strategyName={strategy?.name}
-                  result={previewReady[dir]}
-                  readinessThreshold={strategy?.readinessThreshold}
-                />
-              </section>
-            );
-          })()}
-
           {/* ---------- вердикт ---------- */}
           {state && (
             <section className={`ck-panel ck-verdict ${verdictAction ? 'act' : ''}`}>
@@ -1564,10 +1509,29 @@ export default function Cockpit() {
                 if (isPaper) {
                   return (
                     <div className="ck-verdict-actions" style={{ flexDirection: 'column', alignItems: 'flex-end' }}>
-                      {canOrderRepeat && (
+                      {canOrderRepeat && repeatDraft == null && (
                         <button className="ck-btn ck-btn-primary" onClick={openRepeatOrder}>
                           Повторить реальной заявкой
                         </button>
+                      )}
+                      {canOrderRepeat && repeatDraft != null && (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
+                            Ваш объём, лотов
+                            <input
+                              className="input" type="number" min="1" step="1" autoFocus
+                              value={repeatDraft}
+                              onChange={(e) => setRepeatDraft(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === 'Enter') confirmRepeatDraft(); if (e.key === 'Escape') setRepeatDraft(null); }}
+                              style={{ width: 84, padding: '6px 8px', textAlign: 'right' }}
+                            />
+                          </label>
+                          <div className="ck-order-hint">У системы {Math.max(1, Math.round(parseFloat(trade.volume) || 1))}. Дальше будет окно подтверждения.</div>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button className="ck-btn" onClick={() => setRepeatDraft(null)}>Отмена</button>
+                            <button className="ck-btn ck-btn-primary" onClick={confirmRepeatDraft}>Дальше</button>
+                          </div>
+                        </div>
                       )}
                       {trade.repeatedAt && (
                         <div className="ck-order-hint">
@@ -1577,7 +1541,7 @@ export default function Cockpit() {
                       {trade.riskTooBig && (
                         <div className="ck-order-hint">
                           Объём у бумажной условный: по твоим правилам риска на эту позицию
-                          не хватает денег. Настоящая заявка уйдёт на тот же объём — решай сам.
+                          не хватает денег. Перед отправкой поставь свой объём.
                         </div>
                       )}
                       {repeatUnavailableReason && <div className="ck-order-hint">{repeatUnavailableReason}</div>}
@@ -1607,90 +1571,135 @@ export default function Cockpit() {
             </section>
           )}
 
-          {/* Что сделали ВЫ по бумажному сигналу: вошёл / пропустил / снял часть / закрыл — вручную или по данным Т-Банка. */}
-          {trade && isPaper && (
-            <PaperActions
-              trade={trade}
-              journalTrades={allTrades}
-              userProfile={userProfile}
-              onDecision={(id, d) => {
-                const add = (list) => list.map((t) => (t.id === id ? { ...t, decisions: [...(t.decisions || []), d] } : t));
-                setPaperTrades(add);
-                setAllPaper(add);
-              }}
-            />
-          )}
-
-          {/* ---------- график ---------- */}
-          {(trade || previewTicker) && (
-          <section className="ck-panel ck-chart" id="ck-chart">
-            <div className="ck-lens">
-              <span className="ck-k">Смотреть график и анализ</span>
-              <select className="ck-lens-sel" value={taLensId} onChange={(e) => setTaLensId(e.target.value)}>
-                <option value="">без стратегии — стандартные данные</option>
-                {strategies.map((x) => <option key={x.id} value={x.id}>по стратегии «{x.name || 'без названия'}»</option>)}
-              </select>
-              {taLensStrategy && (
-                <span className="ck-lens-note">
-                  {taView.empty ? 'у стратегии нет рыночных условий' : 'остались только индикаторы и уровни стратегии'}
-                </span>
-              )}
-            </div>
-            {(trade ? candles : taState.data?.candles)?.length ? (
-              <CandleChart
-                drawingTools
-                drawRequest={drawReq}
-                candles={trade ? candles : taState.data.candles}
-                patterns={trade ? patterns : taState.data.patterns}
-                height={390}
-                ticker={trade ? trade.ticker : previewTicker}
-                instrumentType={trade ? (trade.instrumentType || 'stock') : previewType}
-                timeframe={trade ? timeframe : (taTf || userProfile?.preferredTimeframe || 'D1')}
-                timeframeOptions={tfOptions}
-                onTimeframeChange={trade ? setTfOverride : (tf) => { setTaTf(tf); loadTa(tf); }}
-                legs={trade?.legs}
-                systemMarkers={systemMarkers}
-                layerPreset={taLayerPreset}
-                direction={trade?.direction}
-                entryPrice={trade?.entryPrice ? parseFloat(trade.entryPrice) : null}
-                planLines={{
-                  entry: trade?.entryPrice ? parseFloat(trade.entryPrice) : null,
-                  stop: trade?.stopLoss ? parseFloat(trade.stopLoss) : null,
-                  take: trade?.takeProfit ? parseFloat(trade.takeProfit) : null,
-                }}
-              />
-            ) : (
-              <div className="ck-loading">
-                {trade
-                  ? (computing ? 'Загружаю график…' : 'Нет данных')
-                  : (taState.loading ? 'Загружаю график…' : (taState.error || 'Нет данных'))}
-                {!trade && !taState.loading && taState.error && (
-                  <div style={{ marginTop: 10 }}><button className="ck-btn" onClick={() => loadTa(taTf)}>Повторить</button></div>
+          {trade && (
+            <section className="ck-panel">
+              <h3>Лесенка фиксаций</h3>
+              <div className="ck-ladder-body ck-ladder-row">
+                {(state?.actualFills || []).length === 0 && (
+                  <div className="ck-rung muted">
+                    <div className="ck-rung-1">Пока ни одной</div>
+                    <div className="ck-rung-2">позиция целиком в рынке</div>
+                  </div>
+                )}
+                {(state?.actualFills || []).map((f, idx) => (
+                  <div className="ck-rung" key={idx}>
+                    <div className="ck-rung-1">{Math.round(f.fraction * 100)}% · {fmtNum(f.price)}</div>
+                    <div className="ck-rung-2">
+                      {f.timestampUtc ? new Date(f.timestampUtc).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}
+                    </div>
+                  </div>
+                ))}
+                {/* Что предлагал движок, а ты этого не делал */}
+                {(s?.fired || []).filter((f) => !(state?.actualFills || [])
+                  .some((x) => Math.abs(x.index - f.index) <= 1)).map((f, idx) => (
+                    <div className="ck-rung sys" key={`s${idx}`}>
+                      <div className="ck-rung-1">{Math.round((f.fraction || 0) * 100)}% · {fmtNum(f.price)}</div>
+                      <div className="ck-rung-2">система зафиксировала бы здесь</div>
+                    </div>
+                ))}
+                {money && (
+                  <div className="ck-rung now">
+                    <div className="ck-rung-1">{fmtNum(money.remainingVol, 0)} конт. · {fmtNum(money.price)}</div>
+                    <div className="ck-rung-2">сейчас в рынке · {fmtPct(a?.currentPct, 1)}</div>
+                  </div>
                 )}
               </div>
-            )}
-          </section>
+            </section>
           )}
 
-          {/* ---------- под графиком: кнопки и технический анализ (сначала готовность к входу, затем график, потом анализ) ---------- */}
-          {(trade || previewTicker) && (
-            <div className="ck-verdict-actions" style={{ justifyContent: 'flex-start' }}>
-              <button className={`ck-btn ${taOpen ? 'ck-btn-primary' : ''}`} onClick={() => setTaOpen((o) => !o)}>
-                Технический анализ {taOpen ? '▴' : '▾'}
-              </button>
-              {!trade && (
-                <Link
-                  className="ck-btn ck-btn-primary"
-                  style={{ textDecoration: 'none' }}
-                  to={`/calculator?ticker=${encodeURIComponent(previewTicker)}&type=${encodeURIComponent(previewType)}`}
-                >
-                  Войти в сделку
-                </Link>
+
+          {/* ---------- системы ----------
+              Панели показываются, только если ВАША стратегия действительно этими
+              системами пользуется. Показывать счёт системы, которая в стратегии
+              выключена, — значит предлагать решение по правилам, по которым сделка не
+              ведётся: цифра есть, а смысла у неё нет. */}
+          {trade && (
+            <>
+              <div className={usesProfitSystem && usesLossSystem ? 'ck-two' : 'ck-one'}>
+                {usesProfitSystem && (
+                  <ScorePanel
+                    title="Профит-система"
+                    hint="когда фиксировать часть прибыли"
+                    score={a?.now?.profitScore}
+                    threshold={exitRules.profitCaptureThreshold ?? 4}
+                    max={8}
+                    breakdown={breakdowns.profit}
+                    reached={(a?.now?.profitScore ?? -99) >= (exitRules.profitCaptureThreshold ?? 4)}
+                    tone="gold"
+                  />
+                )}
+                {usesLossSystem && (
+                  <ScorePanel
+                    title="Лосс-система"
+                    hint="выше — похоже на дно, ниже — падение продолжается"
+                    score={a?.now?.lossScore}
+                    threshold={exitRules.lossScoreThreshold ?? 2}
+                    max={6}
+                    breakdown={breakdowns.loss}
+                    reached={(a?.now?.lossScore ?? 99) <= (exitRules.lossScoreThreshold ?? 2)}
+                    tone="red"
+                  />
+                )}
+              </div>
+              {(!usesProfitSystem || !usesLossSystem) && (
+                <div className="ck-systems-note">
+                  {!usesProfitSystem && !usesLossSystem
+                    ? 'Профит- и лосс-система в этой стратегии не включены: сделка ведётся обычными правилами выхода.'
+                    : !usesProfitSystem
+                      ? 'Профит-система в этой стратегии не включена (фиксация прибыли частями).'
+                      : 'Лосс-система в этой стратегии не включена: убытки закрываются обычным стопом.'}
+                  {' '}<Link to="/strategies">Настроить правила выхода</Link>
+                </div>
               )}
-            </div>
+            </>
+          )}
+            </>
           )}
 
-          {taOpen && taTicker && (
+          {tabNow === 'entry' && (
+            <>
+          {/* Вместо профит-/лосс-систем, которым без позиции нечего оценивать (они считают
+              пик, просадку и число баров С ВХОДА), — готовность к входу по условиям стратегии:
+              те же условия проверяет робот и показывает Калькулятор. */}
+          {previewReady && (() => {
+            const share = (r) => (r.total ? r.passed / r.total : 0);
+            const auto = share(previewReady.long) >= share(previewReady.short) ? 'long' : 'short';
+            const dir = previewDir || auto;
+            return (
+              <section className="ck-panel">
+                <div className="ck-hist-top">
+                  <h3>Готовность к входу</h3>
+                  <div className="ck-shares">
+                    <button className={`ck-share ${dir === 'long' ? 'on' : ''}`} onClick={() => setPreviewDir('long')}>Лонг</button>
+                    <button className={`ck-share ${dir === 'short' ? 'on' : ''}`} onClick={() => setPreviewDir('short')}>Шорт</button>
+                  </div>
+                </div>
+                <div className="ck-hist-note">
+                  Условия входа стратегии «{strategy?.name || 'без названия'}» на текущем баре.
+                  Робот открывает бумажную сделку, когда сходятся все условия (порог стратегии).
+                </div>
+                <StrategyChecklist
+                  strategyName={strategy?.name}
+                  result={previewReady[dir]}
+                  readinessThreshold={strategy?.readinessThreshold}
+                />
+              </section>
+            );
+          })()}
+
+              {!previewReady && (
+                <section className="ck-panel">
+                  <div className="ck-line-sub">
+                    У стратегии «{strategy?.name || 'без названия'}» нет условий входа, которые можно проверить по графику. Добавьте их в разделе <Link to="/strategies">Стратегии</Link>.
+                  </div>
+                </section>
+              )}
+            </>
+          )}
+
+          {tabNow === 'ta' && (
+            <>
+          {taTicker && (
             <section className="ck-panel">
               <TechnicalAnalysisBlock
                 state={taState}
@@ -1703,100 +1712,11 @@ export default function Cockpit() {
             </section>
           )}
 
-          {/* ---------- если закрыть сейчас ---------- */}
-          {money && (
-            <section className="ck-panel ck-calc">
-              <h3>{isPaper ? 'Если бы закрыл сейчас' : 'Если закрыть сейчас'}</h3>
-              <div className="ck-shares">
-                {[25, 50, 100].map((sh) => (
-                  <button
-                    key={sh}
-                    className={`ck-share ${closeShare === sh ? 'on' : ''}`}
-                    onClick={() => setCloseShare(sh)}
-                  >
-                    {sh}% остатка
-                  </button>
-                ))}
-              </div>
-              <div className="ck-calc-grid">
-                <div><span className="ck-k">{isPaper ? 'Считаем' : 'Закрываем'}</span><b>{fmtNum(money.closingVol, 0)} конт. по {fmtNum(money.price)}</b></div>
-                <div><span className="ck-k">Грязными</span><b>{fmtRub(money.gross)}</b></div>
-                <div><span className="ck-k">Комиссия</span><b className="down">{fmtRub(-money.commission)}</b></div>
-                <div><span className="ck-k">Уже зафиксировано</span><b>{fmtRub(money.realized)}</b></div>
-                <div><span className="ck-k">Итого по сделке</span>
-                  <b className={money.net >= 0 ? 'up' : 'down'}>{fmtRub(money.net)}</b></div>
-              </div>
-              <div className="ck-calc-foot">
-                <div className="ck-note">
-                  Цифры считаются теми же полями сделки, что и в Журнале — шаг цены, стоимость шага, комиссия.
-                  {canOrderClose && ' Оценка выше — по последней цене графика; в заявке сервер покажет реальную.'}
-                </div>
-                {orderUnavailableReason && <div className="ck-order-hint">{orderUnavailableReason}</div>}
-                {isPaper ? (
-                  <div className="ck-order-hint" style={{ textAlign: 'left', maxWidth: 'none' }}>
-                    Закрывать нечего: позиции в рынке нет, это расчёт «чем бы она шла, если
-                    бы ты в неё вошёл». Саму бумажную сделку ведёт и закроет робот.
-                  </div>
-                ) : canOrderClose ? (
-                  <div className="ck-verdict-actions">
-                    <button className="ck-btn ck-btn-primary" onClick={() => openCloseOrder(money.closingVol)}>
-                      Зафиксировать {closeShare}% сейчас
-                    </button>
-                    <button className="ck-btn" onClick={() => goToClose(trade, money.closingVol)} title="Записать в Журнал вручную, без заявки брокеру">
-                      Записать вручную
-                    </button>
-                  </div>
-                ) : (
-                  <button className="ck-btn ck-btn-primary" onClick={() => goToClose(trade, money.closingVol)}>
-                    Зафиксировать {closeShare}% в Журнале
-                  </button>
-                )}
-              </div>
-            </section>
+            </>
           )}
 
-          {/* Заявка на закрытие — тот же OrderModal, что и «Купить сразу», развёрнутый
-              в обратную сторону (продажа для лонга, покупка для шорта). closeOrder
-              задаётся кнопками выше; закрывается сбросом в null. */}
-          <OrderModal
-            open={!!closeOrder}
-            onClose={() => setCloseOrder(null)}
-            userProfile={userProfile}
-            accounts={orderCfg?.accounts}
-            title={trade?.direction === 'short' ? 'Купить (закрыть шорт) через Т-Банк' : 'Продать (зафиксировать) через Т-Банк'}
-            autoRecordsToJournal
-            intent={trade && closeOrder ? {
-              ticker: trade.ticker.toUpperCase(),
-              instrumentType: trade.instrumentType || 'stock',
-              direction: trade.direction === 'short' ? 'buy' : 'sell',
-              lots: closeOrder.lots,
-              price: money?.price ?? null,
-            } : null}
-            onPlaced={handleCloseOrderPlaced}
-          />
-
-          {/* Повтор бумажной сделки — то же окно подтверждения, но направление
-              ОТКРЫВАЮЩЕЕ: покупка для лонга, продажа для шорта (у заявки на закрытие выше
-              всё наоборот). Цена подставляется ТЕКУЩАЯ с графика, а не та, по которой
-              вошла бумажная сделка: та могла быть вчера, и лимитная заявка по ней просто
-              повисла бы, ничего не исполнив. */}
-          <OrderModal
-            open={!!repeatOrder}
-            onClose={() => setRepeatOrder(null)}
-            userProfile={userProfile}
-            accounts={orderCfg?.accounts}
-            title={trade?.direction === 'short' ? 'Продать (открыть шорт) через Т-Банк' : 'Купить через Т-Банк'}
-            autoRecordsToJournal
-            intent={trade && repeatOrder ? {
-              ticker: trade.ticker.toUpperCase(),
-              instrumentType: trade.instrumentType || 'stock',
-              direction: trade.direction === 'short' ? 'sell' : 'buy',
-              lots: repeatOrder.lots,
-              price: money?.price ?? null,
-            } : null}
-            onPlaced={handleRepeatOrderPlaced}
-          />
-
+          {tabNow === 'similar' && (
+            <>
           {/* ---------- похожие исторические ситуации ----------
               Выборка получена прогоном стратегии с частичными фиксациями, и разрезана она
               по числу этих фиксаций. Стратегии без них она бы ничего не сказала: когорта
@@ -1859,51 +1779,191 @@ export default function Cockpit() {
             </section>
           )}
 
-          {/* ---------- системы ----------
-              Панели показываются, только если ВАША стратегия действительно этими
-              системами пользуется. Показывать счёт системы, которая в стратегии
-              выключена, — значит предлагать решение по правилам, по которым сделка не
-              ведётся: цифра есть, а смысла у неё нет. */}
-          {trade && (
-            <>
-              <div className={usesProfitSystem && usesLossSystem ? 'ck-two' : 'ck-one'}>
-                {usesProfitSystem && (
-                  <ScorePanel
-                    title="Профит-система"
-                    hint="когда фиксировать часть прибыли"
-                    score={a?.now?.profitScore}
-                    threshold={exitRules.profitCaptureThreshold ?? 4}
-                    max={8}
-                    breakdown={breakdowns.profit}
-                    reached={(a?.now?.profitScore ?? -99) >= (exitRules.profitCaptureThreshold ?? 4)}
-                    tone="gold"
-                  />
-                )}
-                {usesLossSystem && (
-                  <ScorePanel
-                    title="Лосс-система"
-                    hint="выше — похоже на дно, ниже — падение продолжается"
-                    score={a?.now?.lossScore}
-                    threshold={exitRules.lossScoreThreshold ?? 2}
-                    max={6}
-                    breakdown={breakdowns.loss}
-                    reached={(a?.now?.lossScore ?? 99) <= (exitRules.lossScoreThreshold ?? 2)}
-                    tone="red"
-                  />
-                )}
-              </div>
-              {(!usesProfitSystem || !usesLossSystem) && (
-                <div className="ck-systems-note">
-                  {!usesProfitSystem && !usesLossSystem
-                    ? 'Профит- и лосс-система в этой стратегии не включены: сделка ведётся обычными правилами выхода.'
-                    : !usesProfitSystem
-                      ? 'Профит-система в этой стратегии не включена (фиксация прибыли частями).'
-                      : 'Лосс-система в этой стратегии не включена: убытки закрываются обычным стопом.'}
-                  {' '}<Link to="/capital">Настроить правила выхода</Link>
-                </div>
-              )}
             </>
           )}
+
+            </div>
+
+            {/* ---------- панель справа: управление позицией, ответ на сигнал, вход ----------
+                Всё, чем позицией управляют, собрано в одном месте рядом с графиком (как панель заявки в терминалах),
+                а не разбросано по ленте. На узком экране панель встаёт под графиком и вкладками. */}
+            {(trade || previewTicker) && (
+              <aside className="ck-order">
+                {trade && !isPaper && (
+                  <section className="ck-panel ck-order-card">
+                    <h3>Управление позицией</h3>
+                    <div className="ck-order-sub">
+                      {trade.ticker} · {trade.direction === 'short' ? 'шорт' : 'лонг'} · в рынке {fmtNum(parseFloat(trade.remainingVolume ?? trade.volume) || 0, 0)}
+                    </div>
+                    {riskBaseLine}
+                    <div className="ck-order-row">
+                      <span className="ck-k">Стоп</span>
+                      {stopDraft == null ? (
+                        <>
+                          <b className={trade.stopLoss ? 'down' : ''}>{trade.stopLoss ? fmtNum(trade.stopLoss) : 'не задан'}</b>
+                          <button className="ck-btn" onClick={() => setStopDraft(trade.stopLoss ? String(trade.stopLoss) : '')}>
+                            {trade.stopLoss ? 'Перенести' : 'Задать'}
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <input
+                            className="ck-order-input" type="text" inputMode="decimal" autoFocus value={stopDraft} placeholder="цена"
+                            onChange={(e) => setStopDraft(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') saveStop(); if (e.key === 'Escape') setStopDraft(null); }}
+                          />
+                          <button className="ck-btn ck-btn-primary" onClick={saveStop}>Сохранить</button>
+                          <button className="ck-btn" onClick={() => setStopDraft(null)}>Отмена</button>
+                        </>
+                      )}
+                    </div>
+                    <div className="ck-order-hint" style={{ textAlign: 'left', maxWidth: 'none' }}>
+                      Стоп меняется в плане сделки: по нему считаются риск и линия на графике. Заявку у брокера это не переставляет.
+                    </div>
+                    <Link
+                      className="ck-btn" style={{ textDecoration: 'none', textAlign: 'center' }}
+                      to={`/calculator?ticker=${encodeURIComponent(trade.ticker)}&type=${encodeURIComponent(trade.instrumentType || 'stock')}`}
+                    >
+                      Докупить — посчитать в Калькуляторе
+                    </Link>
+                  </section>
+                )}
+          {/* ---------- если закрыть сейчас ---------- */}
+          {money && (
+            <section className="ck-panel ck-calc">
+              <h3>{isPaper ? 'Если бы закрыл сейчас' : 'Если закрыть сейчас'}</h3>
+              <div className="ck-shares">
+                {[25, 50, 75, 100].map((sh) => (
+                  <button
+                    key={sh}
+                    className={`ck-share ${closeShare === sh ? 'on' : ''}`}
+                    onClick={() => setCloseShare(sh)}
+                  >
+                    {sh}%
+                  </button>
+                ))}
+                <label className="ck-share-own" title="Своя доля остатка, в процентах">
+                  своё
+                  <input
+                    type="number" min="1" max="100" step="1"
+                    value={[25, 50, 75, 100].includes(closeShare) ? '' : closeShare}
+                    placeholder="%"
+                    onChange={(e) => { const v = Math.round(parseFloat(e.target.value)); if (v >= 1 && v <= 100) setCloseShare(v); }}
+                  />
+                </label>
+              </div>
+              <div className="ck-calc-grid">
+                <div><span className="ck-k">{isPaper ? 'Считаем' : 'Закрываем'}</span><b>{fmtNum(money.closingVol, 0)} конт. по {fmtNum(money.price)}</b></div>
+                <div><span className="ck-k">Грязными</span><b>{fmtRub(money.gross)}</b></div>
+                <div><span className="ck-k">Комиссия</span><b className="down">{fmtRub(-money.commission)}</b></div>
+                <div><span className="ck-k">Уже зафиксировано</span><b>{fmtRub(money.realized)}</b></div>
+                <div><span className="ck-k">Итого по сделке</span>
+                  <b className={money.net >= 0 ? 'up' : 'down'}>{fmtRub(money.net)}</b></div>
+              </div>
+              <div className="ck-calc-foot">
+                <div className="ck-note">
+                  Цифры считаются теми же полями сделки, что и в Журнале — шаг цены, стоимость шага, комиссия.
+                  {canOrderClose && ' Оценка выше — по последней цене графика; в заявке сервер покажет реальную.'}
+                </div>
+                {orderUnavailableReason && <div className="ck-order-hint">{orderUnavailableReason}</div>}
+                {isPaper ? (
+                  <div className="ck-order-hint" style={{ textAlign: 'left', maxWidth: 'none' }}>
+                    Закрывать нечего: позиции в рынке нет, это расчёт «чем бы она шла, если
+                    бы ты в неё вошёл». Саму бумажную сделку ведёт и закроет робот.
+                  </div>
+                ) : canOrderClose ? (
+                  <div className="ck-verdict-actions">
+                    <button className="ck-btn ck-btn-primary" onClick={() => openCloseOrder(money.closingVol)}>
+                      Зафиксировать {closeShare}% сейчас
+                    </button>
+                    <button className="ck-btn" onClick={() => goToClose(trade, money.closingVol)} title="Записать в Журнал вручную, без заявки брокеру">
+                      Записать вручную
+                    </button>
+                  </div>
+                ) : (
+                  <button className="ck-btn ck-btn-primary" onClick={() => goToClose(trade, money.closingVol)}>
+                    Зафиксировать {closeShare}% в Журнале
+                  </button>
+                )}
+              </div>
+            </section>
+          )}
+
+          {/* Что сделали ВЫ по бумажному сигналу: вошёл / пропустил / снял часть / закрыл — вручную или по данным Т-Банка. */}
+          {trade && isPaper && (
+            <PaperActions
+              trade={trade}
+              journalTrades={allTrades}
+              userProfile={userProfile}
+              onDecision={(id, d) => {
+                const add = (list) => list.map((t) => (t.id === id ? { ...t, decisions: [...(t.decisions || []), d] } : t));
+                setPaperTrades(add);
+                setAllPaper(add);
+              }}
+            />
+          )}
+
+                {!trade && previewTicker && (
+                  <section className="ck-panel ck-order-card">
+                    <h3>Вход в сделку</h3>
+                    <div className="ck-order-sub">
+                      {previewTicker}: объём по вашему риску, стоп и цель считаются в Калькуляторе — оттуда же уходит заявка.
+                    </div>
+                    {riskBaseLine}
+                    <Link
+                      className="ck-btn ck-btn-primary" style={{ textDecoration: 'none', textAlign: 'center' }}
+                      to={`/calculator?ticker=${encodeURIComponent(previewTicker)}&type=${encodeURIComponent(previewType)}`}
+                    >
+                      Войти в сделку
+                    </Link>
+                  </section>
+                )}
+              </aside>
+            )}
+          </div>
+
+          {/* Заявка на закрытие — тот же OrderModal, что и «Купить сразу», развёрнутый
+              в обратную сторону (продажа для лонга, покупка для шорта). closeOrder
+              задаётся кнопками выше; закрывается сбросом в null. */}
+          <OrderModal
+            open={!!closeOrder}
+            onClose={() => setCloseOrder(null)}
+            userProfile={userProfile}
+            accounts={orderCfg?.accounts}
+            title={trade?.direction === 'short' ? 'Купить (закрыть шорт) через Т-Банк' : 'Продать (зафиксировать) через Т-Банк'}
+            autoRecordsToJournal
+            intent={trade && closeOrder ? {
+              ticker: trade.ticker.toUpperCase(),
+              instrumentType: trade.instrumentType || 'stock',
+              direction: trade.direction === 'short' ? 'buy' : 'sell',
+              lots: closeOrder.lots,
+              price: money?.price ?? null,
+            } : null}
+            onPlaced={handleCloseOrderPlaced}
+          />
+
+          {/* Повтор бумажной сделки — то же окно подтверждения, но направление
+              ОТКРЫВАЮЩЕЕ: покупка для лонга, продажа для шорта (у заявки на закрытие выше
+              всё наоборот). Цена подставляется ТЕКУЩАЯ с графика, а не та, по которой
+              вошла бумажная сделка: та могла быть вчера, и лимитная заявка по ней просто
+              повисла бы, ничего не исполнив. */}
+          <OrderModal
+            open={!!repeatOrder}
+            onClose={() => setRepeatOrder(null)}
+            userProfile={userProfile}
+            accounts={orderCfg?.accounts}
+            title={trade?.direction === 'short' ? 'Продать (открыть шорт) через Т-Банк' : 'Купить через Т-Банк'}
+            autoRecordsToJournal
+            intent={trade && repeatOrder ? {
+              ticker: trade.ticker.toUpperCase(),
+              instrumentType: trade.instrumentType || 'stock',
+              direction: trade.direction === 'short' ? 'sell' : 'buy',
+              lots: repeatOrder.lots,
+              price: money?.price ?? null,
+            } : null}
+            onPlaced={handleRepeatOrderPlaced}
+          />
+
         </main>
       </div>
     </div>

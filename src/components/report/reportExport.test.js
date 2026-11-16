@@ -61,7 +61,7 @@ test('окно открывается: период, срез, стратеги�
   expect(dlg).not.toBeNull();
   expect(dlg.textContent).toContain('Выгрузить отчёт');
   expect(dlg.querySelectorAll('.rx-check').length).toBe(9);
-  expect([...dlg.querySelectorAll('.rx-seg button')].map((b) => b.textContent)).toEqual(['Реальные', 'Бумажные', 'Всё вместе']);
+  expect([...dlg.querySelectorAll('.rx-seg button')].map((b) => b.textContent)).toEqual(['Реальные', 'Бумажные']);
   expect(byText('Скачать PDF')).toBeTruthy();
   expect(byText('Скачать Word')).toBeTruthy();
   expect(dlg.textContent).toContain('Пробой');

@@ -56,6 +56,7 @@ const closeUrl = esmify(path.join(repoRoot, 'src/services/tradeClose.js'), [
   ["from './analytics/strategy.js'", "from './strategy.js'"], ["from './analytics/commission.js'", "from './commission.js'"],
 ]);
 const { applyTradeClose } = await import(closeUrl);
+const { sideCommission } = await import(pathToFileURL(path.join(tmp, 'contractMath.js')).href);
 const { captured } = await import(pathToFileURL(path.join(tmp, 'trades.js')).href);
 const { commissionRateFor, DEFAULT_TARIFF } = await import(pathToFileURL(path.join(tmp, 'commission.js')).href);
 
@@ -147,7 +148,10 @@ async function applyOpen(db, uid, profile, fill) {
       leverageAtEntry: paper.leverageAtEntry || null,
     } : {}),
     commissionRate: commRate,
-    commission: Math.round(price * Number(fill.lots) * lot * commRate * 2),
+    // Только комиссия входа, до копеек, по общей формуле (у фьючерса — через стоимость шага, а не «цена × лот»:
+    // раньше для нефти выходило 1,92 ₽ вместо 72 ₽). Комиссию выхода добавит закрытие.
+    commission: sideCommission({ instrumentType: type, lot, minStep: parseFloat(paper.minStep) || 0, minStepAmount: parseFloat(paper.minStepAmount) || 0 }, price, Number(fill.lots), commRate),
+    entryCommissionIncluded: true,
     depositSize: parseFloat(profile.depositSize) || 0,
     pnl: null,
     source: 'paper-repeat',

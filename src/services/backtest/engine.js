@@ -61,10 +61,22 @@ function sizePosition(entryPrice, stopPrice, riskSizing) {
     maxMarginPercent: riskSizing.maxMarginPercent, instrumentType: riskSizing.instrumentType,
   });
   if (!sizing || !sizing.contracts) return null;
-  // Rubles moved per 1 point of price, derived from calcTrade's own lossPerContract
-  // rather than re-deriving the stock-vs-future branching a second time here.
-  const rubPerPoint = sizing.lossPerContract / Math.abs(entryPrice - stopPrice);
-  return { contracts: sizing.contracts, rubPerPoint, commission: sizing.commission };
+  // Рубли за пункт — прямо из calcTrade (точное число; раньше восстанавливалось делением округлённого до копеек
+  // убытка на контракт). Ставка комиссии нужна, чтобы посчитать комиссию выхода по ФАКТИЧЕСКОЙ цене выхода.
+  return {
+    contracts: sizing.contracts, rubPerPoint: sizing.rubPerPoint, commission: sizing.commission,
+    rate: riskSizing.commissionRate ?? 0.0006,
+  };
+}
+
+// Результат сделки в рублях: ход × объём − комиссия. Комиссия берётся с каждой стороны по её цене: вход — по цене входа,
+// выход — по средней цене выхода (вход ± ход). Раньше обе стороны считались по цене входа и округлялись до рубля.
+function rubPnl(sizing, entryPrice, pnlPoints, sign) {
+  if (!sizing) return null;
+  const k = sizing.contracts * sizing.rubPerPoint;
+  const avgExit = entryPrice + sign * pnlPoints;
+  const commission = (entryPrice + avgExit) * k * sizing.rate;
+  return Math.round((pnlPoints * k - commission) * 100) / 100;
 }
 
 // Bars needed before the first entry check — mostly so SMA200/ATR-average windows have
@@ -107,6 +119,26 @@ function gapAwareFillPrice(level, barOpen, isStop, direction) {
     ? (isStop ? barOpen <= level : barOpen >= level)
     : (isStop ? barOpen >= level : barOpen <= level);
   return gappedThrough ? barOpen : level;
+}
+
+// Перенос стопа на цену входа после движения в нашу пользу (безубыток). Opt-in:
+// rules.breakevenAfterPct (например 1 = «после +1% от входа»). Стоп переезжает ПОСЛЕ бара,
+// на котором экстремум достиг уровня, и действует со следующего бара — так же считает
+// исследовательский симулятор (scripts/research/p97_exits2.py, параметр be_after). Для
+// остальных стратегий поле null и функция ничего не делает.
+export function armBreakeven(position, bar) {
+  const pct = position.breakevenAfterPct;
+  if (pct == null || position.breakevenArmed) return;
+  const { direction, entryPrice } = position;
+  const reached = direction === 'long'
+    ? bar.high >= entryPrice * (1 + pct / 100)
+    : bar.low <= entryPrice * (1 - pct / 100);
+  if (!reached) return;
+  position.breakevenArmed = true;
+  const cur = position.stopPrice;
+  position.stopPrice = cur == null
+    ? entryPrice
+    : (direction === 'long' ? Math.max(cur, entryPrice) : Math.min(cur, entryPrice));
 }
 
 export function checkIntrabarExit(position, bar) {
@@ -755,7 +787,7 @@ function finalizeTrade(position, exitIndex, exitDate, exitPrice, exitReason) {
   // Real ruble P&L, only when the caller asked for risk-based sizing (see sizePosition
   // above) — null otherwise, so callers that don't care about this can keep using pnlPct
   // exactly as before, untouched.
-  const pnlRub = position.sizing ? pnlPoints * position.sizing.contracts * position.sizing.rubPerPoint - position.sizing.commission : null;
+  const pnlRub = rubPnl(position.sizing, position.entryPrice, pnlPoints, sign);
   return {
     direction: position.direction,
     entryIndex: position.entryIndex, entryDate: position.entryDate, entryPrice: position.entryPrice,
@@ -842,6 +874,7 @@ export function createPosition({
   return {
     direction, entryIndex, entryDate, entryPrice, entryPercent,
     stopPrice, takePrice, barsHeld: 0,
+    breakevenAfterPct: rules.breakevenAfterPct ?? null, breakevenArmed: false,
     signalExitEnabled: !!rules.signalExitEnabled,
     entryRsi14,
     sizing: sizePosition(entryPrice, sizingStopPrice, riskSizing),
@@ -954,6 +987,7 @@ export function runBacktest({
         position = null;
         continue;
       }
+      armBreakeven(position, bar);
 
       // Post-entry indicator dynamics ("откат vs разворот", trader's idea 2026-08-14,
       // validated on D1+H1 holdout — see exitRules.js isConfirmedReversal). Checked before
@@ -1059,7 +1093,7 @@ export function runBacktest({
     const last = candles[n - 1];
     const sign = position.direction === 'long' ? 1 : -1;
     const pnlPoints = (last.close - position.entryPrice) * sign;
-    const pnlRub = position.sizing ? pnlPoints * position.sizing.contracts * position.sizing.rubPerPoint - position.sizing.commission : null;
+    const pnlRub = rubPnl(position.sizing, position.entryPrice, pnlPoints, sign);
     trades.push({
       direction: position.direction,
       entryIndex: position.entryIndex, entryDate: position.entryDate, entryPrice: position.entryPrice,

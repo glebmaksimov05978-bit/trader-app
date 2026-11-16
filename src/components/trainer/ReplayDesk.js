@@ -184,6 +184,7 @@ export default function ReplayDesk({ onSaved }) {
 
   function again() { setPhase('setup'); setAll([]); setClosedTrade(null); setNote(''); }
 
+  const markTrade = position || (phase === 'done' ? closedTrade : null); // сделка, чьи метки входа/выхода рисуем
   const planLines = position ? { entry: position.entryPrice, stop: position.stopPrice, take: position.takePrice }
     : pending ? { stop: pending.stop, take: pending.take } : undefined;
 
@@ -254,7 +255,10 @@ export default function ReplayDesk({ onSaved }) {
             timeframe="D1"
             height={460}
             planLines={phase === 'run' ? planLines : undefined}
-            systemMarkers={phase === 'done' && closedTrade ? [{ date: all[closedTrade.exitBar]?.date, text: 'Выход' }] : undefined}
+            direction={markTrade?.side}
+            // Даты берём из показанных свечей по номеру бара: в слепом режиме даты на графике подменены.
+            entryMarker={markTrade && displayCandles[markTrade.entryBar] ? { date: displayCandles[markTrade.entryBar].date, price: markTrade.entryPrice, direction: markTrade.side } : null}
+            exitMarker={phase === 'done' && closedTrade && displayCandles[closedTrade.exitBar] ? { date: displayCandles[closedTrade.exitBar].date, price: closedTrade.exitPrice } : null}
           />
           {phase === 'run' && !position && !pending && (
             <p className="tr-hint">Открывайте свечи кнопкой «Следующая свеча». Решите войти — поставьте заявку справа (стоп обязателен). Вход произойдёт по открытию следующей свечи.</p>

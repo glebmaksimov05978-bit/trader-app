@@ -243,8 +243,8 @@ export function planPaperUpdate({ trade, rules, candles, entryIndex, commRate })
     patch: {
       ...(patch || {}),
       legs,
-      pnl: (trade.pnl ?? 0) + pnlAdd,
-      commission: (trade.commission ?? 0) + commissionAdd,
+      pnl: Math.round(((trade.pnl ?? 0) + pnlAdd) * 100) / 100,
+      commission: Math.round(((trade.commission ?? 0) + commissionAdd) * 100) / 100,
       paperFillsApplied: alreadyApplied + newFires.length,
     },
   };
@@ -279,7 +279,7 @@ export function planExpiryClose({ trade, lastBar, commRate }) {
     patch: {
       status: 'closed', remainingVolume: 0, closeDate: exitAt, closedAt: exitAt,
       exitPrice: lastBar.close, exitReason: 'expiry',
-      legs, pnl: (trade.pnl ?? 0) + pnlAdd, commission: (trade.commission ?? 0) + commissionAdd,
+      legs, pnl: Math.round(((trade.pnl ?? 0) + pnlAdd) * 100) / 100, commission: Math.round(((trade.commission ?? 0) + commissionAdd) * 100) / 100,
     },
   };
 }

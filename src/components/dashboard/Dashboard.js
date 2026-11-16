@@ -43,6 +43,10 @@ function KpiCard({ className, front, onInfo }) {
   );
 }
 
+// Радар убран с Дашборда (решение владельца, 2026-11-16): он живёт в Сопровождении, а здесь занимал место и путал.
+// Блок оставлен выключенным флагом, а не вырезан: его код делит состояние с остальной страницей.
+const SHOW_RADAR_ON_DASHBOARD = false;
+
 export default function Dashboard() {
   const { user, userProfile } = useAuth();
   const activeStrategy = getActiveStrategy(userProfile);
@@ -169,7 +173,7 @@ export default function Dashboard() {
     <div className="page">
       <div className="page-header flex justify-between items-center">
         <div>
-          <h1 className="page-title">Дашборд</h1>
+          <h1 className="page-title">Главная</h1>
           <p className="page-subtitle">Добро пожаловать, {userProfile?.displayName} </p>
         </div>
         <div className="badge badge-purple">
@@ -365,7 +369,7 @@ export default function Dashboard() {
 
       {/* Radar widget — quick strategy-checklist read on watched tickers, computed live
           and only on demand (button per ticker), never automatically on page load */}
-      {radarItems.length > 0 && (
+      {SHOW_RADAR_ON_DASHBOARD && radarItems.length > 0 && (
         <div className="card" style={{marginBottom: 24}}>
           <div className="section-title" style={{alignItems:'center', marginBottom: radarOpen ? 16 : 0}}>
             <button
@@ -389,7 +393,7 @@ export default function Dashboard() {
             </button>
             {radarOpen && (!activeStrategy?.conditions?.length ? (
               <span style={{fontWeight:400, fontSize:12, color:'var(--text-muted)', marginLeft:8}}>
-                стратегия не настроена — <a href="/capital" style={{color:'var(--accent-primary)'}}>задать в Капитале</a>
+                стратегия не настроена — <a href="/strategies" style={{color:'var(--accent-primary)'}}>задать в Стратегиях</a>
               </span>
             ) : (
               <button
@@ -454,7 +458,7 @@ export default function Dashboard() {
                   ) : st && !st.loading && !st.error ? (
                     <span className="text-muted" style={{fontSize:12}}>
                       нужно сначала написать или выбрать готовую стратегию в разделе{' '}
-                      <a href="/capital" style={{color:'var(--accent-primary)'}}>Капитал</a>
+                      <a href="/strategies" style={{color:'var(--accent-primary)'}}>Стратегии</a>
                     </span>
                   ) : (
                     <button className="btn btn-ghost btn-sm" style={{fontSize:12}} onClick={() => checkRadarItem(item)}>Проверить</button>

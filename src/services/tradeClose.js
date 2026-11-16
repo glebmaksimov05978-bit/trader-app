@@ -28,7 +28,12 @@ export function computeClosePnl({ trade, exitPrice, qty, commRate }) {
   // Комиссия берётся с каждой стороны по её цене: вход по цене входа, выход по цене выхода.
   const commission = (positionValueRub(trade, entry, vol) + positionValueRub(trade, exitPrice, vol)) * rate;
   const net = pnl - commission;
-  return { pnl: Math.round(net * 100) / 100, commission: Math.round(commission * 100) / 100 };
+  return {
+    pnl: Math.round(net * 100) / 100,
+    commission: Math.round(commission * 100) / 100,
+    // только сторона выхода — для сделок, у которых комиссия входа уже записана при открытии
+    exitCommission: Math.round(positionValueRub(trade, exitPrice, vol) * rate * 100) / 100,
+  };
 }
 
 /**
@@ -66,8 +71,13 @@ export async function applyTradeClose({
     remainingVolume: partial ? remaining - qty : 0,
     // Прибавляем к тому, что сделка уже накопила от прошлых частичных фиксаций, а не
     // перезаписываем — так же, как всегда делал ручной путь в Журнале.
-    pnl: (trade.pnl ?? 0) + result.pnl,
-    commission: (trade.commission ?? 0) + result.commission,
+    // сумма копеечных чисел в двоичной арифметике даёт хвосты вроде 0,30000000000000004 — округляем до копеек
+    pnl: Math.round(((trade.pnl ?? 0) + result.pnl) * 100) / 100,
+    // Поле «комиссия» — сколько всего уплачено по сделке. Если комиссия входа уже записана при открытии
+    // (entryCommissionIncluded), добавляем только выход; иначе — обе стороны закрываемой части. Раньше у сделок,
+    // открытых из приложения, вход учитывался дважды (на результат это не влияло — он считается отдельно).
+    commission: Math.round(((trade.commission ?? 0)
+      + (trade.entryCommissionIncluded === true ? result.exitCommission : result.commission)) * 100) / 100,
   };
   if (partial) {
     delete patch.closeDate;

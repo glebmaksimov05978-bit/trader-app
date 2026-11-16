@@ -147,6 +147,39 @@ function rowToTransaction(row, futuresCodeSet) {
   };
 }
 
+// Раздел 3.3: вариационная маржа по каждому контракту за каждый день — см. varMargin.js. В строке: название, код,
+// позиция на начало дня, позиция на конец дня, маржа, дата расчёта. Порядок ячеек не предполагается: дата ищется
+// по виду «ДД.ММ.ГГГГ», код — слово перед двумя целыми числами, за которыми идёт сумма.
+function parseVarMargin(rows) {
+  let start = -1;
+  for (let i = 0; i < rows.length; i++) {
+    const first = normStr(rows[i]?.[0]);
+    if (first.includes('3.3') && /позиционн/i.test(first)) { start = i; break; }
+  }
+  if (start === -1) return [];
+  const isInt = (v) => /^-?\d+$/.test(v);
+  const isNum = (v) => /^-?[\d,]*\d(\.\d+)?$/.test(v);
+  const out = [];
+  for (let i = start + 1; i < rows.length; i++) {
+    const cells = (rows[i] || []).map((c) => normStr(c)).filter((c) => c !== '');
+    if (!cells.length) continue;
+    if (/^3\.4|^[4-9]\./.test(cells[0])) break;
+    const dateCell = cells.map((c) => /^(\d\d)\.(\d\d)\.(\d{4})/.exec(c)).find(Boolean);
+    if (!dateCell) continue;
+    for (let k = 0; k + 3 < cells.length; k++) {
+      if (!isNum(cells[k]) && isInt(cells[k + 1]) && isInt(cells[k + 2]) && isNum(cells[k + 3])) {
+        out.push({
+          date: `${dateCell[3]}-${dateCell[2]}-${dateCell[1]}`, code: cells[k].replace(/\s+/g, ''),
+          posStart: parseInt(cells[k + 1], 10), posEnd: parseInt(cells[k + 2], 10),
+          amount: parseFloat(cells[k + 3].replace(/,/g, '')),
+        });
+        break;
+      }
+    }
+  }
+  return out;
+}
+
 export async function parseTinkoffXlsx(file) {
   const buf = await file.arrayBuffer();
   const wb = XLSX.read(buf, { type: 'array', cellText: true });
@@ -222,6 +255,7 @@ export async function parseTinkoffXlsx(file) {
     transactions,
     repoOperations,
     reportPeriod,
+    varMargin: parseVarMargin(rows),
     unparsedDealNumbers,
     unexecutedCount: unexecutedRows.length,
     cancelledCount: cancelledRows.length,

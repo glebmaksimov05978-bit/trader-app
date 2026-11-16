@@ -8,7 +8,10 @@ import { parseTinkoffPdfExact } from '../../services/import/tinkoffPdf';
 import { parseTinkoffPdfViaAI } from '../../services/import/tinkoffPdfAi';
 import { TinkoffAPI } from '../../services/tinkoff';
 import { importFromTbankApi, buildApiDiagnostics } from '../../services/import/tbankApiImport';
+import { applyBrokerVarMargin } from '../../services/import/varMargin';
+import { applyApiVarMargin } from '../../services/import/varMarginApi';
 import { matchTransactionsToTrades, classifyForPreview, enrichPnl, commitImport, filterAlreadyImportedTransactions, sanityCheck } from '../../services/import/importTrades';
+import { describeManual } from '../../services/import/similarManual';
 import { saveImportArtifacts } from '../../services/trades';
 import { InfoTip } from '../shared/TechnicalAnalysisBlock';
 import toast from 'react-hot-toast';
@@ -43,6 +46,7 @@ const STATUS_LABEL = {
   new: { text: 'новая', cls: 'badge-green' },
   update: { text: 'обновление существующей', cls: 'badge-blue' },
   duplicate: { text: 'дубль — будет пропущено', cls: 'badge-gray' },
+  similar: { text: 'похожа на вашу ручную', cls: 'badge-gold' },
 };
 
 function fmtRange(candidate) {
@@ -58,6 +62,8 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
   const [error, setError] = useState(null);
   const [preview, setPreview] = useState(null); // { classified, repoCount, unmatchedCount, unexecutedCount, cancelledCount, flagged }
   const [checked, setChecked] = useState({});
+  // Позиции, похожие на ручную запись: заменить ли ручную точными данными брокера (по умолчанию — да).
+  const [replace, setReplace] = useState({});
   const [importing, setImporting] = useState(false);
   const [showHowTo, setShowHowTo] = useState(false);
 
@@ -93,15 +99,37 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
     setStage('fifo');
     const newTransactions = filterAlreadyImportedTransactions(parseResult.transactions, existingTrades);
     const { matched, unmatchedClosings } = matchTransactionsToTrades(newTransactions, existingTrades);
-    const enriched = await enrichPnl(matched, userProfile?.tinkoffToken);
+    const byPrices = await enrichPnl(matched, userProfile?.tinkoffToken);
+    // Фьючерсы: результат сверяется с вариационной маржой из отчёта брокера (раздел 3.3) — в ней есть фандинг вечных
+    // контрактов и настоящий курс шага долларовых, которых в ценах сделок нет.
+    let { trades: enriched, report: vmReport } = applyBrokerVarMargin(byPrices, parseResult.varMargin || [], (t) => t.rubPerPoint);
+    // Загрузка прямо из Т-Банка: отчёта нет, маржа берётся из операций счёта (varMarginApi.js).
+    if (parseResult.parseMethod === 'tbank-api' && parseResult.vmOps?.length) {
+      const futClosings = unmatchedClosings.filter((u) => u.isFuture).map((u) => new Date(u.timestampUtc).getTime()).filter(Number.isFinite);
+      const res = applyApiVarMargin(byPrices, parseResult.vmOps, {
+        grossOf: (t) => (t.rubPerPoint > 0 ? (Number(t.pnlPoints) || 0) * t.rubPerPoint : null),
+        notionalOf: (t) => (t.rubPerPoint > 0 ? (Number(t.entryPrice) || 0) * (Number(t.volume) || 0) * t.rubPerPoint : null),
+        periodStart: parseResult.reportPeriod?.start ? new Date(parseResult.reportPeriod.start).getTime() : null,
+        dirtyBefore: futClosings.length ? Math.max(...futClosings) : null,
+        skip: (t) => !!t.existingTradeId,
+      });
+      enriched = res.trades;
+      vmReport = res.report;
+      if (parseResult.apiInfo) parseResult.apiInfo.vmSummary = res.summary;
+    }
 
     setStage('dedup');
     const classified = classifyForPreview(enriched, existingTrades)
       .map((c) => ({ ...c, warnings: sanityCheck(c.candidate, parseResult.reportPeriod) }));
 
     const initialChecked = {};
-    classified.forEach((c, i) => { initialChecked[i] = c.status !== 'duplicate'; });
+    const initialReplace = {};
+    classified.forEach((c, i) => {
+      initialChecked[i] = c.status !== 'duplicate';
+      if (c.status === 'similar') initialReplace[i] = true;
+    });
     setChecked(initialChecked);
+    setReplace(initialReplace);
 
     // Загрузка из API: если в журнале за этот период уже есть сделки из другого источника (отчёт), а номера
     // сделок ни одной не совпали — не исключаем, что номера у отчёта и у API записываются по-разному и появятся дубли.
@@ -133,6 +161,7 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
       invalidRows: parseResult.invalidRows || [],
       unparsedDealNumbers: parseResult.unparsedDealNumbers || [],
       apiInfo: parseResult.apiInfo || null,
+      vmReport,
       overlapWarning,
     });
     setStage(null);
@@ -201,7 +230,8 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
       const toImport = preview.classified
         .map((c, i) => ({ ...c, idx: i }))
         .filter((c) => checked[c.idx])
-        .map((c) => c.candidate);
+        // «Заменить ручную»: позиция обновляет ту запись, а не ложится рядом второй строкой.
+        .map((c) => (c.status === 'similar' && replace[c.idx] && c.existing?.id ? { ...c.candidate, replaceTradeId: c.existing.id } : c.candidate));
 
       const result = await commitImport(user.uid, toImport, existingTrades);
 
@@ -359,6 +389,12 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
                   {preview.apiInfo.skipped.length > 6 && <li>…и ещё {preview.apiInfo.skipped.length - 6}</li>}
                 </ul>
               )}
+              {preview.apiInfo.stats.byKind.future > 0 && !preview.vmReport?.length && (
+                <div style={{marginTop:8, color:'var(--text-muted)'}}>
+                  Вариационная маржа из Т-Банка не получена{preview.apiInfo.vmError ? ` (${preview.apiInfo.vmError})` : ''} — фьючерсы посчитаны по ценам сделок.
+                  У вечных и долларовых контрактов результат может отличаться от брокерского.
+                </div>
+              )}
               {preview.overlapWarning && (
                 <div style={{marginTop:10, padding:'10px 12px', background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.3)', borderRadius:10, color:'var(--text-secondary)'}}>
                   {preview.overlapWarning}
@@ -374,6 +410,32 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
               </div>
             </div>
           )}
+
+          {preview?.vmReport?.length > 0 && (() => {
+                const ok = preview.vmReport.filter((v) => v.applied);
+                const fixed = ok.filter((v) => v.residual !== 0);
+                const total = fixed.reduce((s, v) => s + v.residual, 0);
+                const skippedVm = preview.vmReport.filter((v) => !v.applied && v.reason);
+                return (
+                  <div style={{marginBottom:12, padding:'10px 14px', background:'var(--bg-surface-2)', border:'1px solid var(--border-subtle)', borderRadius:12, color:'var(--text-secondary)', fontSize:13, lineHeight:1.6}}>
+                    <div style={{fontWeight:600, color:'var(--text-primary)', marginBottom:4}}>Фьючерсы сверены с вариационной маржой брокера{preview.apiInfo?.vmSummary?.mode ? ` (${preview.apiInfo.vmSummary.mode})` : ''}</div>
+                    <div>
+                      {ok.length === 0 ? 'Пока ни одна позиция не сверена — причины ниже. ' : <>Совпало с ходом цены до копейки: {ok.length - fixed.length} из {ok.length}.</>}
+                      {fixed.length > 0 && <> Поправка в {fixed.length}: {total > 0 ? '+' : ''}{formatCurrency(total)} — фандинг вечных фьючерсов и курс шага долларовых контрактов. Она уже в результате сделок.</>}
+                    </div>
+                    {fixed.some((v) => v.shared) && (
+                      <div style={{marginTop:4}}>Где в один день закрыта одна позиция и открыта другая, поправка поделена между ними приблизительно; их сумма совпадает с брокером точно.</div>
+                    )}
+                    {skippedVm.length > 0 && (
+                      <ul style={{margin:'6px 0 0 18px', padding:0}}>
+                        {skippedVm.slice(0, 5).map((v, i) => (
+                          <li key={i}>{v.code}, {v.from}{v.to !== v.from ? ` — ${v.to}` : ''}: не сверено — {v.reason}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                );
+              })()}
 
           {preview && preview.classified.length === 0 && (
             <div style={{textAlign:'center', padding:'32px 16px'}}>
@@ -501,13 +563,25 @@ export default function ImportModal({ existingTrades, onClose, onImported }) {
                           </td>
                           <td>
                             {t.pnl !== null && t.pnl !== undefined
-                              ? <span style={{ color: t.pnl >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>
-                                  {t.pnl > 0 ? '+' : ''}{formatCurrency(Math.round(t.pnl))}
+                              ? <span style={{ color: t.pnl >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}
+                                  title={t.brokerAdjustment ? `В том числе поправка по марже брокера ${t.brokerAdjustment > 0 ? '+' : ''}${formatCurrency(t.brokerAdjustment)}${t.brokerVmShared ? ' (поделена приблизительно)' : ''}` : undefined}>
+                                  {t.pnl > 0 ? '+' : ''}{formatCurrency(Math.round(t.pnl))}{t.brokerAdjustment ? ' *' : ''}
                                 </span>
                               : t.pnlNeedsSpecs ? <span className="text-muted" title="Нет токена Т-Инвестиций или спецификация недоступна">н/д</span> : '—'}
                           </td>
                           <td>
                             <span className={`badge ${STATUS_LABEL[c.status].cls}`}>{STATUS_LABEL[c.status].text}</span>
+                            {c.status === 'similar' && c.existing && (
+                              <div style={{ marginTop: 6, fontSize: 11.5, lineHeight: 1.45, color: 'var(--text-secondary)', minWidth: 190 }}>
+                                <div title="Ваша запись в Журнале, похожая на эту сделку брокера">Ваша запись: {describeManual(c.existing)}</div>
+                                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 4, cursor: 'pointer' }}
+                                  title="Цены, объём, время и результат возьмутся у брокера. Стратегия, стоп, заметки и эмоции из вашей записи останутся">
+                                  <input type="checkbox" checked={!!replace[i]} onChange={(e) => setReplace((prev) => ({ ...prev, [i]: e.target.checked }))} />
+                                  заменить точными данными
+                                </label>
+                                {!replace[i] && <div style={{ color: 'var(--gold)' }}>будет второй строкой рядом с вашей</div>}
+                              </div>
+                            )}
                           </td>
                         </tr>
                       );

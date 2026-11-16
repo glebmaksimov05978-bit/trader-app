@@ -5,6 +5,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { TinkoffAPI, parseFutureInfo, parseShareInfo } from '../../services/tinkoff';
 import { calcTrade, scaleToContracts, formatCurrency, formatNumber } from '../../utils/calculator';
+import { sideCommission } from '../../services/contractMath';
 import { addTrade, getUserTrades, computeLiveBalance } from '../../services/trades';
 import { addRadarItem } from '../../services/radar';
 import { fetchDailyCandles, availableTimeframes, DEFAULT_TIMEFRAME, TIMEFRAMES } from '../../services/marketData/candles';
@@ -878,9 +879,14 @@ export default function Calculator() {
         // Комиссия из плана верна только для ПЛАНОВОЙ цены/объёма — если заявка
         // исполнилась по другой цене (проскальзывание) или по другому объёму (частичное
         // исполнение), пересчитываем на реальных числах той же формулой.
-        commission: overrides.entryPrice != null || overrides.volume != null
-          ? Math.round(entryPriceFinal * volumeFinal * (parseFloat(form.lot) || 1) * (parseFloat(form.commissionRate) || 0.0005) * 2)
-          : displayResult.commission,
+        // Сюда пишется только уже уплаченное — комиссия ВХОДА по фактической цене и объёму, до копеек; комиссию выхода
+        // добавит закрытие. Раньше писалась комиссия «за круг» (и закрытие прибавляло её второй раз), а при исполнении
+        // по другой цене она считалась как «цена × лот» — для фьючерсов неверно.
+        commission: sideCommission(
+          { instrumentType, lot: parseFloat(form.lot) || 1, minStep: parseFloat(form.minStep) || 0, minStepAmount: parseFloat(form.minStepAmount) || 0 },
+          entryPriceFinal, volumeFinal, parseFloat(form.commissionRate) || 0.0005,
+        ),
+        entryCommissionIncluded: true,
         // Firestore не принимает undefined как значение поля — null, а не пропуск ключа.
         commissionRate: parseFloat(form.commissionRate) || null,
         depositSize: deposit,
@@ -1505,9 +1511,14 @@ export default function Calculator() {
 
               {/* Кнопки */}
               <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+                {/* «В журнал» руками — только тем, у кого Т-Банк не подключён. С токеном сделка попадает в Журнал сама:
+                    при заявке из приложения сразу, при сделке в приложении брокера — автоимпортом. Ручная запись рядом с
+                    этим только плодит дубли и сделки, которых у брокера не было. */}
+                {!userProfile?.tinkoffToken && (
                 <button className="btn btn-primary" style={{flex:1, overflow:'hidden'}} onClick={handleJournalClick}>
                   <span className={journalAnim ? 'journal-fly' : ''} style={{marginRight:6, display:'inline-flex', verticalAlign:'middle'}}><Icon name="journal" size={15} /></span>В журнал
                 </button>
+                )}
                 <button className="btn btn-ai-hover" style={{flex:1,background:'linear-gradient(135deg,var(--accent-primary),var(--accent-primary))',color:'#fff',border:'none',borderRadius:12,fontWeight:600,fontSize:14}}
                   onClick={() => {
                     const p = new URLSearchParams({from:'calculator',ticker:form.ticker||'',name:instrumentInfo?.name||'',direction:displayResult.direction||'',entry:form.entryPrice||'',sl:form.stopLoss||'',tp:form.takeProfit||'',contracts:String(effectiveContracts),rr:String(displayResult.rr||''),riskAmount:String(displayResult.riskAmount||''),totalLoss:String(displayResult.totalLoss||''),totalProfit:String(displayResult.totalProfit||''),commission:String(displayResult.commission||''),breakeven:String(displayResult.breakeven||''),deposit:form.depositSize||'',type:instrumentType});
@@ -1576,7 +1587,7 @@ export default function Calculator() {
                 <ResultRow label="Убыток на контракт" value={formatCurrency(displayResult.lossPerContract)} color="var(--red)" />
                 <ResultRow label="Прибыль на контракт" value={displayResult.profitPerContract > 0 ? formatCurrency(displayResult.profitPerContract) : '—'} color="var(--green)" />
                 <ResultRow label="Комиссия" value={formatCurrency(displayResult.commission)} />
-                <ResultRow label="Точка безубытка" value={formatNumber(displayResult.breakeven, 2)} />
+                <ResultRow label="Точка безубытка" value={displayResult.breakeven.toLocaleString('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 6 })} />
                 {/* No extra <div className="divider"/> here — every .result-row already
                     draws its own border-bottom, so an explicit divider right after one
                     doubled up into two visible lines back to back (real user report/
@@ -1699,7 +1710,7 @@ export default function Calculator() {
         <div className="card" style={{marginTop:16, textAlign:'center', padding:'20px'}}>
           <div className="text-sm text-secondary">
             Стратегия ещё не настроена — соберите чек-лист условий во вкладке{' '}
-            <a href="/capital" style={{color:'var(--accent-primary)'}}>Капитал → Моя стратегия</a>,
+            <a href="/strategies" style={{color:'var(--accent-primary)'}}>Стратегии → Правила</a>,
             и здесь появится счётчик «N из M».
           </div>
         </div>

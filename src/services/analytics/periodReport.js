@@ -19,8 +19,10 @@ const MONTHS_SHORT = ['янв', 'фев', 'мар', 'апр', 'май', 'июн'
 export const SCOPES = [
   { id: 'real', label: 'Реальные' },
   { id: 'paper', label: 'Бумажные' },
-  { id: 'all', label: 'Всё вместе' },
 ];
+// Среза «Всё вместе» больше нет (решение владельца, 2026-11-16): реальные и условные рубли не складываются нигде.
+// Старое значение 'all' (в сохранённых расписаниях отчётов) читается как «Реальные».
+const realOnly = (scope) => (scope === 'all' ? 'real' : scope);
 
 function toDate(v) {
   if (!v) return null;
@@ -48,7 +50,8 @@ export const yearKey = (d) => String(d.getFullYear());
  *   Нужен, чтобы зафиксированная часть ЧАСТИЧНО закрытых сделок попала в нужный день; без него
  *   такая сделка берётся одной суммой на дату последней фиксации.
  */
-export function normalize(realTrades, paperTrades, scope, legPnl = null) {
+export function normalize(realTrades, paperTrades, scopeRaw, legPnl = null) {
+  const scope = realOnly(scopeRaw);
   const out = [];
   if (scope === 'real' || scope === 'all') {
     for (const t of realTrades || []) {

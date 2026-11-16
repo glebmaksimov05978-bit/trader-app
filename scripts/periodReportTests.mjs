@@ -18,7 +18,8 @@ const paperTrades = [
 
 ok('нормализация: реальные — 5 закрытых', normalize(realTrades, paperTrades, 'real').length === 5);
 ok('нормализация: бумажные — 3 закрытых', normalize(realTrades, paperTrades, 'paper').length === 3);
-ok('«всё вместе» = 8', normalize(realTrades, paperTrades, 'all').length === 8);
+// Среза «всё вместе» больше нет: реальные и условные рубли не складываются. Старое значение 'all' читается как «реальные».
+ok('старое «всё вместе» читается как реальные: 5, без бумажных', normalize(realTrades, paperTrades, 'all').length === 5 && normalize(realTrades, paperTrades, 'all').every((x) => x.src !== 'paper'));
 
 const r = buildPeriodReport({ realTrades, paperTrades, scope: 'real', type: 'month', key: '2026-10' });
 ok('реальные за октябрь: 3 сделки, +120', r.stats.total === 3 && r.stats.pnl === 120);
@@ -37,8 +38,8 @@ ok('стратегии отсортированы по результату (А 
 ok('сравнение «я против системы» в любом срезе', r.versus.real.pnl === 120 && r.versus.paper.pnl === 230);
 
 const a = buildPeriodReport({ realTrades, paperTrades, scope: 'all', type: 'month', key: '2026-10' });
-ok('всё вместе: 6 сделок, +350', a.stats.total === 6 && a.stats.pnl === 350);
-ok('всё вместе: стратегии помечены источником', a.byStrategy.some((x) => x.label === 'А · бумага') && a.byStrategy.some((x) => x.label === 'Вручную · реал'));
+ok('старое «всё вместе» за октябрь = реальные: 3 сделки, +120', a.stats.total === 3 && a.stats.pnl === 120);
+ok('бумажных строк в стратегиях нет', !a.byStrategy.some((x) => /бумага/.test(x.label)));
 
 const y = buildPeriodReport({ realTrades, paperTrades, scope: 'real', type: 'year', key: '2026' });
 ok('год: все 5 реальных, +140', y.stats.total === 5 && y.stats.pnl === 140);
@@ -52,7 +53,7 @@ ok('январь → декабрь прошлого года', prevPeriodKey('m
 ok('название стратегии: реальная без названия — «Вручную», бумажная — «Без названия»', strategyNameOf({}, 'real') === 'Вручную' && strategyNameOf({}, 'paper') === 'Без названия');
 ok('название стратегии: берётся entryStrategyName, у реальных запасной strategyName', strategyNameOf({ entryStrategyName: 'А' }, 'real') === 'А' && strategyNameOf({ strategyName: 'Б' }, 'real') === 'Б');
 const names = listStrategyNames(realTrades, paperTrades, 'all');
-ok('стратегии «всё вместе»: Вручную (5), А (2), Б (1) — по убыванию числа сделок', names.map((n) => `${n.name}:${n.count}`).join() === 'Вручную:5,А:2,Б:1');
+ok('стратегии при старом «всё вместе» — только реальные', names.length > 0 && names.reduce((s2, n) => s2 + n.count, 0) === 5);
 ok('стратегии только бумажных: А и Б', listStrategyNames(realTrades, paperTrades, 'paper').map((n) => n.name).join() === 'А,Б');
 // Отчёт по одной стратегии: те же функции, на отфильтрованных сделках.
 const onlyA = paperTrades.filter((t) => strategyNameOf(t, 'paper') === 'А');

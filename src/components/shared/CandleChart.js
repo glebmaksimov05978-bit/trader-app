@@ -6,7 +6,7 @@
 // Journal (frozen "as of entry" view with fill markers), and Radar. Data always comes
 // from the same `fetchDailyCandles` used for indicators — this component doesn't know or
 // care whether it's MOEX or Tinkoff behind it.
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createChart, CrosshairMode, CandlestickSeries, LineSeries, AreaSeries, HistogramSeries, BaselineSeries, createSeriesMarkers } from 'lightweight-charts';
 import { ema, bollingerSeries, rsi, macd } from '../../services/analytics/indicators';
@@ -22,6 +22,7 @@ import { fetchBrokerMargins } from '../../services/marketData/brokerMarginClient
 import { resolveContract } from '../../services/marketData/marginTrack';
 import { rulerContractText } from '../../services/leverageMath';
 import { DrawingsPrimitive } from './chartDrawingsPrimitive';
+import { normalizeLegs, buildTradeMarks } from '../../services/tradeMarkers';
 import ChartDrawingToolbar from './ChartDrawingToolbar';
 import './CandleChart.css';
 
@@ -39,7 +40,11 @@ const LAYER_DEFS = [
   { key: 'rsi', label: 'RSI', defaultOn: false },
   { key: 'macd', label: 'MACD', defaultOn: false },
   { key: 'volume', label: 'Объём', defaultOn: false },
-  { key: 'pnl', label: 'Вход/выход', defaultOn: true, tradeOnly: true },
+  { key: 'pnl', label: 'Линия входа и зона', defaultOn: true, tradeOnly: true },
+  // Стрелки операций по сделке (купил/продал). Выключить — на графике остаются только свечи и линии.
+  { key: 'tradeMarks', label: 'Стрелки сделок', defaultOn: true, marksOnly: true },
+  // Подписи словами у меток сделки («Вход», «Часть», «Выход»). Выключить — остаются только стрелки и кружки.
+  { key: 'markerLabels', label: 'Подписи меток', defaultOn: true, marksOnly: true },
   { key: 'rightValues', label: 'Цифры справа', defaultOn: false },
   // Overview-only (backtest's all-trades-at-once chart): with hundreds of trades, a text
   // label under every single arrow/circle (Покупка/Продажа/+X.X%) overlaps into an
@@ -49,7 +54,26 @@ const LAYER_DEFS = [
   { key: 'tradeLabels', label: 'Подписи на сделках (Покупка/%)', defaultOn: false, overviewOnly: true },
 ];
 
+// Меню «Индикаторы»: слои по смыслу, а не одной лентой кнопок. Раньше это был ряд из полутора десятков плашек с цветными
+// кружками над графиком — он занимал две-три строки и читался хуже всего на странице (замечание владельца).
+const LAYER_GROUPS = [
+  { title: 'Скользящие средние', keys: ['ema9', 'ema13', 'ema21', 'ema100', 'ema200'] },
+  { title: 'Каналы и уровни', keys: ['bollinger', 'sr', 'fibonacci'] },
+  { title: 'Осцилляторы и объём', keys: ['rsi', 'macd', 'volume'] },
+  { title: 'Сделка', keys: ['pnl', 'tradeMarks', 'markerLabels', 'tradeLabels'] },
+  { title: 'Вид', keys: ['rightValues'] },
+];
+// Короткие имена для подписи на самом графике (слева сверху, со значением под курсором).
+const LEGEND_NAMES = { ema9: 'EMA 9', ema13: 'EMA 13', ema21: 'EMA 21', ema100: 'EMA 100', ema200: 'EMA 200', bollinger: 'BB 20', rsi: 'RSI 14', macd: 'MACD', volume: 'Объём' };
+
 const DEFAULT_COLORS_KEY = 'traderpro-chart-colors';
+// Выбор «подписи меток вкл/выкл» запоминается в браузере — один на все графики.
+const MARKER_LABELS_KEY = 'traderpro-chart-marker-labels';
+const TRADE_MARKS_KEY = 'traderpro-chart-trade-marks';
+const SAVED_LAYER_KEYS = { markerLabels: MARKER_LABELS_KEY, tradeMarks: TRADE_MARKS_KEY };
+function loadFlag(key) {
+  try { return localStorage.getItem(key) !== '0'; } catch { return true; }
+}
 const DEFAULT_COLOR_FALLBACKS = {
   ema9: '#3b82f6', ema13: '#eab308', ema21: '#a78bfa', ema100: '#f59e0b', ema200: '#ef4444', bollinger: '#9ca3af',
 };
@@ -147,85 +171,8 @@ function barIndexForTime(targetTime, candleTimes) {
   return ans;
 }
 
-// One marker per candle bar instead of one per fill — a position built/unwound over
-// several orders on the same bar used to stack labels vertically into an unreadable
-// column (real user report/screenshot on M15). Fills on the same bar collapse to a
-// single marker with a "×N" count; the full per-fill breakdown is returned separately
-// (`fillsByBar`) for the hover tooltip.
-function buildMarkersAndFills(legs, direction, candleTimes, colors) {
-  if (!legs?.length) return { markers: [], fillsByBar: new Map() };
-
-  const sorted = [...legs]
-    .map((l) => ({ ...l, t: toChartTime(toDate(l.timestampUtc)) }))
-    .sort((a, b) => a.t - b.t);
-
-  const totalOpened = sorted.filter((l) => l.type === 'open').reduce((s, l) => s + l.quantity, 0);
-  // Identify the leg that closes the position (cumulative closed ≥ total opened) — that's
-  // the "final exit"; earlier closes are partial exits.
-  let closedSoFar = 0;
-  let finalCloseIdx = -1;
-  sorted.forEach((l, i) => {
-    if (l.type === 'close') {
-      closedSoFar += l.quantity;
-      if (finalCloseIdx === -1 && closedSoFar >= totalOpened) finalCloseIdx = i;
-    }
-  });
-  const firstOpenIdx = sorted.findIndex((l) => l.type === 'open');
-
-  // Group by bar time.
-  const groups = new Map();
-  const fillsByBar = new Map();
-  sorted.forEach((l, i) => {
-    const bar = barTimeForLeg(l.t, candleTimes);
-    if (!groups.has(bar)) groups.set(bar, []);
-    groups.get(bar).push({ ...l, idx: i });
-    if (!fillsByBar.has(bar)) fillsByBar.set(bar, []);
-    fillsByBar.get(bar).push({
-      t: l.t,
-      action: l.type === 'open' ? (i === firstOpenIdx ? 'Вход' : 'Докупка') : (i === finalCloseIdx ? 'Выход' : 'Частичный выход'),
-      quantity: l.quantity,
-      price: l.price,
-    });
-  });
-
-  const markers = [];
-  groups.forEach((group, bar) => {
-    const opens = group.filter((l) => l.type === 'open');
-    const closes = group.filter((l) => l.type === 'close');
-    const hasFirstOpen = group.some((l) => l.idx === firstOpenIdx);
-    const hasFinalClose = group.some((l) => l.idx === finalCloseIdx);
-    const countSuffix = group.length > 1 ? ` ×${group.length}` : '';
-
-    let base, isOpen, isFinal;
-    if (opens.length && !closes.length) { base = hasFirstOpen ? 'Вход' : 'Докупка'; isOpen = true; }
-    else if (closes.length && !opens.length) { base = hasFinalClose ? 'Выход' : 'Частичный выход'; isOpen = false; isFinal = hasFinalClose; }
-    else { base = 'Операции'; isOpen = false; } // both opens and closes on one bar
-
-    if (isOpen) {
-      markers.push({
-        time: bar,
-        position: direction === 'short' ? 'aboveBar' : 'belowBar',
-        color: direction === 'short' ? colors.red : colors.green,
-        shape: direction === 'short' ? 'arrowDown' : 'arrowUp',
-        text: base + countSuffix,
-      });
-    } else {
-      markers.push({
-        time: bar,
-        position: 'aboveBar',
-        color: isFinal ? colors.gold : colors.blue,
-        shape: 'circle',
-        text: base + countSuffix,
-      });
-    }
-  });
-
-  markers.sort((a, b) => a.time - b.time);
-  return { markers, fillsByBar };
-}
-
-// All of a backtest's trades on one chart at once — different from buildMarkersAndFills
-// above, which groups the FILLS of a single real trade. Here each backtest trade is
+// All of a backtest's trades on one chart at once — different from buildTradeMarks
+// (services/tradeMarkers.js), which groups the FILLS of a single real trade. Here each backtest trade is
 // already a clean single entry + single exit (the engine doesn't model partial fills),
 // so it's just two markers per trade: an arrow for the entry (up=long/down=short, like
 // "Покупка"/"Продажа" on a terminal) and a circle for the exit, colored by whether that
@@ -259,23 +206,6 @@ function buildTradesMarkers(trades, colors, showLabels) {
 
 // Small circular color swatch + native color input — the trader picks each EMA/Bollinger
 // color themselves.
-function ColorPicker({ color, onChange }) {
-  return (
-    <label style={{
-      display:'inline-flex', width:14, height:14, borderRadius:'50%', background:color,
-      border:'1px solid var(--border-subtle)', cursor:'pointer', flexShrink:0, position:'relative',
-    }} title="Выбрать цвет">
-      <input
-        type="color"
-        value={color}
-        onChange={(e) => onChange(e.target.value)}
-        onClick={(e) => e.stopPropagation()}
-        style={{position:'absolute', inset:0, opacity:0, cursor:'pointer', width:'100%', height:'100%'}}
-      />
-    </label>
-  );
-}
-
 export default function CandleChart({
   candles,
   patterns,
@@ -284,8 +214,8 @@ export default function CandleChart({
   timeframe,
   timeframeOptions,
   onTimeframeChange,
-  entryMarker, // { date, price, direction } — fallback when `legs` isn't available
-  exitMarker,  // { date, price } — fallback when `legs` isn't available
+  entryMarker: entryMarkerProp, // { date, price, direction, quantity? } — когда и где открыта сделка; дополняет `legs`, если входа в них нет
+  exitMarker: exitMarkerProp,   // { date, price } — когда сделка закрыта целиком; дополняет `legs`, если закрытий в них нет
   legs,        // trade.legs: [{ type: 'open'|'close', side, quantity, price, timestampUtc }, ...]
   direction,   // 'long' | 'short'
   entryPrice,  // avg entry price — draws the entry line + P&L zone (Journal only)
@@ -305,6 +235,22 @@ export default function CandleChart({
   const seriesRef = useRef({});
   const fillsByBarRef = useRef(new Map());
   const isTrade = entryPrice != null;
+  // Страницы передают метки входа/выхода новым объектом на каждый рендер. Чтобы график из-за этого не пересобирался
+  // заново, держим объект неизменным, пока не изменилось содержимое (время, цена, направление, объём).
+  const entryMs = entryMarkerProp?.date ? toDate(entryMarkerProp.date).getTime() : null;
+  const exitMs = exitMarkerProp?.date ? toDate(exitMarkerProp.date).getTime() : null;
+  const entryMarker = useMemo(
+    () => (entryMarkerProp && entryMs != null && !Number.isNaN(entryMs) ? { ...entryMarkerProp, date: new Date(entryMs) } : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [entryMs, entryMarkerProp?.price, entryMarkerProp?.direction, entryMarkerProp?.quantity],
+  );
+  const exitMarker = useMemo(
+    () => (exitMarkerProp && exitMs != null && !Number.isNaN(exitMs) ? { ...exitMarkerProp, date: new Date(exitMs) } : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [exitMs, exitMarkerProp?.price],
+  );
+  // Есть ли на графике метки сделки (вход/фиксации/выход) — от этого зависит кнопка «Подписи меток».
+  const hasTradeMarks = !!(legs?.length || entryMarker || exitMarker);
   const slotRef = useRef(null);
   const hostRef = useRef(null);
   if (!hostRef.current && typeof document !== 'undefined') hostRef.current = document.createElement('div');
@@ -377,7 +323,7 @@ export default function CandleChart({
   };
 
   const [layers, setLayers] = useState(() =>
-    Object.fromEntries(LAYER_DEFS.map((l) => [l.key, l.defaultOn]))
+    ({ ...Object.fromEntries(LAYER_DEFS.map((l) => [l.key, l.defaultOn])), markerLabels: loadFlag(MARKER_LABELS_KEY), tradeMarks: loadFlag(TRADE_MARKS_KEY) })
   );
   const [colors, setColors] = useState(() => ({ ...DEFAULT_COLOR_FALLBACKS, ...loadSavedColors() }));
   const [fullscreen, setFullscreen] = useState(false);
@@ -393,6 +339,20 @@ export default function CandleChart({
   // это её состояние. На широком экране CSS-медиазапрос саму кнопку прячет, а ряд
   // всегда открыт, так что состояние там ни на что не влияет.
   const [indicatorsOpen, setIndicatorsOpen] = useState(false);
+  const menuRef = useRef(null);
+  useEffect(() => {
+    if (!indicatorsOpen) return undefined;
+    const onDown = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setIndicatorsOpen(false); };
+    const onKey = (e) => { if (e.key === 'Escape') setIndicatorsOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [indicatorsOpen]);
+  // Подпись на графике: значения индикаторов на свече под курсором (нет курсора — на последней свече).
+  const legendRef = useRef({});          // ключ слоя → Map(время свечи → значение | объект)
+  const [hoverTime, setHoverTime] = useState(null);
+  const hoverRef = useRef(null);
+  const [, setLegendTick] = useState(0); // значения подписи посчитаны заново — перерисовать её
 
   // Призма стратегии: пока задан layerPreset, индикаторные слои равны ему; при возврате к null —
   // слои возвращаются к значениям по умолчанию. Слои сделки («Вход/выход», цифры справа) не трогаем.
@@ -414,7 +374,11 @@ export default function CandleChart({
     });
   }, [presetKey]);
 
-  const toggleLayer = (key) => setLayers((s) => ({ ...s, [key]: !s[key] }));
+  const toggleLayer = (key) => setLayers((s) => {
+    const next = { ...s, [key]: !s[key] };
+    if (SAVED_LAYER_KEYS[key]) { try { localStorage.setItem(SAVED_LAYER_KEYS[key], next[key] ? '1' : '0'); } catch {} }
+    return next;
+  });
   const setColor = (key, value) => setColors((s) => {
     const next = { ...s, [key]: value };
     try { localStorage.setItem(DEFAULT_COLORS_KEY, JSON.stringify(next)); } catch {}
@@ -432,13 +396,18 @@ export default function CandleChart({
       autoSize: true,
     });
     chartRef.current = chart;
+    // Только для стенда разработки (/__harness): доступ к графику из консоли браузера.
+    if (process.env.NODE_ENV === 'development' && typeof window !== 'undefined') window.__ccChart = chart;
     seriesRef.current.candles = chart.addSeries(CandlestickSeries, {
       upColor: themeColor('--green', '#10b981'),
       downColor: themeColor('--red', '#ef4444'),
       borderVisible: false,
       wickUpColor: themeColor('--green', '#10b981'),
       wickDownColor: themeColor('--red', '#ef4444'),
+      priceLineStyle: 2, priceLineWidth: 1,
     });
+    // Свечи не прилипают к верхнему и нижнему краю: сверху остаётся место под подпись индикаторов.
+    try { chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.14, bottom: 0.08 } }); } catch { /* не критично */ }
 
     // Floating tooltip: on hover, show the bar's date + O/H/L/C, and if any trade fills
     // landed on that bar, list each one (time/action/qty/price) — this is the "hover to
@@ -447,6 +416,8 @@ export default function CandleChart({
       const tip = tooltipRef.current;
       if (!tip) return;
       const candle = param.seriesData?.get(seriesRef.current.candles);
+      const ht = param.time && param.point && candle ? param.time : null;
+      if (ht !== hoverRef.current) { hoverRef.current = ht; setHoverTime(ht); }
       if (!param.time || !param.point || !candle) { tip.style.display = 'none'; return; }
       const f = (n) => n?.toLocaleString('ru-RU', { maximumFractionDigits: 2 });
       let html = `<div style="font-weight:600;margin-bottom:2px">${fmtDateTime(param.time)}</div>`;
@@ -455,7 +426,7 @@ export default function CandleChart({
       if (fills?.length) {
         html += '<div style="margin-top:4px;border-top:1px solid var(--border-subtle);padding-top:4px">';
         fills.forEach((fl) => {
-          html += `<div>${fl.action}: ${fl.quantity} по ${f(fl.price)}</div>`;
+          html += `<div>${fl.action}${fl.quantity ? `: ${fl.quantity}` : ''}${fl.price != null ? ` по ${f(fl.price)}` : ''}</div>`;
         });
         html += '</div>';
       }
@@ -865,20 +836,25 @@ export default function CandleChart({
       chartRef.current.timeScale().fitContent();
     } else if (singleTradeDate && n > 4) {
       const times = candles.map((c) => toChartTime(c.date));
-      const entryT = toChartTime(singleTradeDate);
-      const exitT = exitMarker?.date ? toChartTime(exitMarker.date)
+      const entryT = toChartTime(toDate(singleTradeDate));
+      const exitT = exitMarker?.date ? toChartTime(toDate(exitMarker.date))
         : (legs?.length ? toChartTime(toDate(legs[legs.length - 1].timestampUtc)) : entryT);
       const entryIdx = barIndexForTime(entryT, times);
       const exitIdx = barIndexForTime(exitT, times);
-      const from = Math.max(0, Math.min(entryIdx, exitIdx) - 20);
-      const to = Math.min(n - 1, Math.max(entryIdx, exitIdx) + 20);
+      // Сделка ещё открыта — показываем от входа до последней свечи (но не больше ~200 свечей, иначе они сливаются):
+      // в Сопровождении важно «сейчас», а не только место входа.
+      const stillOpen = exitPrice == null && !exitMarker;
+      const to = stillOpen ? n - 1 + (drawingTools ? 6 : 0) : Math.min(n - 1, Math.max(entryIdx, exitIdx) + 20);
+      const from = Math.max(0, Math.min(entryIdx, exitIdx) - 20, stillOpen ? to - 200 : 0);
       chartRef.current.timeScale().setVisibleLogicalRange({ from, to });
     } else if (fitAll) {
       chartRef.current.timeScale().fitContent();
     } else if (n > 4) {
       // с рисованием оставляем справа свободное место — там рисуют прогноз (траекторию, луч, фибо вперёд)
-      const span = Math.ceil(n / 4);
-      const pad = drawingTools ? Math.max(6, Math.round(span * 0.15)) : 0;
+      // Последние ~120 свечей: так они крупные и читаются, как в терминалах (раньше — четверть всей истории, на дневках это
+      // 150–200 мелких свечей). Справа — небольшой отступ, чтобы последняя свеча не прилипала к шкале.
+      const span = Math.min(n, 120);
+      const pad = drawingTools ? Math.max(6, Math.round(span * 0.15)) : 3;
       chartRef.current.timeScale().setVisibleLogicalRange({ from: n - span, to: n - 1 + pad });
     } else {
       chartRef.current.timeScale().fitContent();
@@ -904,8 +880,11 @@ export default function CandleChart({
     // price axis. Off by default — real user report: EMA200/Bollinger values stacked up
     // on the right scale and made it hard to read ("чтобы не путались глаза").
     const showRV = layers.rightValues;
+    const legend = {};
+    legendRef.current = legend;
 
     if (layers.volume) {
+      legend.volume = new Map(candles.map((c, i) => [times[i], c.volume || 0]));
       const volSeries = chart.addSeries(HistogramSeries, {
         priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false,
       });
@@ -935,7 +914,9 @@ export default function CandleChart({
       const values = ema(closes, period);
       const data = times.map((t, i) => (values[i] != null ? { time: t, value: values[i] } : null)).filter(Boolean);
       if (!data.length) return;
-      const line = chart.addSeries(LineSeries, { color: colors[`ema${period}`], lineWidth: 2, title: `EMA${period}`, priceLineVisible: false, lastValueVisible: showRV });
+      legend[`ema${period}`] = new Map(data.map((d) => [d.time, d.value]));
+      // Подпись серии на шкале не нужна: название и значение показывает подпись слева сверху.
+      const line = chart.addSeries(LineSeries, { color: colors[`ema${period}`], lineWidth: 1.5, title: showRV ? `EMA${period}` : '', priceLineVisible: false, lastValueVisible: showRV, crosshairMarkerVisible: false });
       line.setData(data);
       seriesRef.current.overlaySeries.push(line);
     });
@@ -949,6 +930,7 @@ export default function CandleChart({
         mid.push({ time: times[i], value: b.mid });
         lower.push({ time: times[i], value: b.lower });
       });
+      legend.bollinger = new Map(upper.map((u, k) => [u.time, { upper: u.value, mid: mid[k].value, lower: lower[k].value }]));
       // Translucent tint under the upper band, fading to transparent — never opaque, so
       // candles are never masked (a prior opaque-mask version hid everything below the
       // lower band, real user report). The tint bleeds a little past the lower band; a
@@ -965,7 +947,7 @@ export default function CandleChart({
         if (!data.length) return;
         const line = chart.addSeries(LineSeries, {
           color: colors.bollinger, lineWidth: 1, lineStyle: idx === 1 ? 2 : 0,
-          priceLineVisible: false, lastValueVisible: showRV, title: idx === 0 ? 'BB верх' : idx === 1 ? 'BB сред' : 'BB низ',
+          priceLineVisible: false, lastValueVisible: showRV, crosshairMarkerVisible: false, title: !showRV ? '' : idx === 0 ? 'BB верх' : idx === 1 ? 'BB сред' : 'BB низ',
         });
         line.setData(data);
         seriesRef.current.overlaySeries.push(line);
@@ -1006,18 +988,23 @@ export default function CandleChart({
       seriesRef.current.priceLines.push(candleSeries.createPriceLine({
         price: entryPrice, color: themeColor('--text-primary', '#f0f4ff'), lineWidth: 1, lineStyle: 0, title: 'Ср. вход',
       }));
-      if (exitPrice != null && legs?.length) {
-        const legTimes = legs.map((l) => barTimeForLeg(toChartTime(toDate(l.timestampUtc)), times));
+      const zoneLegs = normalizeLegs(legs, entryMarker, exitMarker);
+      if (exitPrice != null && zoneLegs.length) {
+        const legTimes = zoneLegs.map((l) => barTimeForLeg(toChartTime(toDate(l.timestampUtc)), times));
         const firstBar = Math.min(...legTimes);
         const lastBar = Math.max(...legTimes);
         const zoneData = times.filter((t) => t >= firstBar && t <= lastBar).map((t) => ({ time: t, value: exitPrice }));
         if (zoneData.length) {
-          const up = exitPrice >= entryPrice;
+          // Прибыль зависит от направления: у шорта выход НИЖЕ входа — это прибыль (раньше зона у шорта красилась наоборот).
+          const isShort = (direction || entryMarker?.direction) === 'short';
+          const up = isShort ? exitPrice <= entryPrice : exitPrice >= entryPrice;
+          const g = themeColor('--green', '#10b981'), r = themeColor('--red', '#ef4444');
+          const above = isShort ? r : g, below = isShort ? g : r; // цвет зоны, когда выход выше / ниже входа
           const zone = chart.addSeries(BaselineSeries, {
             baseValue: { type: 'price', price: entryPrice },
-            topLineColor: themeColor('--green', '#10b981'), bottomLineColor: themeColor('--red', '#ef4444'),
-            topFillColor1: withAlpha(themeColor('--green', '#10b981'), 0.25), topFillColor2: withAlpha(themeColor('--green', '#10b981'), 0.05),
-            bottomFillColor1: withAlpha(themeColor('--red', '#ef4444'), 0.05), bottomFillColor2: withAlpha(themeColor('--red', '#ef4444'), 0.25),
+            topLineColor: above, bottomLineColor: below,
+            topFillColor1: withAlpha(above, 0.25), topFillColor2: withAlpha(above, 0.05),
+            bottomFillColor1: withAlpha(below, 0.05), bottomFillColor2: withAlpha(below, 0.25),
             lineWidth: 2, priceLineVisible: false, lastValueVisible: showRV, crosshairMarkerVisible: false,
             title: up ? 'Выход (прибыль)' : 'Выход (убыток)',
           });
@@ -1031,8 +1018,9 @@ export default function CandleChart({
       const rsiValues = rsi(closes, 14);
       const data = times.map((t, i) => (rsiValues[i] != null ? { time: t, value: rsiValues[i] } : null)).filter(Boolean);
       if (data.length) {
+        legend.rsi = new Map(data.map((d) => [d.time, d.value]));
         const paneIndex = chart.panes().length;
-        const rsiLine = chart.addSeries(LineSeries, { color: themeColor('--blue', '#3b82f6'), lineWidth: 2, title: 'RSI', priceLineVisible: false }, paneIndex);
+        const rsiLine = chart.addSeries(LineSeries, { color: themeColor('--blue', '#3b82f6'), lineWidth: 1.5, title: 'RSI', priceLineVisible: false }, paneIndex);
         rsiLine.setData(data);
         rsiLine.createPriceLine({ price: 70, color: themeColor('--red', '#ef4444'), lineWidth: 1, lineStyle: 2, axisLabelVisible: true });
         rsiLine.createPriceLine({ price: 30, color: themeColor('--green', '#10b981'), lineWidth: 1, lineStyle: 2, axisLabelVisible: true });
@@ -1049,6 +1037,7 @@ export default function CandleChart({
       const macdData = times.map((t, i) => (macdLine[i] != null ? { time: t, value: macdLine[i] } : null)).filter(Boolean);
       const signalData = times.map((t, i) => (signalLine[i] != null ? { time: t, value: signalLine[i] } : null)).filter(Boolean);
       if (histData.length) {
+        legend.macd = new Map(histData.map((d) => [d.time, d.value]));
         const paneIndex = chart.panes().length;
         const histSeries = chart.addSeries(HistogramSeries, { title: 'MACD', priceLineVisible: false }, paneIndex);
         histSeries.setData(histData);
@@ -1070,38 +1059,43 @@ export default function CandleChart({
     if (trades?.length) {
       markers = buildTradesMarkers(trades, markerColors, layers.tradeLabels);
       fillsByBarRef.current = new Map();
-    } else if (layers.pnl || !isTrade) {
-      const built = buildMarkersAndFills(legs, direction, times, markerColors);
+    } else if (layers.tradeMarks) {
+      // Операции сделки; чего в них не хватает (вход у сделки системы, всё — у сделки без истории операций),
+      // дополняется датами самой сделки. Правила значков — в services/tradeMarkers.js.
+      const built = buildTradeMarks({
+        legs: normalizeLegs(legs, entryMarker, exitMarker),
+        direction: direction || entryMarker?.direction,
+        candleTimes: times, colors: markerColors,
+        closed: exitPrice != null || !!exitMarker,
+        showLabels: layers.markerLabels,
+      });
       markers = built.markers;
       fillsByBarRef.current = built.fillsByBar;
-      if (!markers.length) {
-        // Fallback for trades saved with no leg history (e.g. from the Calculator).
-        if (entryMarker) markers.push({ time: barTimeForLeg(toChartTime(entryMarker.date), times), position: entryMarker.direction === 'short' ? 'aboveBar' : 'belowBar', color: entryMarker.direction === 'short' ? markerColors.red : markerColors.green, shape: entryMarker.direction === 'short' ? 'arrowDown' : 'arrowUp', text: 'Вход' });
-        if (exitMarker) markers.push({ time: barTimeForLeg(toChartTime(exitMarker.date), times), position: 'aboveBar', color: markerColors.gold, shape: 'circle', text: 'Выход' });
-        markers.sort((a, b) => a.time - b.time);
-      }
     } else {
       fillsByBarRef.current = new Map();
     }
     // Метки «система вышла бы здесь» — рядом с реальными операциями трейдера, другой формы
     // и цвета, чтобы их нельзя было принять за настоящую сделку.
-    if (systemMarkers?.length && times.length) {
+    if (systemMarkers?.length && times.length && (layers.tradeMarks || !hasTradeMarks)) {
       const accent = themeColor('--accent-primary', '#4f46e5');
       systemMarkers.forEach((m) => {
         if (!m?.date) return;
         markers.push({
           time: barTimeForLeg(toChartTime(toDate(m.date)), times),
-          position: 'aboveBar', color: accent, shape: 'square', text: m.text || 'Система',
+          position: 'aboveBar', color: accent, shape: 'square',
+          // подписи прячем только рядом с метками сделки; в играх тренажёра («Вопрос») текст — сама суть метки
+          text: hasTradeMarks && !layers.markerLabels ? '' : (m.text || 'Система'),
         });
       });
       markers.sort((a, b) => a.time - b.time);
     }
+    setLegendTick((x) => x + 1);
     if (!seriesRef.current.markersPlugin) {
       seriesRef.current.markersPlugin = createSeriesMarkers(candleSeries, markers);
     } else {
       seriesRef.current.markersPlugin.setMarkers(markers);
     }
-  }, [candles, patterns, layers, entryMarker, exitMarker, legs, direction, entryPrice, exitPrice, planLines, colors, isTrade, trades, systemMarkers]);
+  }, [candles, patterns, layers, entryMarker, exitMarker, legs, direction, entryPrice, exitPrice, planLines, colors, isTrade, trades, systemMarkers, hasTradeMarks]);
 
   const selectedDrawing = selectedId ? drawings.find((d) => d.id === selectedId) || null : null;
   const rsiMacdPanes = (layers.rsi ? 110 : 0) + (layers.macd ? 110 : 0);
@@ -1114,40 +1108,70 @@ export default function CandleChart({
   // instead of a magic number: header + toggle row keep their natural height (however
   // many lines they wrap to), the chart takes whatever's actually left — never a guess.
   const chartHeight = fullscreen ? '100%' : `${(height ?? 300) + rsiMacdPanes}px`;
-  const visibleLayers = LAYER_DEFS.filter((l) => (!l.tradeOnly || isTrade) && (!l.overviewOnly || trades?.length));
+  const visibleLayers = LAYER_DEFS.filter((l) => (!l.tradeOnly || isTrade) && (!l.overviewOnly || trades?.length) && (!l.marksOnly || (hasTradeMarks && !trades?.length && (l.key !== 'markerLabels' || layers.tradeMarks))));
 
   const content = (
     <div style={fullscreen ? { position:'fixed', inset:0, zIndex:9998, background:'var(--bg-surface)', padding:16, display:'flex', flexDirection:'column', overflow:'hidden' } : undefined}>
-      <div style={{display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:8, marginBottom:8, flexShrink:0}}>
-        <div style={{fontSize:14, fontWeight:700, color:'var(--text-primary)'}}>{ticker}</div>
-        <div style={{display:'flex', gap:4, alignItems:'center'}}>
-          {timeframeOptions?.length > 0 && timeframeOptions.map((tf) => (
-            <button
-              key={tf.key}
-              className={`btn btn-sm ${tf.key === timeframe ? 'btn-primary' : 'btn-ghost'}`}
-              style={{fontSize:11, padding:'3px 8px'}}
-              onClick={() => onTimeframeChange?.(tf.key)}
-            >{TIMEFRAMES[tf.key]?.label || tf.label}</button>
-          ))}
+      <div className="cc-head">
+        <div className="cc-head-left">
+          <div className="cc-ticker">{ticker}</div>
+          <div className="cc-menu-wrap" ref={menuRef}>
+            <button type="button" className={`cc-menu-btn ${indicatorsOpen ? 'on' : ''}`} onClick={() => setIndicatorsOpen((v) => !v)} aria-expanded={indicatorsOpen}>
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M1.5 11.5 5.5 6l3 3.5 5.5-7" /><path d="M1.5 14.5h13" opacity=".5" />
+              </svg>
+              Индикаторы
+              {(() => { const n = Object.keys(LEGEND_NAMES).filter((k) => layers[k]).length; return n ? <span className="cc-menu-count">{n}</span> : null; })()}
+            </button>
+            {indicatorsOpen && (
+              <div className="cc-menu" role="menu">
+                {LAYER_GROUPS.map((g) => {
+                  const defs = g.keys.map((k) => visibleLayers.find((l) => l.key === k)).filter(Boolean);
+                  if (!defs.length) return null;
+                  return (
+                    <div key={g.title} className="cc-menu-group">
+                      <div className="cc-menu-title">{g.title}</div>
+                      {defs.map((l) => (
+                        <label key={l.key} className="cc-menu-item">
+                          <input type="checkbox" checked={!!layers[l.key]} onChange={() => toggleLayer(l.key)} />
+                          <span>{l.label}</span>
+                          {l.colorable && (
+                            <span className="cc-swatch" style={{ background: colors[l.key] }} title="Цвет линии">
+                              <input type="color" value={colors[l.key]} onChange={(e) => setColor(l.key, e.target.value)} onClick={(e) => e.stopPropagation()} />
+                            </span>
+                          )}
+                        </label>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="cc-head-right">
+          {timeframeOptions?.length > 0 && (
+            <div className="cc-tf" role="tablist" aria-label="Таймфрейм">
+              {timeframeOptions.map((tf) => (
+                <button key={tf.key} type="button" className={tf.key === timeframe ? 'on' : ''} onClick={() => onTimeframeChange?.(tf.key)}>
+                  {TIMEFRAMES[tf.key]?.label || tf.label}
+                </button>
+              ))}
+            </div>
+          )}
           {priceManual && (
             <button
-              className="btn btn-ghost btn-sm"
-              style={{fontSize:11, padding:'3px 8px'}}
+              type="button" className="cc-icon-btn" style={{ width: 'auto', padding: '0 8px', fontSize: 11 }}
               title="График сдвинут по цене вручную. Вернуть масштаб по свечам (то же — двойной клик по шкале цен)"
               onClick={() => { try { chartRef.current?.priceScale('right').setAutoScale(true); } catch { /* не критично */ } setPriceManual(false); }}
             >↕ Авто</button>
           )}
           <button
-            className="btn btn-ghost btn-sm"
-            style={{fontSize:13, padding:'3px 8px'}}
+            type="button" className="cc-icon-btn"
             onClick={() => {
               setFullscreen((f) => !f);
-              // autoSize должен сам подхватить новую высоту контейнера, но переход в
-              // fixed-оверлей меняет размер синхронно с этим же рендером — ResizeObserver
-              // иногда не успевает сработать вовремя, и подписи EMA9/EMA13 сверху слева
-              // остаются посчитанными под старую (маленькую) ширину и съезжают за край
-              // (реальная жалоба). Один принудительный resize следующим кадром чинит это,
-              // ничего не меняя, когда всё и так посчиталось верно.
+              // autoSize должен сам подхватить новую высоту контейнера, но переход в fixed-оверлей меняет размер синхронно
+              // с этим же рендером — ResizeObserver иногда не успевает. Один принудительный resize следующим кадром чинит это.
               requestAnimationFrame(() => {
                 if (chartRef.current && containerRef.current) {
                   chartRef.current.resize(containerRef.current.clientWidth, containerRef.current.clientHeight);
@@ -1155,28 +1179,13 @@ export default function CandleChart({
               });
             }}
             title={fullscreen ? 'Свернуть' : 'На весь экран'}
-          >{fullscreen ? '✕' : '⛶'}</button>
-        </div>
-      </div>
-      <div className="cc-layers-wrap">
-        <button
-          type="button"
-          className="cc-layers-toggle"
-          onClick={() => setIndicatorsOpen((v) => !v)}
-        >
-          Индикаторы {indicatorsOpen ? '▲' : '▼'}
-        </button>
-        <div className={`cc-layers-row ${indicatorsOpen ? 'open' : ''}`}>
-          {visibleLayers.map((l) => (
-            <span key={l.key} style={{display:'inline-flex', alignItems:'center', gap:4}}>
-              <button
-                className={`badge ${layers[l.key] ? 'badge-blue' : ''}`}
-                style={{cursor:'pointer', border:'none', fontSize:11}}
-                onClick={() => toggleLayer(l.key)}
-              >{layers[l.key] ? '✓ ' : ''}{l.label}</button>
-              {l.colorable && <ColorPicker color={colors[l.key]} onChange={(v) => setColor(l.key, v)} />}
-            </span>
-          ))}
+          >
+            {fullscreen ? '✕' : (
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M2 6V2h4M14 6V2h-4M2 10v4h4M14 10v4h-4" />
+              </svg>
+            )}
+          </button>
         </div>
       </div>
       {drawingTools && (
@@ -1212,6 +1221,47 @@ export default function CandleChart({
       )}
       <div style={fullscreen ? {position:'relative', flex:1, minHeight:0} : {position:'relative'}}>
         <div ref={containerRef} style={{width:'100%', height:chartHeight}} />
+        {/* Подпись на графике: цены свечи и значения включённых индикаторов под курсором. Крестик убирает индикатор. */}
+        {candles?.length > 0 && (() => {
+          const lastT = toChartTime(candles[candles.length - 1].date);
+          const t = hoverTime ?? lastT;
+          const c = seriesRef.current.candleByTime?.get(t) || candles[candles.length - 1];
+          const idx = candles.indexOf(c);
+          const prev = idx > 0 ? candles[idx - 1] : null;
+          const chg = prev && prev.close ? ((c.close - prev.close) / prev.close) * 100 : null;
+          const f = (n) => (n == null ? '—' : Number(n).toLocaleString('ru-RU', { maximumFractionDigits: n >= 1000 ? 1 : n >= 10 ? 2 : 4 }));
+          const up = c.close >= c.open;
+          const at = (key) => { const m = legendRef.current[key]; return m ? (m.get(t) ?? null) : null; };
+          const rows = Object.keys(LEGEND_NAMES).filter((k) => layers[k]);
+          return (
+            <div className="cc-legend">
+              <div className="cc-legend-ohlc">
+                <span>О <b className={up ? 'up' : 'down'}>{f(c.open)}</b></span>
+                <span>В <b className={up ? 'up' : 'down'}>{f(c.high)}</b></span>
+                <span>Н <b className={up ? 'up' : 'down'}>{f(c.low)}</b></span>
+                <span>З <b className={up ? 'up' : 'down'}>{f(c.close)}</b></span>
+                {chg != null && <b className={chg >= 0 ? 'up' : 'down'}>{chg >= 0 ? '+' : '−'}{Math.abs(chg).toFixed(2)}%</b>}
+              </div>
+              {rows.map((k) => {
+                const v = at(k);
+                const color = colors[k] || (k === 'rsi' ? themeColor('--blue', '#3b82f6') : 'var(--text-secondary)');
+                const text = v == null ? '—'
+                  : k === 'bollinger' ? `${f(v.upper)} · ${f(v.mid)} · ${f(v.lower)}`
+                    : k === 'volume' ? fmtVolume(v)
+                      : k === 'rsi' ? Number(v).toFixed(1)
+                        : k === 'macd' ? Number(v).toFixed(Math.abs(v) >= 10 ? 1 : 3) : f(v);
+                return (
+                  <div key={k} className="cc-legend-row">
+                    <i style={{ background: color }} />
+                    <span className="cc-legend-name">{LEGEND_NAMES[k]}</span>
+                    <b style={colors[k] ? { color } : undefined}>{text}</b>
+                    <button type="button" className="cc-legend-x" title="Убрать с графика" onClick={() => toggleLayer(k)}>×</button>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
         <div ref={tooltipRef} style={{
           position:'absolute', display:'none', pointerEvents:'none', zIndex:5, width:180,
           fontSize:11, lineHeight:1.5, color:'var(--text-secondary)', background:'var(--bg-surface-2)',

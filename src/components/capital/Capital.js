@@ -72,7 +72,12 @@ function CapHead({ n, title, hint }) {
   );
 }
 
-export default function Capital() {
+// Одна страница на два раздела меню (решение владельца, 2026-11-11): «Капитал» — только деньги (депозит, риск, лимиты,
+// деление капитала между стратегиями), «Стратегии» — правила входа и выхода. Состояние общее, поэтому компонент один,
+// а раздел выбирается свойством view: 'money' | 'strategies'. embedded — без собственного заголовка страницы.
+export default function Capital({ view = 'money', embedded = false }) {
+  const showMoney = view !== 'strategies';
+  const showStrategies = view === 'strategies';
   const { user, userProfile, updateUserProfile } = useAuth();
   const [trades, setTrades] = useState([]);
   const [stats, setStats] = useState(null);
@@ -349,12 +354,15 @@ export default function Capital() {
   const tradesStopped = todayLossUsed >= dailyLossRub || currentDdPct >= ddStopPct;
 
   return (
-    <div className="page">
+    <div className={embedded ? undefined : 'page'}>
+      {!embedded && (
       <div className="page-header">
-        <h1 className="page-title">Управление капиталом</h1>
-        <p className="page-subtitle">Риск-менеджмент и контроль просадки</p>
+        <h1 className="page-title">Капитал</h1>
+        <p className="page-subtitle">Сколько денег и какой риск: депозит, лимиты, деление между стратегиями</p>
       </div>
+      )}
 
+      {showMoney && (<>
       <CapHead n="1" title="Риск и депозит"
         hint="Сколько можно рисковать и когда остановиться. Эти числа использует Калькулятор при расчёте объёма и лимиты дня." />
 
@@ -531,9 +539,12 @@ export default function Capital() {
         </div>
       </div>
 
-      <div style={{marginTop:36}}>
-        <CapHead n="2" title="Стратегия: когда входить и как выходить"
-          hint="Условия входа, порог готовности и правила выхода. Работает в Калькуляторе, радаре, Сопровождении и у робота. Здесь стратегия только описывается: деньги и лимиты — в разделе 1." />
+      </>)}
+
+      {showStrategies && (<>
+      <div className="text-xs text-muted" style={{margin:'0 4px 14px', lineHeight:1.6}}>
+        Условия входа, порог готовности и правила выхода. Работают в Калькуляторе, радаре, Сопровождении и у робота.
+        Деньги и лимиты — в разделе «Капитал».
       </div>
 
       <MyStrategies
@@ -810,9 +821,12 @@ export default function Capital() {
         </button>
       </div>}
 
+      </>)}
+
+      {showMoney && (<>
       <div style={{marginTop:36}}>
-        <CapHead n="3" title="Как делится капитал"
-          hint="Портфельный режим: какая доля капитала достаётся какой стратегии. Итоги стратегий по сделкам — в Отчёте." />
+        <CapHead n="2" title="Как делится капитал"
+          hint="Портфельный режим: какая доля капитала достаётся какой стратегии. Сами стратегии — в разделе «Стратегии», их итоги по сделкам — в «Анализе»." />
       </div>
 
       <PortfolioCard
@@ -828,6 +842,7 @@ export default function Capital() {
           }
         }}
       />
+      </>)}
 
       {confirmTemplate && (
         <div className="modal-overlay" onClick={() => setConfirmTemplate(null)}>

@@ -16,6 +16,7 @@ import { computeMarketContextAtEntry } from '../../services/analytics/marketCont
 import { getActiveStrategy } from '../../services/analytics/strategy';
 import { commissionRateFor, DEFAULT_TARIFF } from '../../services/analytics/commission';
 import { applyTradeClose, computeClosePnl } from '../../services/tradeClose';
+import { pointsPnlRub, summarizeLegs } from '../../services/contractMath';
 import { guessInstrumentType } from '../../services/import/instrumentResolver';
 import { addRadarItem, getRadarItems, deleteRadarItem } from '../../services/radar';
 import { useRadarLive } from '../../context/RadarLiveContext';
@@ -30,6 +31,9 @@ import ImportModal from './ImportModal';
 import './Journal.css';
 
 import Icon from '../shared/Icon';
+import { TinkoffAPI } from '../../services/tinkoff';
+import { fetchVmSyncPlan, vmSyncCandidates } from '../../services/brokerVmSync';
+import { tradeConfirmation, isBrokerConfirmed } from '../../services/tradeConfirmation';
 import { tradeLeverage, leverageText, returnOnMarginPct, rubText } from '../../services/leverageMath';
 const COLS = ['Тикер', 'Дата', 'Направление', 'Вход', 'Выход', 'Объём', 'P&L', '% депоз.', 'Статус', ''];
 
@@ -58,6 +62,11 @@ export default function Journal() {
   const [closeQty, setCloseQty] = useState('');
   const [syncingId, setSyncingId] = useState(null);
   const [importOpen, setImportOpen] = useState(false);
+  // Сверка фьючерсов с вариационной маржой Т-Банка (для сделок из приложения): идёт ли сейчас и чем кончилась.
+  const [vmSyncing, setVmSyncing] = useState(false);
+  const [vmSyncInfo, setVmSyncInfo] = useState(null);
+  // «Только подтверждённые брокером» — переключатель для тех, у кого подключён Т-Банк.
+  const [confirmedOnly, setConfirmedOnly] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   // tradeId -> { loading, data, error }
   const [indicatorsState, setIndicatorsState] = useState({});
@@ -150,7 +159,8 @@ export default function Journal() {
     }
     setSavingManualSpec(trade.id);
     try {
-      const pnl = Math.round((trade.pnlPoints * rubPerPoint - (trade.commission || 0)) * 100) / 100;
+      // та же формула, что при импорте (в т.ч. комиссия только за закрытую часть позиции)
+      const pnl = pointsPnlRub(trade, rubPerPoint);
       await updateTrade(trade.id, { pnl, pnlNeedsSpecs: false, manualRubPerPoint: rubPerPoint });
       toast.success('P&L пересчитан');
       await load();
@@ -263,15 +273,32 @@ export default function Journal() {
         toast('По этой сделке у брокера операций не нашлось', { icon: 'ℹ' });
         return;
       }
-      const closedAll = res.remainingVolume <= 0;
+      // Итог сделки по операциям брокера — той же формулой, что обычное закрытие (services/contractMath.js). Раньше
+      // синхронизация меняла только статус и остаток: сделка становилась закрытой, а результат оставался пустым.
+      const commRate = parseFloat(trade.commissionRate)
+        || commissionRateFor(userProfile?.brokerTariff || DEFAULT_TARIFF, trade.instrumentType || guessInstrumentType(trade.ticker || '')).rate;
+      const sum = summarizeLegs(trade, res.legs, commRate);
+      if (!sum) {
+        toast('У брокера нет операций открытия по этой сделке — запись не изменена', { icon: 'ℹ' });
+        return;
+      }
+      const closedIso = sum.closedAt ? new Date(sum.closedAt).toISOString() : null;
       await updateTrade(trade.id, {
-        legs: res.legs,
-        remainingVolume: res.remainingVolume,
-        status: closedAll ? 'closed' : (res.closedQuantity > 0 ? 'partial' : 'open'),
-        ...(res.averageEntryPrice ? { entryPrice: res.averageEntryPrice } : {}),
+        legs: sum.legs,
+        volume: sum.volume,
+        remainingVolume: sum.remainingVolume,
+        status: sum.status,
+        entryPrice: sum.entryPrice,
+        ...(sum.exitPrice != null ? { exitPrice: sum.exitPrice } : {}),
+        ...(sum.pnl != null ? { pnl: sum.pnl } : {}),
+        commission: sum.commission,
+        entryCommissionIncluded: true,
+        brokerSyncedAt: new Date().toISOString(),
+        ...(closedIso ? { closedAt: closedIso, closeDate: closedIso } : {}),
       });
       toast.success(
-        `Из Т-Банка: ${res.legs.length} операций, в рынке ${res.remainingVolume} из ${res.openedQuantity}`,
+        `Из Т-Банка: ${sum.legs.length} операций, в рынке ${sum.remainingVolume} из ${sum.volume}`
+        + (sum.units === 'shares' ? '. Объём у брокера в штуках и не делится на лот — проверьте сделку' : ''),
       );
       await load();
     } catch (e) {
@@ -280,6 +307,48 @@ export default function Journal() {
       setSyncingId(null);
     }
   };
+
+  // Сверка закрытых фьючерсов с вариационной маржой Т-Банка: сделки, открытые из приложения, считаются «по ценам», а у
+  // вечных и долларовых контрактов деньги брокера другие (фандинг, курс шага). Кнопки нет (решение владельца,
+  // 2026-11-16: «пусть сверяется само») — запускается фоном при открытии Журнала; сообщает, только если что-то исправлено,
+  // а если сверить не удалось — тихой строкой над таблицей.
+  const runVmSync = async (silent = true) => {
+    const token = userProfile?.tinkoffToken;
+    if (!token || vmSyncing) return;
+    setVmSyncing(true);
+    try {
+      const accountId = await resolveAccountId({ token, profile: userProfile });
+      const plan = await fetchVmSyncPlan({ api: new TinkoffAPI(token), accountId, trades });
+      for (const u of plan.updates) await updateTrade(u.id, u.patch);
+      try { localStorage.setItem('tp.vmSyncAt', String(Date.now())); } catch { /* не страшно */ }
+      const changed = plan.updates.filter((u) => u.patch.brokerAdjustment);
+      const total = changed.reduce((s, u) => s + u.patch.brokerAdjustment, 0);
+      const pending = plan.report.filter((r) => !r.applied && r.reason);
+      setVmSyncInfo({ ...plan, at: new Date(), changedCount: changed.length, total });
+      if (plan.updates.length) {
+        toast.success(`Сверено с Т-Банком: ${plan.updates.length}`
+          + (changed.length ? `, поправка в ${changed.length}: ${total > 0 ? '+' : ''}${formatCurrency(total)}` : ', расхождений нет'));
+        await load();
+      } else if (!silent) {
+        toast(plan.summary?.reason || (pending[0] ? `Пока не сверено: ${pending[0].reason}` : 'Сверять нечего'), { icon: 'ℹ' });
+      }
+    } catch (e) {
+      if (!silent) toast.error(e.message || 'Не удалось сверить с Т-Банком');
+    } finally {
+      setVmSyncing(false);
+    }
+  };
+  // Фоном — не чаще раза в 12 часов и только если есть что сверять (закрыто больше суток назад: клиринг прошёл).
+  useEffect(() => {
+    if (!userProfile?.tinkoffToken || loading) return;
+    const ripe = vmSyncCandidates(trades).some((t) => Date.now() - new Date(t.closedAt || t.closeDate).getTime() > 86400000);
+    if (!ripe) return;
+    let last = 0;
+    try { last = Number(localStorage.getItem('tp.vmSyncAt')) || 0; } catch { /* нет хранилища */ }
+    if (Date.now() - last < 12 * 3600000) return;
+    runVmSync(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, trades.length]);
 
   // Сама логика закрытия — в services/tradeClose.js, общая с Сопровождением (закрытие
   // настоящей заявкой брокеру). Здесь только чтение полей формы и текст уведомления.
@@ -490,6 +559,7 @@ export default function Journal() {
       return true;
     })
     .filter(t => !search || t.ticker?.toLowerCase().includes(search.toLowerCase()))
+    .filter(t => !confirmedOnly || isBrokerConfirmed(t))
     .sort((a, b) => {
       // Открытые и частично закрытые всегда сверху
       const aOpen = a.status === 'open' || a.status === 'partial' || a.status === 'pending';
@@ -620,7 +690,23 @@ export default function Journal() {
           value={search}
           onChange={e => setSearch(e.target.value)}
         />
+        {userProfile?.tinkoffToken && (
+          <label style={{display:'inline-flex', alignItems:'center', gap:6, fontSize:13, color:'var(--text-secondary)', cursor:'pointer', whiteSpace:'nowrap'}}
+            title="Показать только сделки, которые подтверждены брокером: загружены из отчёта или Т-Банка, либо исполнены заявками из приложения">
+            <input type="checkbox" checked={confirmedOnly} onChange={e => setConfirmedOnly(e.target.checked)} />
+            Только подтверждённые брокером
+          </label>
+        )}
       </div>
+      )}
+      {view === 'trades' && vmSyncInfo && (vmSyncInfo.report?.some((r) => !r.applied && r.reason) || vmSyncInfo.summary?.reason) && (
+        <div style={{marginBottom:12, padding:'10px 14px', background:'var(--bg-surface-2)', border:'1px solid var(--border-subtle)', borderRadius:12, fontSize:12, lineHeight:1.6, color:'var(--text-muted)'}}>
+          <b style={{color:'var(--text-secondary)'}}>Сверка фьючерсов с Т-Банком.</b>{' '}
+          {vmSyncInfo.summary?.reason ? `Не выполнена: ${vmSyncInfo.summary.reason}.` : null}
+          {vmSyncInfo.report.filter((r) => !r.applied && r.reason).slice(0, 4).map((r, i) => (
+            <span key={i}> {r.code}, {r.from}{r.to !== r.from ? ` — ${r.to}` : ''}: {r.reason}.</span>
+          ))}
+        </div>
       )}
 
       {/* Table */}
@@ -720,6 +806,16 @@ export default function Journal() {
                     </td>
                     <td>
                       <span className={`badge ${statusCls}`}>{statusLabel}</span>
+                      {/* Метка только у исключений: «вручную» — сделка не подтверждена брокером. У подтверждённых ничего нет,
+                          чтобы столбец не пестрел (решение владельца, 2026-11-16). Только у тех, кто подключил Т-Банк. */}
+                      {userProfile?.tinkoffToken && (() => {
+                        const c = tradeConfirmation(trade);
+                        return c?.level === 'manual' ? (
+                          <div title={c.detail} style={{fontSize:10.5, marginTop:4, whiteSpace:'nowrap', color:'var(--text-muted)'}}>
+                            вручную
+                          </div>
+                        ) : null;
+                      })()}
                     </td>
                     <td>
                       {/* Stacked, not inline — an open trade's extra "Закрыть" button used to
@@ -773,6 +869,12 @@ export default function Journal() {
                   {isExpanded && (
                     <tr>
                       <td colSpan={COLS.length} style={{background:'var(--bg-surface-2)', padding:'12px 16px 16px 44px'}}>
+                        {!!trade.brokerAdjustment && (
+                          <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:10}}>
+                            Результат сверен с вариационной маржой брокера: поправка {trade.brokerAdjustment > 0 ? '+' : ''}{formatCurrency(trade.brokerAdjustment)}
+                            {' '}(фандинг вечного фьючерса или курс шага){trade.brokerVmShared ? ' — поделена с соседней сделкой приблизительно' : ''}. Она уже в результате.
+                          </div>
+                        )}
                         {hasHistory && (
                           <>
                             <div style={{fontSize:12, color:'var(--text-muted)', marginBottom:8}}>История сделки — {trade.legs.length} операций</div>
@@ -874,7 +976,7 @@ export default function Journal() {
                               legs={trade.legs}
                               entryPrice={trade.entryPrice}
                               exitPrice={trade.status === 'closed' ? trade.exitPrice : null}
-                              entryMarker={!trade.legs?.length && resolveOpenedAt(trade) ? { date: resolveOpenedAt(trade), price: trade.entryPrice, direction: trade.direction } : null}
+                              entryMarker={resolveOpenedAt(trade) ? { date: resolveOpenedAt(trade), price: trade.entryPrice, direction: trade.direction, quantity: trade.volume } : null}
                               exitMarker={!trade.legs?.length && trade.status === 'closed' && resolveClosedAt(trade) ? { date: resolveClosedAt(trade), price: trade.exitPrice } : null}
                               timeframe={timeframeFor(trade)}
                               timeframeOptions={availableTimeframes(!!userProfile?.tinkoffToken)}

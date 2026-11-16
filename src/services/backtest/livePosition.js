@@ -14,6 +14,7 @@ import {
   createPosition,
   updateTrailAndCheckExit,
   checkIntrabarExit,
+  armBreakeven,
   computeProfitCaptureScore,
   computeLossScore,
 } from './engine';
@@ -70,7 +71,14 @@ export function computeLiveState({
   // для теневой — собственные фиксации движка (position.fills).
   const realizedFills = [];
 
-  for (let i = entryIndex + 1; i < candles.length; i++) {
+  // rules.liveParity — ведение «ровно как в бэктесте» (opt-in, по умолчанию выключено, чтобы
+  // не менять поведение сохранённых стратегий): (1) бар входа тоже проверяется стопом и
+  // целью — в бэктесте движок обрабатывает его, а здесь цикл начинался со следующего бара;
+  // (2) maxBars работает вживую — раньше его знал только бэктест; выход по открытию
+  // следующего бара, как в бэктесте. Перенос в безубыток (breakevenAfterPct) от флага не зависит.
+  const parity = !!rules.liveParity;
+  const maxBars = parity && rules.maxBars != null ? rules.maxBars : null;
+  for (let i = parity ? entryIndex : entryIndex + 1; i < candles.length; i++) {
     const bar = candles[i];
     position.barsHeld += 1;
 
@@ -81,6 +89,12 @@ export function computeLiveState({
     if (intrabar) {
       if (!isActual) { exit = { index: i, ...intrabar }; break; }
       if (!wouldExit) wouldExit = { index: i, ...intrabar };
+    }
+    armBreakeven(position, bar);
+    if (maxBars != null && position.barsHeld >= maxBars && candles[i + 1]) {
+      const t = { index: i + 1, price: candles[i + 1].open, reason: 'time' };
+      if (!isActual) { exit = t; break; }
+      if (!wouldExit) wouldExit = t;
     }
 
     const before = {

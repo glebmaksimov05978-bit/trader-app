@@ -7,7 +7,9 @@
 // (бумажные сделки робота) и какая из стратегий лучше. Блоки про дисциплину и привычки
 // относятся только к реальным сделкам и показываются в срезах «Реальные» и «Всё вместе».
 import React, { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { isBrokerConfirmed } from '../../services/tradeConfirmation';
 import { getUserTrades, computeLiveBalance } from '../../services/trades';
 import { getPaperTrades } from '../../services/paperTrades';
 import { getActiveStrategy, getStrategies } from '../../services/analytics/strategy';
@@ -36,6 +38,14 @@ const pfText = (v) => (v == null ? '—' : Number.isFinite(v) ? v.toFixed(2) : '
 const px = (v) => { const n = Number(v); return Number.isFinite(n) ? String(Math.round(n * 10000) / 10000) : v; };
 const sgn = (v) => (v > 0 ? 'up' : v < 0 ? 'down' : '');
 
+// Раздел «Анализ»: четыре вкладки вместо одной длинной ленты. Бухгалтерия («сколько») отделена от разбора («почему»).
+const TABS = [
+  { id: 'summary', label: 'Итоги' },
+  { id: 'mistakes', label: 'Мои ошибки' },
+  { id: 'versus', label: 'Я и система' },
+  { id: 'strategies', label: 'Стратегии' },
+];
+
 export default function MonthlyReport() {
   const { user, userProfile, updateUserProfile, isAdmin } = useAuth();
   const [realAll, setReal] = useState([]);
@@ -47,6 +57,13 @@ export default function MonthlyReport() {
   const [pickedStrategies, setPickedStrategies] = useState([]); // пусто = все стратегии
   const [exportOpen, setExportOpen] = useState(false);
   const [viewItem, setViewItem] = useState(null); // сделка, открытая «посмотреть на графике»
+  const [drill, setDrill] = useState(null); // { title, note, items } — сделки, из которых получилась нажатая цифра
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tab = TABS.some((t) => t.id === searchParams.get('tab')) ? searchParams.get('tab') : 'summary';
+  const setTab = (id) => setSearchParams((p) => { if (id === 'summary') p.delete('tab'); else p.set('tab', id); return p; }, { replace: true });
+  // «Только подтверждённые брокером» — для тех, у кого подключён Т-Банк (остальным метка не показывается вовсе).
+  const hasToken = !!userProfile?.tinkoffToken;
+  const [confirmedOnly, setConfirmedOnly] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -64,7 +81,10 @@ export default function MonthlyReport() {
   const strategyNames = useMemo(() => listStrategyNames(realAll, paperAll, scope, legPnl), [realAll, paperAll, scope]);
   const chosen = useMemo(() => pickedStrategies.filter((n) => strategyNames.some((s) => s.name === n)), [pickedStrategies, strategyNames]);
   const filterOn = chosen.length > 0 && chosen.length < strategyNames.length;
-  const real = useMemo(() => (filterOn ? realAll.filter((t) => chosen.includes(strategyNameOf(t, 'real'))) : realAll), [realAll, filterOn, chosen]);
+  const real = useMemo(() => {
+    const byStrategy = filterOn ? realAll.filter((t) => chosen.includes(strategyNameOf(t, 'real'))) : realAll;
+    return hasToken && confirmedOnly ? byStrategy.filter(isBrokerConfirmed) : byStrategy;
+  }, [realAll, filterOn, chosen, hasToken, confirmedOnly]);
   const paper = useMemo(() => (filterOn ? paperAll.filter((t) => chosen.includes(strategyNameOf(t, 'paper'))) : paperAll), [paperAll, filterOn, chosen]);
 
   // Ключ текущего периода: блок «Сейчас в рынке» показывается только в нём.
@@ -115,12 +135,23 @@ export default function MonthlyReport() {
 
   if (loading) return <div className="page"><div className="card">Загружаю сделки…</div></div>;
 
+  // Любая цифра нажимается и показывает сделки, из которых она получилась.
+  const items = rep && !rep.empty ? rep.items : [];
+  const openDrill = (title, list, note = '') => setDrill({ title, note, items: [...list].sort((p, q) => (q.closed || 0) - (p.closed || 0)) });
+  const byStrategyLabel = (label) => items.filter((x) => x.strategy === label || `${x.strategy} (бумага)` === label);
+  const confirmedCount = hasToken ? items.filter((x) => x.src === 'real' && isBrokerConfirmed(x.raw)).length : 0;
+  const realCount = items.filter((x) => x.src === 'real').length;
+  // Табло «кто был прав»: сделки, где разбор сравнил ваш выход с выходом системы (vsSystemPct: плюс — вы лучше).
+  const duel = items.filter((x) => x.src === 'real' && x.raw?.vsSystemPct != null);
+  const duelMine = duel.filter((x) => x.raw.vsSystemPct > 0);
+  const duelSys = duel.filter((x) => x.raw.vsSystemPct < 0);
+
   return (
     <div className="page mr-page">
       <div className="page-header mr-header">
         <div>
-          <h1 className="page-title">Отчёт</h1>
-          <p className="page-subtitle">Как идёт торговля — относительно прошлого периода, системы и стратегий</p>
+          <h1 className="page-title">Анализ</h1>
+          <p className="page-subtitle">Почему так вышло: итоги периода, ваши ошибки, вы против системы и сами стратегии</p>
         </div>
         <div className="mr-header-actions">
           <button className="btn btn-primary" onClick={() => setExportOpen(true)} data-tour="report-export">Выгрузить отчёт</button>
@@ -136,6 +167,13 @@ export default function MonthlyReport() {
         canSchedule={!!(isAdmin || TRUSTED_UIDS.includes(user?.uid))} updateUserProfile={updateUserProfile}
       />
       {viewItem && <TradeViewModal item={viewItem} userProfile={userProfile} onClose={() => setViewItem(null)} />}
+      {drill && !viewItem && <DrillModal drill={drill} onClose={() => setDrill(null)} onOpen={setViewItem} />}
+
+      <div className="mr-tabs" role="tablist" aria-label="Разделы анализа">
+        {TABS.map((t) => (
+          <button key={t.id} role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'on' : ''} onClick={() => setTab(t.id)}>{t.label}</button>
+        ))}
+      </div>
 
       <div className="mr-controls">
         <div className="mr-seg" role="tablist" aria-label="Срез">
@@ -149,6 +187,12 @@ export default function MonthlyReport() {
         </div>
         <PeriodSwitcher periods={periods} value={key} onChange={setPickedKey} type={type} />
         <StrategyFilter names={strategyNames} selected={chosen} onChange={setPickedStrategies} />
+        {hasToken && scope === 'real' && (
+          <label className="mr-check" title="Считать только сделки, подтверждённые брокером: загруженные из отчёта или Т-Банка либо исполненные заявками из приложения">
+            <input type="checkbox" checked={confirmedOnly} onChange={(e) => setConfirmedOnly(e.target.checked)} />
+            Только подтверждённые брокером
+          </label>
+        )}
       </div>
 
       {!rep || rep.empty ? (
@@ -162,95 +206,227 @@ export default function MonthlyReport() {
         </div>
       ) : (
         <>
-          {classic && !classic.empty && type === 'month' && scope === 'real'
-            ? <div className="card mr-verdict">{reportVerdict(classic)}{rep.stats.realizedOpen ? ` Ещё ${money(rep.stats.realizedOpen)} зафиксировано частями по сделкам, которые пока открыты (входит в «Результат»).` : ''}</div>
-            : <div className="card mr-verdict">{summaryLine(rep)}</div>}
+          {tab === 'summary' && (
+            <>
+              {classic && !classic.empty && type === 'month' && scope === 'real'
+                ? <div className="card mr-verdict">{reportVerdict(classic)}{rep.stats.realizedOpen ? ` Ещё ${money(rep.stats.realizedOpen)} зафиксировано частями по сделкам, которые пока открыты (входит в «Результат»).` : ''}</div>
+                : <div className="card mr-verdict">{summaryLine(rep)}</div>}
 
-          <KpiRow rep={rep} />
+              <KpiRow rep={rep} onDrill={{
+                all: () => openDrill(`Все сделки: ${rep.label.toLowerCase()}`, items),
+                wins: () => openDrill('Прибыльные сделки', items.filter((x) => x.pnl > 0)),
+                losses: () => openDrill('Убыточные сделки', items.filter((x) => x.pnl < 0)),
+              }} />
 
-          <div className="card mr-block">
-            <div className="section-title">Накопленный результат</div>
-            <p className="mr-note" style={{ marginTop: 0, marginBottom: 6 }}>
-              Сплошная линия — {rep.label.toLowerCase()}, пунктир — {rep.prevLabel.toLowerCase()} для сравнения.
-            </p>
-            <EquityChart curve={rep.curve} prev={rep.prevCurve} type={type} />
-          </div>
+              {hasToken && scope === 'real' && !confirmedOnly && realCount > 0 && confirmedCount < realCount && (
+                <p className="mr-note" style={{ marginTop: -4 }}>
+                  Подтверждено брокером {confirmedCount} из {realCount} сделок; остальные записаны вручную.{' '}
+                  <button type="button" className="mr-linkbtn" onClick={() => openDrill('Записаны вручную', items.filter((x) => x.src === 'real' && !isBrokerConfirmed(x.raw)), 'Эти сделки у брокера не проверялись. Загрузите отчёт или сделки из Т-Банка — и они подтвердятся.')}>Показать ручные</button>
+                </p>
+              )}
 
-          {/* Одна стратегия (в т.ч. выбранная фильтром) — карточка «Стратегии» ничего не добавляет к показателям выше,
-              поэтому «Я против системы» занимает всю ширину, а не оставляет пустое место рядом */}
-          <div className={`mr-two mr-two-stretch ${rep.byStrategy.length <= 1 ? 'mr-one' : ''}`}>
-            <VersusCard rep={rep} />
-            {rep.byStrategy.length > 1 && <StrategyCard rep={rep} />}
-          </div>
-
-          <ComparisonCard cmp={comparison} label={rep.label} />
-
-          <DecisionCard j={journal} label={rep.label} />
-
-          {/* Лучшая и худшая сделка — в ряд, «По инструментам» — на всю ширину: так внизу нет пустых мест */}
-          <div className="mr-extremes">
-            <TradeCard title="Лучшая сделка" item={rep.stats.best} onOpen={setViewItem} />
-            <TradeCard title="Худшая сделка" item={rep.stats.worst} onOpen={setViewItem} />
-          </div>
-
-          <InstrumentsCard rows={rep.byInstrument} items={rep.items} onOpen={setViewItem} />
-
-
-          {entryStats && entryStats.groups.length > 0 && (
-            <div className="card mr-block">
-              <div className="section-title">Мои входы</div>
-              <p className="mr-note" style={{ marginTop: 0 }}>
-                Как отработали ваши реальные входы: направление, день недели, время суток (по Москве), срок удержания.
-                {entryStats.total < MIN_SAMPLE ? ` Сделок ${entryStats.total} — для уверенных выводов нужно от ${MIN_SAMPLE}, читайте как наблюдение.` : ''}
-              </p>
-              <div className="mr-entry-grid">
-                {entryStats.groups.map((g) => (
-                  <div key={g.id}>
-                    <div className="mr-entry-title">{g.title}</div>
-                    <table className="table table-compact">
-                      <thead><tr><th></th><th>Сделок</th><th>Прибыльных</th><th style={{ textAlign: 'right' }}>Итог</th></tr></thead>
-                      <tbody>
-                        {g.rows.map((r) => (
-                          <tr key={r.label} style={r.count < 3 ? { opacity: 0.6 } : undefined}>
-                            <td style={{ fontWeight: 600 }}>{r.label.replace(/^\d\) /, '')}</td><td>{r.count}</td><td>{Math.round(r.winrate)}%</td>
-                            <td className={`mr-num ${sgn(r.pnl)}`}>{money(r.pnl)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ))}
+              <div className="card mr-block">
+                <div className="section-title">Накопленный результат</div>
+                <p className="mr-note" style={{ marginTop: 0, marginBottom: 6 }}>
+                  Сплошная линия — {rep.label.toLowerCase()}, пунктир — {rep.prevLabel.toLowerCase()} для сравнения.
+                </p>
+                <EquityChart curve={rep.curve} prev={rep.prevCurve} type={type} />
               </div>
-            </div>
+
+              {rep.byStrategy.length > 0 && (
+                <StrategyCard rep={rep} title="Результат по стратегиям" onDrill={(label) => openDrill(`Стратегия: ${label}`, byStrategyLabel(label))} />
+              )}
+
+              {/* Лучшая и худшая сделка — в ряд, «По инструментам» — на всю ширину: так внизу нет пустых мест */}
+              <div className="mr-extremes">
+                <TradeCard title="Лучшая сделка" item={rep.stats.best} onOpen={setViewItem} />
+                <TradeCard title="Худшая сделка" item={rep.stats.worst} onOpen={setViewItem} />
+              </div>
+
+              <InstrumentsCard rows={rep.byInstrument} items={rep.items} onOpen={setViewItem} />
+
+              <TradeListCard items={items} onOpen={setViewItem} />
+
+              {/* «Сейчас в рынке» — про сегодня, а не про прошлый период: только в текущем месяце/году, внизу */}
+              {key === currentKey && <OpenRiskCard risk={openRisk} />}
+            </>
           )}
 
-          {classic && !classic.empty && (
+          {tab === 'mistakes' && (
+            <>
+              {scope === 'paper' && (
+                <div className="card mr-verdict">Ошибки считаются по вашим реальным сделкам. Переключите срез на «Реальные».</div>
+              )}
+              {scope !== 'paper' && type !== 'month' && (
+                <div className="card mr-verdict">Дисциплина и «Что стоило денег» считаются по месяцам — выберите «Месяц». «Мои входы» ниже посчитаны за {rep.label.toLowerCase()}.</div>
+              )}
+              {classic && !classic.empty && (
+                <>
+                  <div className="card mr-block">
+                    <div className="section-title">Что стоило денег</div>
+                    {classic.habits.length ? classic.habits.map((h) => (
+                      <div key={h.id} className="mr-habit">
+                        <div className="flex justify-between items-center">
+                          <span style={{ fontWeight: 600 }}>{h.title}</span>
+                          <span className="mr-num down">−{formatCurrency(Math.round(h.costRub))}</span>
+                        </div>
+                        <div className="mr-habit-detail">{h.detail}</div>
+                        {h.confidence !== 'confirmed' && <div className="mr-habit-flag">гипотеза: n={h.sampleSize}, для уверенного вывода нужно от {MIN_SAMPLE}</div>}
+                      </div>
+                    )) : <p className="mr-note" style={{ marginTop: 0 }}>За период дорогих привычек не нашлось — либо их нет, либо сделок мало для вывода.</p>}
+                    {classic.fixedHabits.length > 0 && <div className="mr-fixed"><b>Ушло с прошлого месяца:</b> {classic.fixedHabits.join(', ').toLowerCase()}</div>}
+                  </div>
+                  <div className="card mr-block">
+                    <div className="section-title">Дисциплина (реальные сделки)</div>
+                    <Discipline d={classic.discipline} />
+                  </div>
+                </>
+              )}
+              <EntryKindsCard j={journal} />
+              {entryStats && entryStats.groups.length > 0 && (
+                <div className="card mr-block">
+                  <div className="section-title">Мои входы</div>
+                  <p className="mr-note" style={{ marginTop: 0 }}>
+                    Как отработали ваши реальные входы: направление, день недели, время суток (по Москве), срок удержания.
+                    {entryStats.total < MIN_SAMPLE ? ` Сделок ${entryStats.total} — для уверенных выводов нужно от ${MIN_SAMPLE}, читайте как наблюдение.` : ''}
+                  </p>
+                  <div className="mr-entry-grid">
+                    {entryStats.groups.map((g) => (
+                      <div key={g.id}>
+                        <div className="mr-entry-title">{g.title}</div>
+                        <table className="table table-compact">
+                          <thead><tr><th></th><th>Сделок</th><th>Прибыльных</th><th style={{ textAlign: 'right' }}>Итог</th></tr></thead>
+                          <tbody>
+                            {g.rows.map((r) => (
+                              <tr key={r.label} style={r.count < 3 ? { opacity: 0.6 } : undefined}>
+                                <td style={{ fontWeight: 600 }}>{r.label.replace(/^\d\) /, '')}</td><td>{r.count}</td><td>{Math.round(r.winrate)}%</td>
+                                <td className={`mr-num ${sgn(r.pnl)}`}>{money(r.pnl)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {scope !== 'paper' && !(classic && !classic.empty) && !(entryStats && entryStats.groups.length > 0) && !journal?.entryKinds?.length && (
+                <div className="card mr-verdict">За период данных для разбора ошибок пока нет.</div>
+              )}
+            </>
+          )}
+
+          {tab === 'versus' && (
             <>
               <div className="card mr-block">
-                <div className="section-title">Дисциплина (реальные сделки)</div>
-                <Discipline d={classic.discipline} />
-              </div>
-              <div className="card mr-block">
-                <div className="section-title">Что стоило денег</div>
-                {classic.habits.length ? classic.habits.map((h) => (
-                  <div key={h.id} className="mr-habit">
-                    <div className="flex justify-between items-center">
-                      <span style={{ fontWeight: 600 }}>{h.title}</span>
-                      <span className="mr-num down">−{formatCurrency(Math.round(h.costRub))}</span>
+                <div className="section-title">Кто был прав</div>
+                {duel.length > 0 ? (
+                  <>
+                    <div className="mr-duel">
+                      <button type="button" className="mr-duel-side" onClick={() => openDrill('Вы вышли лучше системы', duelMine)} title="Показать сделки">
+                        <span>Вы</span><b>{duelMine.length}</b>
+                      </button>
+                      <i>:</i>
+                      <button type="button" className="mr-duel-side" onClick={() => openDrill('Система вышла бы лучше', duelSys)} title="Показать сделки">
+                        <b>{duelSys.length}</b><span>Система</span>
+                      </button>
                     </div>
-                    <div className="mr-habit-detail">{h.detail}</div>
-                    {h.confidence !== 'confirmed' && <div className="mr-habit-flag">гипотеза: n={h.sampleSize}, для уверенного вывода нужно от {MIN_SAMPLE}</div>}
-                  </div>
-                )) : <p className="mr-note" style={{ marginTop: 0 }}>За период дорогих привычек не нашлось — либо их нет, либо сделок мало для вывода.</p>}
-                {classic.fixedHabits.length > 0 && <div className="mr-fixed"><b>Ушло с прошлого месяца:</b> {classic.fixedHabits.join(', ').toLowerCase()}</div>}
+                    <p className="mr-note">
+                      Считаются закрытые реальные сделки, где разбор сравнил ваш выход с выходом по правилам стратегии: {duel.length}.
+                      Счёт — по числу сделок, не по рублям. Нажмите на число, чтобы увидеть сделки.
+                    </p>
+                  </>
+                ) : <p className="mr-note" style={{ marginTop: 0 }}>За период нет сделок, где ваш выход можно сравнить с выходом системы. Сравнение появляется при закрытии сделки, которая велась по стратегии с правилами выхода.</p>}
               </div>
+              <VersusCard rep={rep} />
+              <DecisionCard j={journal} label={rep.label} />
+            </>
+          )}
+
+          {tab === 'strategies' && (
+            <>
+              <p className="mr-note" style={{ marginTop: 0 }}>Как работают сами правила: сделки по стратегиям за {rep.label.toLowerCase()}. Настройка стратегий и проверка на истории — в разделе «Стратегии».</p>
+              <ComparisonCard cmp={comparison} label={rep.label} />
+              {rep.byStrategy.length > 0 && <StrategyCard rep={rep} onDrill={(label) => openDrill(`Стратегия: ${label}`, byStrategyLabel(label))} />}
+              {(!comparison || !comparison.hasAny) && rep.byStrategy.length === 0 && (
+                <div className="card mr-verdict">За период нет сделок по стратегиям.</div>
+              )}
             </>
           )}
         </>
       )}
+    </div>
+  );
+}
 
-      {/* «Сейчас в рынке» — про сегодня, а не про прошлый период: только в отчёте за текущий месяц/год, внизу */}
-      {key === currentKey && <OpenRiskCard risk={openRisk} />}
+// ---------- сделки, из которых получилась цифра ----------
+function DrillModal({ drill, onClose, onOpen }) {
+  const total = drill.items.reduce((s2, x) => s2 + (Number(x.pnl) || 0), 0);
+  return (
+    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 720, width: '96vw' }}>
+        <div className="modal-header">
+          <h2 className="modal-title">{drill.title}</h2>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          {drill.note && <p className="mr-note" style={{ marginTop: 0 }}>{drill.note}</p>}
+          <p className="mr-note" style={{ marginTop: 0 }}>Сделок: <b>{drill.items.length}</b>, итог <b className={`mr-num ${sgn(total)}`}>{money(total)}</b>. Нажмите на сделку — откроется её график.</p>
+          <TradeRows items={drill.items} onOpen={onOpen} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TradeRows({ items, onOpen }) {
+  if (!items.length) return <p className="mr-note" style={{ marginTop: 0 }}>Сделок нет.</p>;
+  return (
+    <div className="mr-sublist mr-sublist-tall">
+      {items.map((x, k) => (
+        <button key={x.raw?.id || k} type="button" className="mr-subrow mr-subrow-wide" onClick={() => onOpen?.(x)} title="Открыть график сделки">
+          <span>{x.closed instanceof Date ? x.closed.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) : '—'}</span>
+          <span style={{ fontWeight: 600 }}>{x.ticker}</span>
+          <span>{x.direction === 'short' ? 'Шорт' : 'Лонг'} <i className="mr-src">{x.src === 'paper' ? 'бумага' : 'реал'}</i></span>
+          <span className="mr-subnote">{x.strategy || ''}</span>
+          <b className={`mr-num ${sgn(x.pnl)}`}>{money(x.pnl)}</b>
+          <em>график →</em>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// Полный перечень сделок периода — свёрнут, чтобы не удлинять страницу.
+function TradeListCard({ items, onOpen }) {
+  const [open, setOpen] = useState(false);
+  const sorted = useMemo(() => [...items].sort((p, q) => (q.closed || 0) - (p.closed || 0)), [items]);
+  return (
+    <div className="card mr-block">
+      <div className="flex justify-between items-center">
+        <div className="section-title" style={{ marginBottom: 0 }}>Все сделки периода · {items.length}</div>
+        <button type="button" className="mr-linkbtn" onClick={() => setOpen((v) => !v)}>{open ? 'Свернуть' : 'Показать'}</button>
+      </div>
+      {open && <div style={{ marginTop: 10 }}><TradeRows items={sorted} onOpen={onOpen} /></div>}
+    </div>
+  );
+}
+
+// «По сигналу или по своему решению» — вынесено из журнала решений во вкладку «Мои ошибки».
+function EntryKindsCard({ j }) {
+  if (!j || !j.entryKinds?.length) return null;
+  return (
+    <div className="card mr-block">
+      <div className="section-title">Входы: по сигналу или по своему решению</div>
+      <table className="table table-compact">
+        <thead><tr><th>Причина входа</th><th>Сделок</th><th>Прибыльных</th><th style={{ textAlign: 'right' }}>Итог</th></tr></thead>
+        <tbody>
+          {j.entryKinds.map((k) => (
+            <tr key={k.kind}><td style={{ fontWeight: 600 }}>{k.label}</td><td>{k.count}</td><td>{Math.round(k.winrate)}%</td>
+              <td className={`mr-num ${sgn(k.pnl)}`}>{money(k.pnl)}</td></tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -343,20 +519,6 @@ function DecisionCard({ j, label }) {
         </>
       ) : <p className="mr-note" style={{ marginTop: 0 }}>За период не было бумажных сигналов.</p>}
 
-      {j.entryKinds.length > 0 && (
-        <>
-          <div className="mr-cmp-sub">Мои реальные входы: по сигналу или по своему решению</div>
-          <table className="table table-compact">
-            <thead><tr><th>Причина входа</th><th>Сделок</th><th>Прибыльных</th><th style={{ textAlign: 'right' }}>Итог</th></tr></thead>
-            <tbody>
-              {j.entryKinds.map((k) => (
-                <tr key={k.kind}><td style={{ fontWeight: 600 }}>{k.label}</td><td>{k.count}</td><td>{Math.round(k.winrate)}%</td>
-                  <td className={`mr-num ${sgn(k.pnl)}`}>{money(k.pnl)}</td></tr>
-              ))}
-            </tbody>
-          </table>
-        </>
-      )}
     </div>
   );
 }
@@ -465,10 +627,10 @@ function Delta({ value, suffix = '', invert = false }) {
   return <span className={`mr-delta ${good ? 'up' : 'down'}`}>{value > 0 ? '▲' : '▼'} {formatCurrency(Math.abs(Math.round(value)))}{suffix}</span>;
 }
 
-function KpiRow({ rep }) {
+function KpiRow({ rep, onDrill = {} }) {
   const s = rep.stats, d = rep.delta;
   const cards = [
-    { label: 'Результат', value: money(s.pnl), cls: sgn(s.pnl),
+    { label: 'Результат', value: money(s.pnl), cls: sgn(s.pnl), drill: onDrill.all,
       sub: (
         <>
           {d.hasPrev ? <><Delta value={d.pnl} /> к {rep.prevLabel.toLowerCase()}</> : 'прошлый период без сделок'}
@@ -479,16 +641,17 @@ function KpiRow({ rep }) {
           )}
         </>
       ) },
-    { label: 'Сделок', value: s.total, sub: d.hasPrev ? `в ${rep.prevLabelIn} — ${rep.prevStats.total}` : '—' },
-    { label: 'Прибыльных', value: `${Math.round(s.winrate)}%`, sub: d.winrate != null ? `${d.winrate >= 0 ? '+' : '−'}${Math.abs(d.winrate).toFixed(0)} п.п. к прошлому` : `${s.wins} из ${s.total}` },
+    { label: 'Сделок', value: s.total, drill: onDrill.all, sub: d.hasPrev ? `в ${rep.prevLabelIn} — ${rep.prevStats.total}` : '—' },
+    { label: 'Прибыльных', value: `${Math.round(s.winrate)}%`, drill: onDrill.wins, sub: d.winrate != null ? `${d.winrate >= 0 ? '+' : '−'}${Math.abs(d.winrate).toFixed(0)} п.п. к прошлому` : `${s.wins} из ${s.total}` },
     { label: 'Профит-фактор', value: pfText(s.profitFactor), sub: 'заработано на рубль потерь' },
-    { label: 'Средняя сделка', value: money(s.avg), cls: sgn(s.avg), sub: `выигрыш ${money(s.avgWin)}, проигрыш ${money(s.avgLoss)}` },
+    { label: 'Средняя сделка', value: money(s.avg), cls: sgn(s.avg), drill: onDrill.losses, drillTitle: 'Показать убыточные сделки', sub: `выигрыш ${money(s.avgWin)}, проигрыш ${money(s.avgLoss)}` },
     { label: 'Макс. просадка', value: `−${formatCurrency(Math.round(s.maxDrawdown))}`, cls: s.maxDrawdown > 0 ? 'down' : '', sub: 'от пика накопленного итога' },
   ];
   return (
     <div className="mr-kpis">
       {cards.map((c) => (
-        <div key={c.label} className="mr-kpi">
+        <div key={c.label} className={`mr-kpi${c.drill ? ' mr-clickable' : ''}`}
+          {...(c.drill ? { role: 'button', tabIndex: 0, title: c.drillTitle || 'Показать сделки', onClick: c.drill, onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); c.drill(); } } } : {})}>
           <div className="mr-kpi-label">{c.label}</div>
           <div className={`mr-kpi-value ${c.cls || ''}`}>{c.value}</div>
           <div className="mr-kpi-sub">{c.sub}</div>
@@ -572,18 +735,19 @@ function VersusCard({ rep }) {
   );
 }
 
-function StrategyCard({ rep }) {
+function StrategyCard({ rep, title = 'Стратегии', onDrill = null }) {
   const rows = rep.byStrategy;
   const maxAbs = Math.max(1, ...rows.map((r) => Math.abs(r.pnl)));
   return (
     <div className="card mr-block">
-      <div className="section-title">Стратегии</div>
+      <div className="section-title">{title}</div>
       {rows.length <= 1 && <p className="mr-note" style={{ marginTop: 0 }}>
         {rows.length ? 'За период торговала одна стратегия.' : 'Нет данных.'} Чтобы сравнивать несколько, отметьте их в Настройках → Бумажные сделки.
       </p>}
       <div className="mr-strats">
         {rows.map((r) => (
-          <div key={r.label} className="mr-strat">
+          <div key={r.label} className={`mr-strat${onDrill ? ' mr-clickable' : ''}`}
+            {...(onDrill ? { role: 'button', tabIndex: 0, title: 'Показать сделки стратегии', onClick: () => onDrill(r.label), onKeyDown: (e) => { if (e.key === 'Enter') onDrill(r.label); } } : {})}>
             <div className="mr-strat-top">
               <span className="mr-strat-name">{r.label}</span>
               <span className={`mr-num ${sgn(r.pnl)}`}>{money(r.pnl)}</span>

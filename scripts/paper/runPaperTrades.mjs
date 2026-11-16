@@ -77,6 +77,8 @@ const { entryGuard, DEFAULT_MIN_DAYS_TO_EXPIRY } = await import(rollUrl);
 const { formatPaperForTelegram, paperTelegramAllowed, paperRepeatKeyboard, formatPaperSignalCard, paperDecisionKeyboard } = await import(alertsUrl);
 // Для карточки сигнала: список условий стратегии, риск позиции в рублях, подпись «горизонт · таймфрейм».
 const { evaluateStrategy } = await import(pathToFileURL(path.join(tmp, 'strategy.js')).href);
+// Снимок входа: какие условия сошлись и значения индикаторов на сигнальной свече — пишется в саму сделку.
+const { entrySnapshot } = await import(esmify(path.join(repoRoot, 'src/services/analytics/entrySnapshot.js')));
 // Картинка графика к сообщению о входе: таймфрейм стратегии + следующий (scripts/telegram/signalPhoto.mjs).
 const { sendSignalPhoto } = await import(pathToFileURL(path.join(repoRoot, 'scripts/telegram/signalPhoto.mjs')).href);
 const { positionRisk } = await import(esmify(path.join(repoRoot, 'src/services/analytics/openRisk.js')));
@@ -334,6 +336,15 @@ async function checkItem({ db, uid, profile, item, openTickers, getAllTrades, st
   if (riskTooBig && !ignoreRiskSizing) return { skipped: 'объём получился нулевым' };
   const volume = riskTooBig ? 1 : sizing.contracts;
 
+  // Что именно сошлось и при каких значениях индикаторов — запоминаем в сделке (раньше оставался только счёт «5 из 8»).
+  // Тихо: сбой снимка не должен мешать открыть сделку.
+  let evalResults = [];
+  let snapshot = {};
+  try {
+    evalResults = evaluateStrategy(strategy, { ...baseCtx, direction }).results;
+    snapshot = entrySnapshot({ results: evalResults, indicators: baseCtx.indicators, marketContext: baseCtx.marketContext });
+  } catch (e) { console.error(`снимок входа ${tradeTicker}: ${e.message}`); }
+
   const paper = {
     ticker: tradeTicker,
     // Корень радара (BR), если торгуем конкретным контрактом (BRX6) — для связи сделки с записью радара.
@@ -367,6 +378,7 @@ async function checkItem({ db, uid, profile, item, openTickers, getAllTrades, st
     entryPassed: best.passed,
     entryTotal: best.total,
     signalBarDate: new Date(signalBar.date).toISOString(),
+    ...snapshot,
     radarItemId: item.id,
     // Параметры контракта подтянуть не удалось — объём посчитан приблизительно.
     sizingApprox: specs.approx || undefined,
@@ -392,11 +404,7 @@ async function checkItem({ db, uid, profile, item, openTickers, getAllTrades, st
   if (paperTelegramAllowed(profile.alertPrefs, paper.entryStrategyId, profile.strategies)) {
     // Подробная карточка: стратегия и таймфрейм, вход/стоп/цель в процентах, прибыль к риску,
     // объём и риск в рублях и процентах капитала, какие условия сошлись и какие нет.
-    let conditions = [];
-    try {
-      conditions = evaluateStrategy(strategy, { ...baseCtx, direction })
-        .results.filter((r) => !r.na).map((r) => ({ label: r.label, passed: !!r.passed }));
-    } catch { /* карточка обойдётся счётом из записи сделки */ }
+    const conditions = evalResults.filter((r) => !r.na).map((r) => ({ label: r.label, passed: !!r.passed }));
     const risk = positionRisk({ ...paper, id: ref.id, stopLoss: sizingStopPrice }, 'paper');
     const riskRub = risk?.riskRub != null ? Math.round(risk.riskRub) : null;
     const riskPct = riskRub != null && capital > 0 ? (riskRub / capital) * 100 : null;

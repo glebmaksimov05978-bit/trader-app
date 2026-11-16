@@ -1,7 +1,7 @@
 // src/components/journal/TradeModal.js
 import React, { useState, useEffect, useRef } from 'react';
 import { formatCurrency, formatPercent } from '../../utils/money';
-import { positionValueRub } from '../../services/contractMath';
+import { positionValueRub, moveRub } from '../../services/contractMath';
 import './Journal.css';
 
 import Icon from '../shared/Icon';
@@ -279,17 +279,11 @@ export default function TradeModal({ trade, onSave, onClose, defaultDeposit, def
     const commRate = parseFloat(form.commissionRate) || 0.0006;
 
     if (entry && exit && vol) {
-      let pnl;
-      if (step && stepAmt) {
-        const ticks = Math.abs(exit - entry) / step;
-        const direction = form.direction === 'long' ? (exit > entry ? 1 : -1) : (exit < entry ? 1 : -1);
-        pnl = ticks * stepAmt * vol * direction;
-      } else {
-        pnl = form.direction === 'long' ? (exit - entry) * vol * lot : (entry - exit) * vol * lot;
-      }
-
-      const commission = (positionValueRub({ instrumentType: form.instrumentType, lot, minStep: step, minStepAmount: stepAmt }, entry, vol)
-        + positionValueRub({ instrumentType: form.instrumentType, lot, minStep: step, minStepAmount: stepAmt }, exit, vol)) * commRate;
+      // Та же формула, что при закрытии сделки и в Сопровождении (services/contractMath.js): раньше здесь была своя,
+      // и у акции с заполненной «стоимостью шага» результат считался как у фьючерса — без лота.
+      const spec = { instrumentType: form.instrumentType, direction: form.direction, lot, minStep: step, minStepAmount: stepAmt };
+      const pnl = moveRub(spec, entry, exit, vol);
+      const commission = (positionValueRub(spec, entry, vol) + positionValueRub(spec, exit, vol)) * commRate;
       const netPnl = pnl - commission;
 
       setAutoPnl({ pnl: Math.round(netPnl * 100) / 100, commission: Math.round(commission * 100) / 100 });
@@ -298,7 +292,7 @@ export default function TradeModal({ trade, onSave, onClose, defaultDeposit, def
     } else {
       setAutoPnl(null);
     }
-  }, [form.exitPrice, form.entryPrice, form.volume, form.direction, form.minStep, form.minStepAmount, form.lot, form.commissionRate]);
+  }, [form.exitPrice, form.entryPrice, form.volume, form.direction, form.minStep, form.minStepAmount, form.lot, form.commissionRate, form.instrumentType]);
 
   const deposit = parseFloat(form.depositSize) || 100000;
   const pnlVal = parseFloat(form.pnl) || 0;

@@ -1,5 +1,32 @@
 // src/utils/calculator.js
 
+// До копеек.
+const r2 = (v) => Math.round(v * 100) / 100;
+
+// Комиссии плана сделки в рублях: «за круг» по цене входа (справочно), вход+выход по стопу, вход+выход по цели.
+function planCommissions(entry, sl, tp, contracts, rubPerPt, rate) {
+  const side = (price) => price * rubPerPt * contracts * rate;
+  return {
+    commission: side(entry) * 2,
+    commissionAtStop: side(entry) + side(sl),
+    commissionAtTake: tp > 0 ? side(entry) + side(tp) : side(entry) * 2,
+  };
+}
+
+// Цена, на которой сделка выходит в ноль с учётом комиссии обеих сторон (комиссия выхода — по цене выхода):
+// лонг: вход × (1 + ставка) / (1 − ставка); шорт — наоборот. От объёма не зависит. Округляется в сторону «с запасом»
+// (раньше округлялось до 0,1 — для нефти с шагом 0,01 это ошибка в десятки рублей на контракт).
+function breakevenPrice(entry, direction, rate, step, onStepGrid) {
+  const raw = direction === 'long' ? entry * (1 + rate) / (1 - rate) : entry * (1 - rate) / (1 + rate);
+  const decimalsOf = (v) => { const t = String(v); const i = t.indexOf('.'); return i === -1 ? 0 : t.length - i - 1; };
+  const away = (x) => (direction === 'long' ? Math.ceil(x - 1e-7) : Math.floor(x + 1e-7));
+  // Фьючерс: цена ходит только по сетке шага — берём первую цену на сетке, где сделка уже не в минусе.
+  if (onStepGrid && step > 0) return Number((away(raw / step) * step).toFixed(Math.min(8, decimalsOf(step))));
+  // Акция: шаг в форме бывает не заполнен — считаем с точностью цены входа, но не грубее копейки.
+  const k = 10 ** Math.min(6, Math.max(2, decimalsOf(step), decimalsOf(entry)));
+  return away(raw * k) / k;
+}
+
 export function calcTrade({
   entryPrice,
   stopLoss,
@@ -82,7 +109,9 @@ export function calcTrade({
   // Комиссия считается от стоимости позиции в рублях: раньше у фьючерсов брали цену в пунктах
   // (у Brent 80 вместо 60 000 ₽ за контракт) и комиссия выходила в сотни раз меньше настоящей.
   const rubPerPt = instrumentType !== 'stock' && stepAmt > 0 && step > 0 ? stepAmt / step : l;
-  const commissionPerContract = entry * rubPerPt * commissionRate * 2;
+  // Комиссия берётся с каждой стороны по ЕЁ цене: вход — по цене входа, выход по стопу — по цене стопа
+  // (раньше обе стороны считались по цене входа — расхождение с брокером в рублях на десятке контрактов).
+  const commissionPerContract = (entry + sl) * rubPerPt * commissionRate;
   const effectiveLossPerContract = lossPerContract + commissionPerContract;
   const contractsByRisk = effectiveLossPerContract > 0
     ? Math.floor(riskAmount / effectiveLossPerContract)
@@ -106,9 +135,8 @@ export function calcTrade({
   );
 
   const totalMargin    = instrumentType === 'future' ? contracts * iMargin : 0;
-  const positionValue  = Math.round(entry * contracts * rubPerPt);
-  const notional       = positionValue;
-  const commission     = notional * commissionRate * 2;
+  const positionValue  = r2(entry * contracts * rubPerPt);
+  const { commission, commissionAtStop, commissionAtTake } = planCommissions(entry, sl, tp, contracts, rubPerPt, commissionRate);
 
   // RR с учётом направления
   let rr = 0;
@@ -132,19 +160,14 @@ export function calcTrade({
     profitPerContract = ticksToTP * step * l;
   }
 
-  const totalProfit = profitPerContract * contracts - commission;
-  const totalLoss   = lossPerContract   * contracts + commission;
+  const totalProfit = profitPerContract * contracts - commissionAtTake;
+  const totalLoss   = lossPerContract   * contracts + commissionAtStop;
 
   // Точка безубытка. Рубли за один шаг цены на одну единицу объёма — ровно та же величина, что
   // стоит в убытке на контракт выше: у фьючерса со стоимостью шага это она, иначе шаг × лот.
   // Раньше делили на голый шаг цены без лота: у акций с лотом 10 (SBER) безубыток уходил в
   // десять раз дальше, чем есть (показывало 303 вместо 300,3 при цене входа 300).
-  const rubPerTick      = (instrumentType !== 'stock' && stepAmt > 0) ? stepAmt : step * l;
-  const commPerContract = contracts > 0 ? commission / contracts : 0;
-  const bevenTicks      = lossPerContract > 0 ? commPerContract / rubPerTick : 0;
-  const breakeven       = direction === 'long'
-    ? entry + bevenTicks * step
-    : entry - bevenTicks * step;
+  const breakeven = breakevenPrice(entry, direction, commissionRate, step, instrumentType !== 'stock' && stepAmt > 0);
 
   const marginUsedRub     = instrumentType === 'future' ? totalMargin : positionValue;
   const marginUsagePercent = deposit > 0
@@ -163,22 +186,24 @@ export function calcTrade({
     leverage:            Math.round(leverage * 10000) / 10000,   // плечо не округляется до десятых: на десятках контрактов разница заметна
     // Рубли за 1 пункт цены на единицу объёма (нужно, чтобы пересчитать итог на другое число контрактов).
     rubPerPoint:         rubPerPt,
-    riskAmount:          Math.round(riskAmount),
+    riskAmount:          r2(riskAmount),
     contracts,
     contractsByRisk,
     maxContractsByMargin,
     totalMargin:         Math.round(totalMargin * 100) / 100,    // ГО на все контракты — до копеек, а не до рубля
     positionValue,
-    commission:          Math.round(commission),
+    commission:          r2(commission),          // вход + выход по цене входа — справочная «комиссия за круг»
+    commissionAtStop:    r2(commissionAtStop),    // вход + выход по стопу — входит в «Макс. убыток»
+    commissionAtTake:    r2(commissionAtTake),    // вход + выход по цели — входит в «Потенц. прибыль»
     rr:                  Math.round(rr * 100) / 100,
     rrValid,
-    breakeven:           Math.round(breakeven * 10) / 10,
+    breakeven,
     ticksToSL:           Math.round(ticksToSL),
     ticksToTP:           Math.round(ticksToTP),
     lossPerContract:     Math.round(lossPerContract   * 100) / 100,
     profitPerContract:   Math.round(profitPerContract * 100) / 100,
-    totalProfit:         Math.round(totalProfit),
-    totalLoss:           Math.round(totalLoss),
+    totalProfit:         r2(totalProfit),
+    totalLoss:           r2(totalLoss),
     marginUsagePercent,
     maxMarginPercent:    maxMarginPercent || 30,
     limitedByMargin:     contracts < contractsByRisk,
@@ -196,16 +221,23 @@ export function scaleToContracts(result, n, { entryPrice, commissionRate = 0.000
   const entry = parseFloat(entryPrice) || 0;
   const rate = parseFloat(commissionRate) || 0.0006;
   const deposit = parseFloat(depositSize) || 1;
-  const positionValue = Math.round(entry * n * result.rubPerPoint);
-  const commission = Math.round(positionValue * rate * 2);
+  const positionValue = r2(entry * n * result.rubPerPoint);
+  // Цены стопа и цели восстанавливаются из убытка/прибыли на контракт — комиссия выхода считается по ним, а не по входу.
+  const rpp = result.rubPerPoint || 1;
+  const dir = result.direction === 'short' ? -1 : 1;
+  const sl = entry - dir * (result.lossPerContract / rpp);
+  const tp = result.profitPerContract > 0 ? entry + dir * (result.profitPerContract / rpp) : 0;
+  const { commission, commissionAtStop, commissionAtTake } = planCommissions(entry, sl, tp, n, rpp, rate);
   const totalMargin = instrumentType === 'future' ? Math.round(result.marginPerContract * n * 100) / 100 : 0;
   const marginUsed = instrumentType === 'future' ? totalMargin : positionValue;
   return {
     ...result,
     contracts: n,
-    commission,
-    totalLoss: Math.round(result.lossPerContract * n + commission),
-    totalProfit: Math.round(result.profitPerContract * n - commission),
+    commission: r2(commission),
+    commissionAtStop: r2(commissionAtStop),
+    commissionAtTake: r2(commissionAtTake),
+    totalLoss: r2(result.lossPerContract * n + commissionAtStop),
+    totalProfit: r2(result.profitPerContract * n - commissionAtTake),
     totalMargin,
     positionValue,
     marginUsagePercent: Math.round((marginUsed / deposit) * 1000) / 10,

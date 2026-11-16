@@ -114,9 +114,12 @@ run('страницы для просмотра глазами', () => {
     journal: ['/journal', require('../components/journal/Journal').default],
     report: ['/report', require('../components/report/MonthlyReport').default],
     cockpit: ['/cockpit', require('../components/cockpit/Cockpit').default],
+    'cockpit-trade': ['/cockpit?activeId=t5', require('../components/cockpit/Cockpit').default],
+    'cockpit-preview': ['/cockpit?previewTicker=SBER&previewType=stock', require('../components/cockpit/Cockpit').default],
     calculator: ['/calculator', require('../components/calculator/Calculator').default],
     settings: ['/settings', require('../components/settings/Settings').default],
-    backtest: ['/backtest', require('../components/backtest/Backtest').default],
+    strategies: ['/strategies', require('../components/strategies/Strategies').default],
+    'strategies-live': ['/strategies?tab=live', require('../components/strategies/Strategies').default],
     trainer: ['/trainer', require('../components/trainer/Trainer').default],
   };
   const css = allCss();
@@ -125,6 +128,8 @@ run('страницы для просмотра глазами', () => {
   for (const theme of ['light', 'dark']) {
     for (const [name, [route, Page]] of Object.entries(pages)) {
       test(`${name} (${theme})`, async () => {
+        try { sessionStorage.clear(); } catch { /* нет хранилища */ }
+        if (!Element.prototype.scrollIntoView) Element.prototype.scrollIntoView = () => {};
         localStorage.setItem('theme', theme);
         document.documentElement.setAttribute('data-theme', theme);
         const host = document.createElement('div');
@@ -167,6 +172,19 @@ run('страницы для просмотра глазами', () => {
           if (chip) {
             await act(async () => { chip.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
             snap('filtered');
+          }
+          // Вкладки «Анализа»: по снимку на каждую, плюс окно «сделки, из которых получилась цифра».
+          const tabBtn = (text) => [...host.querySelectorAll('.mr-tabs button')].find((b) => b.textContent.trim() === text);
+          for (const [text, suffix] of [['Мои ошибки', 'mistakes'], ['Я и система', 'versus'], ['Стратегии', 'strategies'], ['Итоги', 'summary']]) {
+            const b = tabBtn(text);
+            if (b) { await act(async () => { b.dispatchEvent(new MouseEvent('click', { bubbles: true })); }); snap(`tab-${suffix}`); }
+          }
+          const kpi = host.querySelector('.mr-kpi.mr-clickable');
+          if (kpi) {
+            await act(async () => { kpi.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+            snap('drill');
+            const close = document.body.querySelector('.modal-close');
+            if (close) await act(async () => { close.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
           }
           const exportBtn = [...host.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Выгрузить отчёт');
           if (exportBtn) {

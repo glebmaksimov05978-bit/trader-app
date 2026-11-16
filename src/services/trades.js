@@ -138,11 +138,25 @@ export function calcStats(trades) {
   const winrate = (wins.length / closed.length) * 100;
   const avgWin = wins.length ? wins.reduce((s, t) => s + t.pnl, 0) / wins.length : 0;
   const avgLoss = losses.length ? losses.reduce((s, t) => s + t.pnl, 0) / losses.length : 0;
-  const expectancy = (winrate / 100) * avgWin + ((1 - winrate / 100)) * avgLoss;
+  // Средний результат на сделку — просто сумма, делённая на число сделок. Прежняя формула «доля прибыльных × средняя
+  // прибыль + остальное × средний убыток» завышала убыточную часть, когда были сделки ровно в ноль.
+  const expectancy = totalPnl / closed.length;
 
   // Max drawdown
   let peak = 0, balance = 0, maxDD = 0;
-  const sorted = [...closed].sort((a, b) => new Date(a.date) - new Date(b.date));
+  // Просадка и серии считаются в порядке ЗАКРЫТИЯ сделок (когда результат реально получен). Раньше порядок брался по
+  // дню открытия: две сделки одного дня могли встать как угодно, а длинная сделка — раньше короткой, закрытой до неё.
+  const when = (t) => {
+    for (const v of [t.closedAt, t.closeDate, t.exitDate, t.openedAt, t.date, t.entryDate]) {
+      if (!v) continue;
+      const ms = v.seconds != null ? v.seconds * 1000 : new Date(v).getTime();
+      if (Number.isFinite(ms)) return ms;
+    }
+    return null;
+  };
+  const sorted = closed.map((t, i) => ({ t, i, ms: when(t) }))
+    .sort((a, b) => (a.ms != null && b.ms != null && a.ms !== b.ms ? a.ms - b.ms : a.i - b.i))
+    .map((x) => x.t);
   sorted.forEach((t) => {
     balance += t.pnl;
     if (balance > peak) peak = balance;
@@ -154,7 +168,8 @@ export function calcStats(trades) {
   let maxWinStreak = 0, maxLossStreak = 0, ws = 0, ls = 0;
   sorted.forEach((t) => {
     if (t.pnl > 0) { ws++; ls = 0; maxWinStreak = Math.max(maxWinStreak, ws); }
-    else { ls++; ws = 0; maxLossStreak = Math.max(maxLossStreak, ls); }
+    else if (t.pnl < 0) { ls++; ws = 0; maxLossStreak = Math.max(maxLossStreak, ls); }
+    else { ws = 0; ls = 0; } // сделка ровно в ноль — не убыток: серию убытков не продолжает
   });
 
   // Profit factor

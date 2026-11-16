@@ -10,7 +10,8 @@ ok('NEW — всё ещё ждёт, ничего не меняем', planPending
 let r = planPendingUpdate(pend, { status: 'EXECUTION_REPORT_STATUS_FILL', lotsExecuted: 5, averagePrice: 55.9 }, now);
 ok('исполнена: статус open, цена и объём с брокера', r.patch.status === 'open' && r.patch.entryPrice === 55.9 && r.patch.volume === 5 && r.patch.remainingVolume === 5);
 ok('исполнена: ступень входа с номером заявки', r.patch.legs[0].type === 'open' && r.patch.legs[0].dealNumber === 'o1' && r.patch.legs[0].price === 55.9);
-ok('исполнена: комиссия пересчитана на реальную цену', r.patch.commission === Math.round(55.9 * 5 * 1 * 0.0005 * 2));
+// только комиссия входа, до копеек: 55,9 × 5 × 0,05% = 0,13975 → 0,14 ₽; выход добавит закрытие
+ok('исполнена: комиссия входа по реальной цене, до копеек', r.patch.commission === 0.14 && r.patch.entryCommissionIncluded === true);
 
 r = planPendingUpdate(pend, { status: 'EXECUTION_REPORT_STATUS_PARTIALLYFILL', lotsExecuted: 2, averagePrice: 56 }, now);
 ok('частично: остаётся ждать, запоминаем сколько исполнено', r.patch.status === undefined && r.patch.pendingOrder.filledLots === 2);

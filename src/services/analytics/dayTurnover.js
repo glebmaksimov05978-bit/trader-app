@@ -29,7 +29,10 @@ function notional(trade, price, qty) {
   if (!Number.isFinite(p) || !Number.isFinite(q) || p <= 0 || q <= 0) return 0;
   const step = parseFloat(trade.minStep) || 0;
   const stepAmt = parseFloat(trade.minStepAmount) || 0;
-  if (step && stepAmt) return (p / step) * stepAmt * q;
+  // «Стоимость шага» относится только к фьючерсам (то же правило, что в services/contractMath.js): у акции с заполненным
+  // полем оборот считался бы без лота.
+  const stockLike = trade.instrumentType === 'stock' || trade.instrumentType === 'currency';
+  if (!stockLike && step && stepAmt) return (p / step) * stepAmt * q;
   return p * q * (parseFloat(trade.lot) || 1);
 }
 
