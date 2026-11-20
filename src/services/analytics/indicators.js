@@ -122,7 +122,7 @@ export function adxLite(candles, period = 14) {
 // typically move per bar right now", independent of direction — used in the Calculator to
 // sanity-check a stop-loss distance against normal volatility (real user request: "стоп
 // на 5 пунктов при обычной качке в 40 — его выбьет шумом").
-function atr(candles, period = 14) {
+export function atr(candles, period = 14) {
   const out = new Array(candles.length).fill(null);
   let prevClose = null;
   let prevAtr = null;

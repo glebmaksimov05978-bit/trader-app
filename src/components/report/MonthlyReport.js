@@ -17,7 +17,7 @@ import { buildStrategyComparison, comparisonNote } from '../../services/analytic
 import { buildOpenRisk } from '../../services/analytics/openRisk';
 import { buildDecisionJournal } from '../../services/analytics/decisionJournal';
 import { buildMonthlyReport, reportVerdict } from '../../services/analytics/monthlyReport';
-import { buildPeriodReport, listPeriods, listStrategyNames, strategyNameOf, periodKeyOf, SCOPES } from '../../services/analytics/periodReport';
+import { buildPeriodReport, listPeriods, listStrategyNames, strategyNameOf, periodKeyOf, periodLabel, SCOPES } from '../../services/analytics/periodReport';
 import { buildEntryStats } from '../../services/analytics/entryStats';
 import { PeriodSwitcher, StrategyFilter } from './ReportControls';
 import ReportExportModal from './ReportExportModal';
@@ -34,8 +34,14 @@ import './MonthlyReport.css';
 // чтобы зафиксированная часть частично закрытых сделок попала в свой день и месяц.
 const legPnl = (trade, leg) => computeClosePnl({ trade, exitPrice: Number(leg.price), qty: Number(leg.quantity) })?.pnl ?? NaN;
 
-const money = (v) => `${v >= 0 ? '+' : '−'}${formatCurrency(Math.abs(Math.round(v)))}`;
-const pfText = (v) => (v == null ? '—' : Number.isFinite(v) ? v.toFixed(2) : '∞');
+// Ноль — без знака: «+0 ₽» и «−0 ₽» выглядели как ошибка (замечание владельца 2026-11-20).
+const money = (v) => {
+  const r = Math.round(v);
+  return `${r > 0 ? '+' : r < 0 ? '−' : ''}${formatCurrency(Math.abs(r))}`;
+};
+// Убытков нет — делить не на что: пишем словами, а не «∞».
+const pfText = (v) => (v == null ? '—' : Number.isFinite(v) ? v.toFixed(2) : 'нет убытков');
+const ddText = (v) => (Math.round(v) > 0 ? `−${formatCurrency(Math.round(v))}` : formatCurrency(0));
 const px = (v) => { const n = Number(v); return Number.isFinite(n) ? String(Math.round(n * 10000) / 10000) : v; };
 const sgn = (v) => (v > 0 ? 'up' : v < 0 ? 'down' : '');
 
@@ -91,10 +97,17 @@ export default function MonthlyReport() {
   // Ключ текущего периода: блок «Сейчас в рынке» показывается только в нём.
   const currentKey = periodKeyOf(type, new Date());
 
-  const periods = useMemo(() => listPeriods(real, paper, type, legPnl), [real, paper, type]);
-  // По умолчанию — самый свежий период, где что-то закрывалось: пустая страница в первые дни
-  // нового месяца — плохой первый экран.
-  const key = pickedKey && periods.some((p) => p.key === pickedKey) ? pickedKey : periods[0]?.key;
+  const withData = useMemo(() => listPeriods(real, paper, type, legPnl), [real, paper, type]);
+  // По умолчанию — ТЕКУЩИЙ период (решение владельца 2026-11-20: «Неделя» открывала неделю годичной давности, и было
+  // непонятно, что это не сейчас). Если в нём пусто — на месте отчёта кнопка «к последнему периоду со сделками».
+  const periods = useMemo(() => (type === 'all' || withData.some((p) => p.key === currentKey)
+    ? withData
+    : [{ key: currentKey, label: periodLabel(type, currentKey) }, ...withData]), [withData, type, currentKey]);
+  // Последний период со сделками именно этого среза (реальные / бумажные / вместе).
+  const latestWithData = useMemo(() => (scope === 'all' ? withData
+    : listPeriods(scope === 'paper' ? [] : real, scope === 'real' ? [] : paper, type, legPnl))[0] || null,
+  [withData, scope, real, paper, type]);
+  const key = pickedKey && periods.some((p) => p.key === pickedKey) ? pickedKey : type === 'all' ? withData[0]?.key : currentKey;
 
   const rep = useMemo(() => (key ? buildPeriodReport({ realTrades: real, paperTrades: paper, scope, type, key, legPnl }) : null),
     [real, paper, scope, type, key]);
@@ -198,14 +211,25 @@ export default function MonthlyReport() {
       </div>
 
       {!rep || rep.empty ? (
+        <>
         <div className="card">
           <div className="empty-state" style={{ padding: '40px 20px' }}>
-            <div className="empty-state-title">В выбранном периоде закрытых сделок нет</div>
+            <div className="empty-state-title">
+              {rep?.label || periodLabel(type, key)}: закрытых сделок {scope === 'paper' ? 'системы ' : ''}нет
+            </div>
             <div className="empty-state-text">
               {scope === 'paper' ? 'Бумажные сделки появляются, когда робот открыл и закрыл хотя бы одну.' : 'Выберите другой период или срез.'}
             </div>
+            {latestWithData && latestWithData.key !== key && (
+              <button type="button" className="btn btn-secondary" style={{ marginTop: 14 }} onClick={() => setPickedKey(latestWithData.key)}>
+                Показать последний период со сделками: {latestWithData.label.charAt(0).toLowerCase() + latestWithData.label.slice(1)}
+              </button>
+            )}
           </div>
         </div>
+        {/* «Сейчас в рынке» — про сегодня: в текущем периоде он нужен и тогда, когда закрытых сделок ещё нет */}
+        {key === currentKey && tab === 'summary' && <OpenRiskCard risk={openRisk} />}
+        </>
       ) : (
         <>
           {tab === 'summary' && (
@@ -649,8 +673,9 @@ function KpiRow({ rep, onDrill = {} }) {
     { label: 'Сделок', value: s.total, drill: onDrill.all, sub: d.hasPrev ? `в ${rep.prevLabelIn} — ${rep.prevStats.total}` : '—' },
     { label: 'Прибыльных', value: `${Math.round(s.winrate)}%`, drill: onDrill.wins, sub: d.winrate != null ? `${d.winrate >= 0 ? '+' : '−'}${Math.abs(d.winrate).toFixed(0)} п.п. к прошлому` : `${s.wins} из ${s.total}` },
     { label: 'Профит-фактор', value: pfText(s.profitFactor), sub: 'заработано на рубль потерь' },
-    { label: 'Средняя сделка', value: money(s.avg), cls: sgn(s.avg), drill: onDrill.losses, drillTitle: 'Показать убыточные сделки', sub: `выигрыш ${money(s.avgWin)}, проигрыш ${money(s.avgLoss)}` },
-    { label: 'Макс. просадка', value: `−${formatCurrency(Math.round(s.maxDrawdown))}`, cls: s.maxDrawdown > 0 ? 'down' : '', sub: 'от пика накопленного итога' },
+    { label: 'Средняя сделка', value: money(s.avg), cls: sgn(s.avg), drill: onDrill.losses, drillTitle: 'Показать убыточные сделки',
+      sub: [s.wins ? `выигрыш ${money(s.avgWin)}` : 'прибыльных нет', s.avgLoss ? `проигрыш ${money(s.avgLoss)}` : 'убыточных нет'].join(', ') },
+    { label: 'Макс. просадка', value: ddText(s.maxDrawdown), cls: s.maxDrawdown > 0 ? 'down' : '', sub: s.maxDrawdown > 0 ? 'от пика накопленного итога' : 'итог не опускался ниже пика' },
   ];
   return (
     <div className="mr-kpis">
@@ -732,7 +757,7 @@ function VersusCard({ rep }) {
           {row('Прибыльных', (s) => `${Math.round(s.winrate)}%`)}
           {row('Средняя сделка', (s) => <span className={`mr-num ${sgn(s.avg)}`}>{money(s.avg)}</span>)}
           {row('Профит-фактор', (s) => pfText(s.profitFactor))}
-          {row('Макс. просадка', (s) => `−${formatCurrency(Math.round(s.maxDrawdown))}`)}
+          {row('Макс. просадка', (s) => ddText(s.maxDrawdown))}
         </tbody>
       </table>
       <p className="mr-note">

@@ -129,6 +129,7 @@ run('страницы для просмотра глазами', () => {
     settings: ['/settings', require('../components/settings/Settings').default],
     strategies: ['/strategies', require('../components/strategies/Strategies').default],
     'strategies-live': ['/strategies?tab=live', require('../components/strategies/Strategies').default],
+    'strategies-setup': ['/strategies?tab=setup', require('../components/strategies/Strategies').default],
     trainer: ['/trainer', require('../components/trainer/Trainer').default],
   };
   const css = allCss();
@@ -164,9 +165,25 @@ run('страницы для просмотра глазами', () => {
         });
         await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
         await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
+        // Выбранный пункт списка живёт в свойстве, а не в атрибуте — без этого в снимке у всех списков виден первый пункт.
+        const syncSelects = () => document.querySelectorAll('select').forEach((s) => [...s.options].forEach((o) => o.toggleAttribute('selected', o.selected)));
+        syncSelects();
         const html = `<!doctype html><html lang="ru" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${name}</title><style>${css}</style></head><body>${document.body.innerHTML}</body></html>`;
         fs.writeFileSync(path.join(OUT, `${name}-${theme}.html`), html, 'utf8');
         fs.writeFileSync(path.join(OUT, `${name}-${theme}.errors.txt`), errors.join('\n---\n'), 'utf8');
+        // «Мой сетап»: снимок после сверки с журналом и с открытым списком сделок «точно».
+        if (name === 'strategies-setup') {
+          const run = [...host.querySelectorAll('button')].find((x) => x.textContent.startsWith('Сверить с журналом'));
+          if (run) {
+            await act(async () => { run.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+            await act(async () => { await new Promise((r) => setTimeout(r, 800)); });
+            const list = [...host.querySelectorAll('.sb-list-tabs button')][0];
+            if (list) await act(async () => { list.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+            syncSelects();
+            fs.writeFileSync(path.join(OUT, `${name}-checked-${theme}.html`),
+              `<!doctype html><html lang="ru" data-theme="${theme}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${name}</title><style>${css}</style></head><body>${document.body.innerHTML}</body></html>`, 'utf8');
+          }
+        }
         // Отчёт: ещё два снимка — с открытым окном выбора месяца и с выбранной одной стратегией.
         if (name === 'report') {
           const snap = (suffix) => fs.writeFileSync(path.join(OUT, `${name}-${suffix}-${theme}.html`),

@@ -208,7 +208,10 @@ td.mr-num { text-align: right; }
 @media (max-width: 640px) { .mr-subrow { grid-template-columns: 1fr auto; row-gap: 2px; } .mr-subrow .mr-subnote { grid-column: 1 / -1; } .mr-subrow em { display: none; } .mr-sublist { padding-left: 8px; } }
 
 /* ---------- Раздел «Анализ»: вкладки, табло, нажимаемые цифры ---------- */
-.mr-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border-subtle); margin-bottom: 16px; overflow-x: auto; }
+.mr-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border-subtle); margin-bottom: 16px; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
+/* Вкладки листаются пальцем на узком экране, но полосы прокрутки нет: на Windows она появлялась
+   справа и «двигала вкладки на пару миллиметров» (замечание владельца 2026-11-20). */
+.mr-tabs::-webkit-scrollbar { display: none; }
 .mr-tabs button { border: none; background: transparent; color: var(--text-secondary); font: inherit; font-size: 14px; font-weight: 500; padding: 10px 16px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; }
 .mr-tabs button:hover { color: var(--text-primary); }
 .mr-tabs button.on { color: var(--text-primary); font-weight: 600; border-bottom-color: var(--accent-primary); }

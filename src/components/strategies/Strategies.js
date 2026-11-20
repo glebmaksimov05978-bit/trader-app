@@ -2,6 +2,7 @@
 //
 // Раздел «Стратегии» — мастерская правил (решение владельца, 2026-11-11…15): всё про стратегии собрано в одном месте.
 //   • «Правила» — список стратегий и конструктор условий входа и выхода (раньше — второй блок «Капитала»);
+//   • «Мой сетап» — конструктор правил генератора стратегий и сверка правила с журналом (SetupBuilder.js, 2026-11-18);
 //   • «История» — проверка правил на прошлых данных (бывший отдельный пункт меню «Бэктест»; пока только доверенным);
 //   • «Вживую» — что у каждой стратегии происходит сейчас: открытые и закрытые сделки системы, краткий итог.
 // Полный разбор результата — в «Анализе», деньги и лимиты — в «Капитале». Здесь ничего не дублируется: вкладки
@@ -18,6 +19,7 @@ import Capital from '../capital/Capital';
 import Backtest from '../backtest/Backtest';
 import StrategyOverview from '../cockpit/StrategyOverview';
 import StrategyReadiness from './StrategyReadiness';
+import SetupBuilder from './SetupBuilder';
 import { getRadarItems } from '../../services/radar';
 import '../cockpit/Cockpit.css';
 import '../report/MonthlyReport.css';
@@ -28,6 +30,7 @@ export default function Strategies() {
   const canBacktest = !!(isAdmin || TRUSTED_UIDS.includes(user?.uid));
   const tabs = useMemo(() => [
     { id: 'rules', label: 'Правила' },
+    { id: 'setup', label: 'Мой сетап' },
     ...(canBacktest ? [{ id: 'history', label: 'История' }] : []),
     { id: 'live', label: 'Вживую' },
   ], [canBacktest]);
@@ -74,6 +77,8 @@ export default function Strategies() {
           <Capital view="strategies" embedded />
         </>
       )}
+
+      {tab === 'setup' && <SetupBuilder user={user} userProfile={userProfile} />}
 
       {tab === 'history' && canBacktest && <Backtest embedded />}
 

@@ -1,0 +1,68 @@
+/* «Мой сетап» — конструктор правил. Сдержанно, как остальное приложение: без неона, цвета только для денег. */
+.sb-card { margin-bottom: 16px; }
+.sb-presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 14px; }
+.sb-head { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+.sb-wide { grid-column: span 2; }
+@media (max-width: 560px) { .sb-wide { grid-column: auto; } }
+.sb-param { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-muted); min-width: 0; }
+.sb-param .input { min-width: 0; }
+.sb-muted { font-size: 12px; color: var(--text-muted); }
+.sb-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+.sb-chipbtn { border: 1px solid var(--border-subtle); background: transparent; color: var(--text-secondary); border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 12.5px; cursor: pointer; }
+.sb-chipbtn.on { border-color: var(--accent-primary); color: var(--text-primary); background: var(--bg-surface-2); }
+
+.sb-row-title { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.sb-mode { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.sb-mode .sb-param { flex-direction: row; align-items: center; gap: 6px; }
+
+.sb-cond { border: 1px solid var(--border-subtle); border-radius: var(--radius-sm, 8px); padding: 10px 12px; margin-top: 10px; background: var(--bg-surface-2); }
+.sb-cond-bad { border-color: var(--red); }
+.sb-cond-main, .sb-cond-more { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
+.sb-cond-more { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border-subtle); }
+.sb-cond-n { align-self: center; width: 22px; height: 22px; border-radius: 50%; background: var(--bg-surface-3); color: var(--text-secondary); font-size: 12px; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+/* В строке условия поля — по содержимому, а не во всю ширину (у .input по умолчанию width: 100%). */
+.sb-cond .input, .sb-exit .input, .sb-mode .input { width: auto; }
+.sb-cond input[type="number"].input, .sb-exit input[type="number"].input { width: 80px; }
+.sb-cond .sb-param { flex: none; }
+.sb-feature { flex: 0 1 280px; width: 280px !important; max-width: 100%; }
+.sb-narrow { min-width: 90px; }
+.sb-cond input.sb-tiny, .sb-exit input.sb-tiny, .sb-mode input.sb-tiny { width: 70px; }
+.sb-value, .sb-between, .sb-pair { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.sb-value .input, .sb-between .input { width: 90px; }
+.sb-value input[type="range"] { width: 140px; }
+.sb-unit { font-size: 13px; color: var(--text-secondary); }
+.sb-remove { margin-left: auto; }
+.sb-cond-text { margin-top: 8px; font-size: 13.5px; color: var(--text-primary); }
+.sb-problem { font-size: 12.5px; margin-top: 6px; line-height: 1.5; }
+.sb-error { color: var(--red); }
+.sb-warn { color: var(--gold); }
+.sb-add { margin-top: 12px; max-width: 360px; }
+.sb-tol { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin-top: 14px; }
+.sb-tol .sb-param { min-width: 200px; }
+
+.sb-exit { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+
+.sb-progress { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text-secondary); }
+.sb-result { margin-top: 14px; }
+.sb-groups { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+@media (max-width: 720px) { .sb-groups { grid-template-columns: 1fr; } }
+.sb-group { border: 1px solid var(--border-subtle); border-radius: var(--radius-sm, 8px); padding: 12px; }
+.sb-group-exact { border-color: var(--border-medium); }
+.sb-group-title { font-size: 12.5px; color: var(--text-secondary); font-weight: 600; }
+.sb-group-n { font-size: 22px; font-weight: 600; color: var(--text-primary); margin-top: 4px; }
+.sb-group-n span { font-size: 12px; font-weight: 400; color: var(--text-muted); }
+.sb-group-pnl { font-size: 15px; font-weight: 600; margin-top: 2px; }
+.sb-group-sub, .sb-group-hint { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+.sb-card .pos { color: var(--green); }
+.sb-card .neg { color: var(--red); }
+.sb-list-tabs { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.sb-list-tabs .on { color: var(--text-primary); }
+.sb-trades { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; max-height: 520px; overflow: auto; }
+.sb-trade { border: 1px solid var(--border-subtle); border-radius: var(--radius-xs, 6px); padding: 8px 10px; }
+.sb-trade-head { display: flex; flex-wrap: wrap; gap: 10px; font-size: 13px; color: var(--text-secondary); }
+.sb-trade-head b { color: var(--text-primary); }
+.sb-trade-conds { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.sb-chip { font-size: 12px; border-radius: 999px; padding: 2px 8px; background: var(--bg-surface-2); color: var(--text-secondary); }
+.sb-chip-exact { color: var(--text-primary); }
+.sb-chip-near { color: var(--gold); }
+.sb-chip-fail { color: var(--red); }

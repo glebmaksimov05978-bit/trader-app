@@ -126,6 +126,12 @@ function cachedRawSwings(candles, lookback) {
   return raw;
 }
 
+// Сырые точки разворота наружу (только чтение) — генератор стратегий проходит историю один раз и сам
+// накапливает видимые развороты, вместо вызова swingsUpTo на каждом баре (см. strategyBuilder/features.js).
+export function rawSwingsOf(candles, lookback = 3) {
+  return cachedRawSwings(candles, lookback);
+}
+
 // Точки разворота, видимые на баре `index` — ровно то же, что вернул бы
 // findSwingPoints(candles.slice(0, index + 1), lookback), но без пересчёта всей истории.
 export function swingsUpTo(candles, index, lookback = 3) {
